@@ -1,23 +1,30 @@
 #!/bin/bash
-# build_app.sh — собирает HUSH.app для локального тестирования.
-# Лаунчер ссылается на исходники напрямую: модели не копируются, ребилд не нужен.
+# build_app.sh — собирает самодостаточный HUSH.app.
+# Все Python-файлы и ресурсы копируются в Contents/Resources/.
+# Лаунчер находит пути относительно себя — app можно перемещать куда угодно.
 set -e
 cd "$(dirname "$0")"
 
 APP_NAME="HUSH"
 APP="$APP_NAME.app"
 SRC_DIR="$(pwd)"
-PYTHON="$(command -v python3.14 || command -v python3)"
+
+# Ищем python3.14, потом python3
+PYTHON="$(command -v python3.14 2>/dev/null || command -v python3 2>/dev/null)"
+if [ -z "$PYTHON" ]; then
+    echo "❌ Python не найден. Установи python3.14 через Homebrew: brew install python@3.14"
+    exit 1
+fi
 
 echo "=== Сборка $APP ==="
 echo "Python : $PYTHON"
 echo "Исходники: $SRC_DIR"
+echo ""
 
 # ── Иконка ─────────────────────────────────────────────────────────────────
 if [ ! -f hush.icns ]; then
     echo "Создаём hush.icns из hush_icon.svg..."
     ICONSET=$(mktemp -d)
-    # SVG → 1024px PNG через QuickLook
     qlmanage -t -s 1024 -o "$ICONSET" hush_icon.svg >/dev/null 2>&1
     SRC_PNG="$ICONSET/hush_icon.svg.png"
     mkdir -p "$ICONSET/hush.iconset"
@@ -39,17 +46,80 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS"
 mkdir -p "$APP/Contents/Resources"
 
-# ── Лаунчер ────────────────────────────────────────────────────────────────
-cat > "$APP/Contents/MacOS/$APP_NAME" << LAUNCHER
+# ── C-лаунчер — собираем бинарный launcher из launcher.c ──────────────────
+# Бинарный лаунчер делает NSBundle.mainBundle() = HUSH.app, что необходимо
+# для корректного позиционирования NSStatusItem в macOS 14+ (height > 0).
+if [ -f "$SRC_DIR/launcher.c" ]; then
+    echo "Компилируем C лаунчер..."
+    if clang -framework Foundation -o "$APP/Contents/MacOS/$APP_NAME" "$SRC_DIR/launcher.c" 2>&1; then
+        chmod +x "$APP/Contents/MacOS/$APP_NAME"
+        echo "  ✓ C лаунчер скомпилирован"
+    else
+        echo "  ⚠ Ошибка компиляции C лаунчера, используем bash fallback"
+        _use_bash_launcher=1
+    fi
+else
+    echo "  ⚠ launcher.c не найден, используем bash fallback"
+    _use_bash_launcher=1
+fi
+
+if [ "${_use_bash_launcher}" = "1" ]; then
+    cat > "$APP/Contents/MacOS/$APP_NAME" << 'LAUNCHER'
 #!/bin/bash
-# Загружаем переменные окружения из ~/.hush_env (API ключи и т.п.)
-[ -f "\$HOME/.hush_env" ] && source "\$HOME/.hush_env"
-exec "$PYTHON" "$SRC_DIR/main.py" "\$@"
+MACOS_DIR="$(cd "$(dirname "$0")" && pwd)"
+RESOURCES="$(cd "$MACOS_DIR/../Resources" && pwd)"
+[ -f "$HOME/.hush_env" ] && source "$HOME/.hush_env"
+export RESOURCEPATH="$RESOURCES"
+PYTHON="$(command -v python3.14 2>/dev/null || command -v python3 2>/dev/null || echo python3)"
+exec "$PYTHON" "$RESOURCES/main.py" "$@"
 LAUNCHER
-chmod +x "$APP/Contents/MacOS/$APP_NAME"
+    chmod +x "$APP/Contents/MacOS/$APP_NAME"
+fi
+
+# ── Python-файлы приложения ─────────────────────────────────────────────────
+echo "Копируем исходники..."
+for f in main.py overlay.py recorder.py transcriber.py injector.py processor.py config.py; do
+    [ -f "$SRC_DIR/$f" ] && cp "$SRC_DIR/$f" "$APP/Contents/Resources/" && echo "  + $f"
+done
+
+# ── Сценарии (хранятся в ~/.config/hush/, не в бандле) ──────────────────────
+HUSH_CFG="$HOME/.config/hush"
+mkdir -p "$HUSH_CFG"
+if [ ! -f "$HUSH_CFG/scenarios.json" ] && [ -f "$SRC_DIR/scenarios.json" ]; then
+    cp "$SRC_DIR/scenarios.json" "$HUSH_CFG/scenarios.json"
+    echo "  + scenarios.json → ~/.config/hush/"
+elif [ -f "$SRC_DIR/scenarios.json" ]; then
+    echo "  ✓ ~/.config/hush/scenarios.json уже существует (не перезаписываем)"
+fi
+
+# ── Ресурсы (иконки, изображения) ──────────────────────────────────────────
+echo "Копируем ресурсы..."
+for f in "$SRC_DIR"/*.png; do
+    [ -f "$f" ] && cp "$f" "$APP/Contents/Resources/" && echo "  + $(basename "$f")"
+done
+for f in "$SRC_DIR"/*.svg; do
+    [ -f "$f" ] && cp "$f" "$APP/Contents/Resources/" && echo "  + $(basename "$f")"
+done
+
+# ── parakeet-cli (бинарник распознавания речи) ─────────────────────────────
+if [ -f "$SRC_DIR/parakeet-cli" ]; then
+    cp "$SRC_DIR/parakeet-cli" "$APP/Contents/Resources/"
+    chmod +x "$APP/Contents/Resources/parakeet-cli"
+    echo "  + parakeet-cli"
+fi
+
+# ── Модели (CoreML, ~400MB) ─────────────────────────────────────────────────
+if [ -d "$SRC_DIR/models" ]; then
+    echo "Копируем модели (может занять время)..."
+    cp -r "$SRC_DIR/models" "$APP/Contents/Resources/"
+    echo "  + models/"
+else
+    echo "  ⚠  Модели не найдены в $SRC_DIR/models"
+    echo "     Убедись что ~/.local/bin/parakeet-cli доступен системно."
+fi
 
 # ── Info.plist ──────────────────────────────────────────────────────────────
-cat > "$APP/Contents/Info.plist" << 'PLIST'
+cat > "$APP/Contents/Info.plist" << PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -57,12 +127,12 @@ cat > "$APP/Contents/Info.plist" << 'PLIST'
     <key>CFBundleName</key>             <string>HUSH</string>
     <key>CFBundleDisplayName</key>      <string>HUSH</string>
     <key>CFBundleIdentifier</key>       <string>net.alexbic.hush</string>
+    <key>LSUIElement</key>              <true/>
     <key>CFBundleVersion</key>          <string>0.1.0</string>
     <key>CFBundleShortVersionString</key><string>0.1</string>
     <key>CFBundleExecutable</key>       <string>HUSH</string>
     <key>CFBundlePackageType</key>      <string>APPL</string>
     <key>CFBundleIconFile</key>         <string>hush</string>
-    <key>LSUIElement</key>              <true/>
     <key>NSHighResolutionCapable</key>  <true/>
     <key>NSMicrophoneUsageDescription</key>
         <string>HUSH использует микрофон для голосового ввода текста.</string>
@@ -77,12 +147,16 @@ printf "APPL????" > "$APP/Contents/PkgInfo"
 
 # ── Иконка в bundle ─────────────────────────────────────────────────────────
 cp hush.icns "$APP/Contents/Resources/hush.icns"
+cp hush.icns "$APP/Contents/Resources/hush"  # без расширения для CFBundleIconFile
 
 echo ""
 echo "✓ Готово: $SRC_DIR/$APP"
 echo ""
-echo "Запуск:  open \"$SRC_DIR/$APP\""
+echo "Структура bundle:"
+find "$APP" -not -path "*/models/*" | head -30
 echo ""
-echo "API ключи (опционально) — создай ~/.hush_env:"
-echo "  export ANTHROPIC_API_KEY=sk-ant-..."
-echo "  export OPENAI_API_KEY=sk-..."
+echo "Запуск:  open \"$SRC_DIR/$APP\""
+echo "Или перенеси в /Applications и запускай оттуда."
+echo ""
+echo "Примечание: требует python3.14 из Homebrew."
+echo "API ключи (опционально): ~/.hush_env"

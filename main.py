@@ -32,7 +32,7 @@ import overlay
 
 # ── История транскрипций (долгосрочная, сохраняется в файл) ──────────────────
 
-HISTORY_FILE = os.path.expanduser("~/.config/voice-input/history.json")
+HISTORY_FILE = os.path.expanduser("~/.config/hush/history.json")
 _history     = []   # [{"id": str, "created_at": str, "short": str, "full": str}, ...]
 MAX_HISTORY  = 50
 
@@ -441,17 +441,33 @@ def _commit_and_paste(text: str):
     AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(on_main)
 
     def _do():
-        time.sleep(0.35)
-        _activate_prev_app()   # bundle-ID backup in case activateWithOptions_ insufficient
-        time.sleep(0.25)
-        subprocess.run(["pbcopy"], input=text.encode("utf-8"), check=False)
-        time.sleep(0.1)
-        # Universal paste via pynput HID tap — works in any app, no special cases
-        _kbd.press(kb.Key.cmd)
-        _kbd.tap('v')
-        _kbd.release(kb.Key.cmd)
-        time.sleep(0.05)
-        _kbd.tap(' ')   # trailing space so next dictation joins cleanly
+        try:
+            time.sleep(0.35)
+            _activate_prev_app()   # bundle-ID backup in case activateWithOptions_ insufficient
+            time.sleep(0.35)
+            subprocess.run(["pbcopy"], input=text.encode("utf-8"), check=False)
+            time.sleep(0.15)
+
+            # Check Accessibility trust before injecting keystrokes
+            try:
+                import ApplicationServices as _AS
+                ax_ok = _AS.AXIsProcessTrustedWithOptions({"AXTrustedCheckOptionPrompt": False})
+            except Exception:
+                ax_ok = True  # assume ok if check fails
+            _dbg(f"paste: AX trusted={ax_ok}, firing Cmd+V")
+
+            if ax_ok:
+                _kbd.press(kb.Key.cmd)
+                _kbd.tap('v')
+                _kbd.release(kb.Key.cmd)
+                _dbg("paste: pynput Cmd+V done")
+                time.sleep(0.05)
+                _kbd.tap(' ')   # trailing space so next dictation joins cleanly
+            else:
+                _dbg("paste: SKIPPED — no Accessibility permission. Text is in clipboard, use Cmd+V manually.")
+                print("⚠️  Нет Accessibility разрешения. Текст в буфере — вставьте вручную Cmd+V.")
+        except Exception as e:
+            _dbg(f"paste ERROR: {e}")
     threading.Thread(target=_do, daemon=True).start()
 
 def _on_history_load(item_id: str):
@@ -699,6 +715,52 @@ def _setup_app_observer():
 
 # ── Запуск ────────────────────────────────────────────────────────────────────
 
+def _check_accessibility():
+    """Check AX permission and prompt the user if missing. pynput needs this."""
+    try:
+        import ApplicationServices
+        trusted = ApplicationServices.AXIsProcessTrustedWithOptions(
+            {"AXTrustedCheckOptionPrompt": True}
+        )
+        _dbg(f"AX trusted: {trusted}")
+        if not trusted:
+            print("⚠️  Нет разрешения Accessibility. Откройте Системные настройки → "
+                  "Конфиденциальность → Accessibility и добавьте HUSH (или python3).")
+    except Exception as e:
+        _dbg(f"AX check error: {e}")
+
+
+class _AppDelegate(AppKit.NSObject):
+    """Minimal NSApplicationDelegate so macOS runs applicationDidFinishLaunching:
+    before the Scene lifecycle tries to set up windows. Without this delegate,
+    NSSceneStatusItem gets a zero-height window when launched via `open .app`."""
+
+    def applicationDidFinishLaunching_(self, notification):
+        _check_accessibility()
+        _load_history()
+        overlay.init(
+            _on_scenario,
+            on_history_callback=_get_history,
+            on_paste_callback=_on_paste,
+            on_copy_callback=_on_copy,
+            on_history_delete_callback=_on_delete_history,
+            on_history_load_callback=_on_history_load,
+            on_history_merge_callback=_on_merge_history,
+            on_add_history_callback=_add_to_history,
+            on_update_session_callback=_upsert_session,
+            on_session_end_callback=_on_session_end,
+        )
+        overlay.set_undo_scenario_callback(_undo_last_scenario)
+        _setup_hotkey()
+        _setup_keepalive()
+        _setup_app_observer()
+        transcriber.warm_up()
+        print("Voice Input запущен. Right ⌥ — запись, Right ⌥ × 2 — история. Ctrl+C — выход.")
+
+    def applicationShouldTerminateAfterLastWindowClosed_(self, sender):
+        return False
+
+
 def main():
     app = AppKit.NSApplication.sharedApplication()
     app.setActivationPolicy_(AppKit.NSApplicationActivationPolicyAccessory)
@@ -706,27 +768,9 @@ def main():
     signal.signal(signal.SIGINT,  lambda *_: app.terminate_(None))
     signal.signal(signal.SIGTERM, lambda *_: app.terminate_(None))
 
-    _load_history()
+    delegate = _AppDelegate.alloc().init()
+    app.setDelegate_(delegate)
 
-    overlay.init(
-        _on_scenario,
-        on_history_callback=_get_history,
-        on_paste_callback=_on_paste,
-        on_copy_callback=_on_copy,
-        on_history_delete_callback=_on_delete_history,
-        on_history_load_callback=_on_history_load,
-        on_history_merge_callback=_on_merge_history,
-        on_add_history_callback=_add_to_history,
-        on_update_session_callback=_upsert_session,
-        on_session_end_callback=_on_session_end,
-    )
-    overlay.set_undo_scenario_callback(_undo_last_scenario)
-    _setup_hotkey()
-    _setup_keepalive()
-    _setup_app_observer()
-
-    transcriber.warm_up()  # compile CoreML model cache in background
-    print("Voice Input запущен. Right ⌥ — запись, Right ⌥ × 2 — история. Ctrl+C — выход.")
     app.run()
 
 if __name__ == "__main__":

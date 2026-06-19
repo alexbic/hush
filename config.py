@@ -30,6 +30,6 @@ OPENAI_API_KEY    = os.environ.get("OPENAI_API_KEY",    "")
 GLM_API_KEY       = os.environ.get("GLM_API_KEY",       "")
 N8N_WEBHOOK_URL   = os.environ.get("VOICE_N8N_WEBHOOK", "")
 
-AUDIO_TMP = "/tmp/voice_input.wav"
+AUDIO_TMP = "/tmp/hush_audio.wav"
 SAMPLE_RATE = 16000
 HOTKEY = "<alt_r>"  # Right Option key

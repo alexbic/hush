@@ -17,7 +17,7 @@ import markdown as _markdown
 
 # ── Scenarios ─────────────────────────────────────────────────────────────────
 
-SCENARIOS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scenarios.json")
+SCENARIOS_FILE = os.path.expanduser("~/.config/hush/scenarios.json")
 
 def _html_to_md(html: str) -> str:
     h = _html2text.HTML2Text()
@@ -201,7 +201,7 @@ def _model_available(model_str: str) -> bool:
 
 # ── Settings persistence ───────────────────────────────────────────────────────
 
-SETTINGS_FILE = os.path.expanduser("~/.config/voice-input/settings.json")
+SETTINGS_FILE = os.path.expanduser("~/.config/hush/settings.json")
 
 def _load_settings() -> dict:
     try:
@@ -2725,6 +2725,10 @@ class BtnTarget(AppKit.NSObject):
         """Status-bar menu: quit the application."""
         AppKit.NSApp.terminate_(None)
 
+    def retryStatusVisible_(self, timer):
+        """No-op: kept for compatibility; status bar fix is in C launcher."""
+        pass
+
     def cfgTheme_(self, sender):
         themes = [tm[0] for tm in _THEME_META]
         tag = int(sender.tag())
@@ -4155,6 +4159,12 @@ def _setup_status_bar():
     quit_item.setTarget_(_btn_t)
     menu.addItem_(quit_item)
     _status_bar_item.setMenu_(menu)
+    # macOS 14+: NSStatusItem.visible persists and may default to hidden in some contexts
+    try:
+        _status_bar_item.setVisible_(True)
+    except Exception:
+        pass
+    pass
 
 
 def _show_about_view():
