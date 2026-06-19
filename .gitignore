@@ -1,0 +1,26 @@
+# Large external dependencies (download separately)
+models/
+parakeet-cli/
+
+# Generated build artifacts
+HUSH.app/
+hush.icns
+hush_icon_1024.png
+dist/
+build/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Runtime / temp
+*.wav
+*.log
+
+# Environment / secrets
+.env
+.hush_env
+
+# macOS
+.DS_Store
