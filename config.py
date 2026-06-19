@@ -7,7 +7,7 @@ _APP_DIR  = _RSRC if _RSRC else os.path.dirname(os.path.abspath(__file__))
 
 # parakeet-cli: look next to source files first, then ~/.local/bin
 _local_parakeet = os.path.join(_APP_DIR, "parakeet-cli")
-PARAKEET_CLI = _local_parakeet if os.path.exists(_local_parakeet) \
+PARAKEET_CLI = _local_parakeet if os.path.isfile(_local_parakeet) \
                else os.path.expanduser("~/.local/bin/parakeet-cli")
 
 MODEL_DIR = os.path.join(_APP_DIR, "models", "parakeet-tdt-0.6b-v3-coreml")
