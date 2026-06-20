@@ -240,7 +240,7 @@ _active_scenario_idx = None   # index of currently applied scenario (for undo)
 _state = {
     "stream":      None,
     "hotkey_held": False,
-    "silent":      False,   # True when session is in silent mode
+    "silent":      True,    # True = silent mode (default); False = full mode (Shift+⌥)
     "cancelled":   False,   # set to abort in-flight operations
 }
 
@@ -261,8 +261,10 @@ _chunk_lock    = threading.Lock()
 # Grace period: how long to wait after last activity before finalizing session
 FINALIZE_GRACE_S = 4.0
 
-_last_release_time = 0.0
-DOUBLE_TAP_WINDOW  = 0.40
+# Activation:
+#   Right ⌥ alone    → silent mode (record while held, transcribe on release)
+#   Shift + Right ⌥  → open full-mode window (standby); then ⌥ alone records there
+_full_mode_standby = False   # True after Shift+⌥ opened the full-mode window
 
 _kbd = kb.Controller()
 
@@ -285,11 +287,12 @@ def _session_dir_cleanup():
         _session_dir = None
 
 
-def _session_reset():
-    """Clear state for a fresh session."""
+def _session_reset(clear_accum: bool = True):
+    """Clear state for a fresh session. Set clear_accum=False to keep blocks in full mode."""
     global _session_dir, _chunk_counter
-    with _accum_lock:
-        _accum_texts.clear()
+    if clear_accum:
+        with _accum_lock:
+            _accum_texts.clear()
     _state["cancelled"] = False
     while not _audio_queue.empty():
         try: _audio_queue.get_nowait()
@@ -300,6 +303,8 @@ def _session_reset():
 
 def _cancel_all():
     """Abort everything: recording, transcription queue, accumulated text."""
+    global _full_mode_standby
+    _full_mode_standby = False
     _dbg("_cancel_all()")
     _state["cancelled"] = True
     _state["stream"]    = None
@@ -359,10 +364,15 @@ def _transcription_worker():
                     continue   # item added between timeout and here
                 if not _accum_texts:
                     # Nothing accumulated — close overlay and exit cleanly
-                    AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(overlay.hide)
-                    AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(overlay.hide_silent)
+                    if _state.get("silent"):
+                        AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(overlay.hide)
+                        AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(overlay.hide_silent)
                     return
-                # We have accumulated text — show countdown then finalize
+                # Full mode: don't auto-finalize. Worker exits; _accum_texts stays for next chunk.
+                # User pastes manually via the [↵] button in the window.
+                if not _state.get("silent"):
+                    return
+                # Silent mode: show countdown then finalize
                 if not _countdown_shown:
                     _countdown_shown = True
                     _in_countdown = True
@@ -371,8 +381,6 @@ def _transcription_worker():
                 if time.time() - _last_activity < FINALIZE_GRACE_S:
                     continue   # still within grace window
                 # Grace period expired → finalize, then always exit.
-                # Each session gets its own worker; staying alive risks picking up
-                # the next session's queue items under the current session's state.
                 _countdown_shown = False
                 _in_countdown = False
                 _session_finalize()
@@ -399,16 +407,17 @@ def _transcription_worker():
             if text:
                 with _accum_lock:
                     _accum_texts.append(text)
-                accum = "\n\n".join(_accum_texts)
                 if _state.get("silent"):
+                    accum = "\n\n".join(_accum_texts)
                     AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(
                         lambda t=accum: overlay.update_silent_accumulation(t))
                     if not _state.get("stream"):
                         AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(
                             overlay.show_recognizing_silent)
                 else:
+                    # Full mode: pass only the NEW chunk — show_result() appends it
                     AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(
-                        lambda t=accum: overlay.show_result(t))
+                        lambda t=text: overlay.show_result(t))
     finally:
         _worker_alive = False
 
@@ -488,8 +497,12 @@ def _force_finalize_now():
     _session_finalize()
 
 
-def _on_hotkey_press():
-    global _prev_app, _active_scenario_idx
+def _on_hotkey_press(full_mode: bool = False):
+    """Called when Right ⌥ is pressed.
+    full_mode=True  (Shift held) → open full-mode window without starting recording.
+    full_mode=False → silent or continue current session mode.
+    """
+    global _prev_app, _active_scenario_idx, _full_mode_standby
     if _state["hotkey_held"]:
         return
     if overlay.is_editing_scenario():
@@ -502,46 +515,50 @@ def _on_hotkey_press():
         overlay.set_prev_app_icon(_prev_app)
     _active_scenario_idx = None
 
-    is_double = time.time() - _last_release_time < DOUBLE_TAP_WINDOW
-    active    = _is_session_active()
+    active = _is_session_active()
 
-    # During LLM processing: only double-tap is allowed — triggers interrupt (paste raw)
+    # During LLM processing: any press triggers interrupt (paste raw immediately)
     if _processing_locked:
-        if is_double:
-            fn = overlay.get_silent_interrupt_fn()
-            if fn:
-                threading.Thread(target=fn, daemon=True, name="hush-dbl-interrupt").start()
-        return
-
-    if is_double:
-        _dbg("DOUBLE_TAP fired")
-        if active:
-            if _in_countdown:
-                # Countdown active → double-tap = force immediate paste, not cancel
-                threading.Thread(target=_force_finalize_now, daemon=True,
-                                 name="hush-force-fin").start()
-            else:
-                _cancel_all()
-        else:
-            # Open full overlay mode
-            _session_reset()
-            _state["silent"] = False
-            overlay._silent_mode = False
-            overlay.show_recording()
-            _state["stream"] = recorder.start(on_chunk=overlay.update_waveform)
+        fn = overlay.get_silent_interrupt_fn()
+        if fn:
+            threading.Thread(target=fn, daemon=True, name="hush-interrupt").start()
         return
 
     if _state.get("stream"):
         return  # already recording
 
-    if not active:
-        # Fresh session → silent mode
+    if full_mode and not active and not _full_mode_standby:
+        # Shift+⌥: open full-mode window (standby) — do NOT start recording.
+        # Release of this ⌥ tap will be ignored (stream=None → _on_hotkey_release exits early).
+        # Next ⌥ press (no Shift needed) will record inside the full-mode window.
+        _session_reset()
+        _full_mode_standby = True
+        _state["silent"] = False
+        overlay._silent_mode = False
+        overlay.show_recording()
+        return  # no recorder.start()
+
+    if _full_mode_standby:
+        # ⌥ pressed while full-mode window is open → start recording there
+        _full_mode_standby = False
+        _session_reset()
+        _state["silent"] = False
+        overlay._silent_mode = False
+        overlay.show_recording()
+    elif not active and _state.get("silent", True):
+        # Truly fresh with no prior mode → silent mode
         _session_reset()
         _state["silent"] = True
         overlay._silent_mode = True
         overlay.show_recording_silent(_prev_app)
+    elif not active and not _state.get("silent", True):
+        # Full-mode: recording next chunk — keep existing _accum_texts (soft reset only)
+        _session_reset(clear_accum=False)
+        _state["silent"] = False
+        overlay._silent_mode = False
+        overlay.show_recording()
     else:
-        # Resume recording in current session
+        # Resume recording in current active session (preserve mode)
         if _state.get("silent"):
             overlay.show_recording_silent(_prev_app)
         else:
@@ -551,11 +568,9 @@ def _on_hotkey_press():
 
 
 def _on_hotkey_release():
-    global _last_release_time
     if not _state["hotkey_held"]:
         return
     _state["hotkey_held"] = False
-    _last_release_time = time.time()
 
     stream = _state.get("stream")
     if not stream:
@@ -886,6 +901,7 @@ def _on_copy(mode: str = "raw"):
 
 def _on_paste(mode: str = "raw"):
     """[↵] / Shift+Enter → plain paste (strip MD); Alt+Shift+Enter → paste MD as-is."""
+    global _full_mode_standby
     text = overlay.get_text()
     if not text:
         return
@@ -898,28 +914,41 @@ def _on_paste(mode: str = "raw"):
         if not (current and current["full"] == text):
             _add_to_history(text, parent_id=_current_hist_id)
 
+    # After paste from full mode: reset to silent mode for next session
+    if not _state.get("silent"):
+        _state["silent"] = True
+        _full_mode_standby = False
+        with _accum_lock:
+            _accum_texts.clear()
+
     if mode == "md":
-        # Alt+Shift+Enter — paste MD text as-is (preserves markers for rich editors)
-        subprocess.run(["pbcopy"], input=text.encode("utf-8"), check=False)
-        _commit_and_paste(text)
+        text_to_paste = text
     else:
-        # Shift+Enter — strip MD markers, paste plain text
         text_to_paste = _strip_markdown(text)
-        subprocess.run(["pbcopy"], input=text_to_paste.encode("utf-8"), check=False)
-        _commit_and_paste(text_to_paste)
+
+    subprocess.run(["pbcopy"], input=text_to_paste.encode("utf-8"), check=False)
+    # _commit_and_paste blocks with sleep — must run off main thread to avoid UI freeze
+    threading.Thread(target=_commit_and_paste, args=(text_to_paste,),
+                     daemon=True, name="hush-paste").start()
 
 # ── Хоткей ────────────────────────────────────────────────────────────────────
 
 def _setup_hotkey():
     pressed = set()
+    shift_keys = {kb.Key.shift, kb.Key.shift_r, kb.Key.shift_l}
 
     def on_press(key):
-        if key == kb.Key.alt_r and kb.Key.alt_r not in pressed:
+        if key in shift_keys:
+            pressed.add(key)
+        elif key == kb.Key.alt_r and kb.Key.alt_r not in pressed:
             pressed.add(kb.Key.alt_r)
-            _on_hotkey_press()
+            shift_held = bool(pressed & shift_keys)
+            _on_hotkey_press(full_mode=shift_held)
 
     def on_release(key):
-        if key == kb.Key.alt_r and kb.Key.alt_r in pressed:
+        if key in shift_keys:
+            pressed.discard(key)
+        elif key == kb.Key.alt_r and kb.Key.alt_r in pressed:
             pressed.discard(kb.Key.alt_r)
             _on_hotkey_release()
 

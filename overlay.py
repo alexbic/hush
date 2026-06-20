@@ -6140,6 +6140,11 @@ def is_idle() -> bool:
     return _st.get("mode", "idle") == "idle"
 
 
+def is_any_session_visible() -> bool:
+    """True if silent strip OR full-mode recording card is currently showing."""
+    return _silent_win is not None or not is_idle()
+
+
 def get_silent_scenario():
     """Return the scenario dict configured for silent auto-paste, or None."""
     for sc in _st.get("scenarios", []):
