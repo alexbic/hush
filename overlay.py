@@ -773,20 +773,21 @@ def _apply_theme_to_all_windows():
             history = on_hist()
             _show_hist_panel(history)
 
-    # TerminalView content views of other panels — drawRect_ reads C_* globals
-    for key in ("_cfg_panel", "_hist_panel", "_sc_editor_panel", "_about_panel"):
-        p = globals().get(key)
-        if p and hasattr(p, "isVisible") and p.isVisible():
-            cv = p.contentView()
-            if cv:
-                cv.setNeedsDisplay_(True)
-
-    # Silent mode windows — _SilentBgView and waveform read C_* globals in drawRect_
+    # Recursively redraw all subviews — needed for panels with deep view hierarchies
     def _redisplay_tree(v):
         v.setNeedsDisplay_(True)
         for sub in list(v.subviews()):
             _redisplay_tree(sub)
 
+    # All secondary panels — drawRect_ reads C_* globals; recurse for nested views
+    for key in ("_cfg_panel", "_hist_panel", "_sc_editor_panel", "_about_panel"):
+        p = globals().get(key)
+        if p and hasattr(p, "isVisible") and p.isVisible():
+            cv = p.contentView()
+            if cv:
+                _redisplay_tree(cv)
+
+    # Silent mode windows
     for key in ("_silent_win",):
         sw = globals().get(key)
         if sw and hasattr(sw, "contentView"):
@@ -1104,15 +1105,17 @@ class _WalletView(AppKit.NSView):
         H  = float(self._VH)
         full = AppKit.NSMakeRect(0, 0, W, H)
 
-        # ── Layer 1: white bg — only this animates ────────────────────────────
-        bg_y = H * self._BOT_CROP
-        bg_h = H * (1.0 - self._TOP_CROP - self._BOT_CROP)
-        bg_w = self._BG_W_CLOSED + (self._BG_W_OPEN - self._BG_W_CLOSED) * f
-        bg_x = W - bg_w   # right-aligned
-        bg_path = AppKit.NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
-            AppKit.NSMakeRect(bg_x, bg_y, bg_w, bg_h), 8, 8)
-        AppKit.NSColor.whiteColor().setFill()
-        bg_path.fill()
+        # ── Layer 1: white bg — only on dark themes, only this animates ─────────
+        bg_lum = (C_BG[0] + C_BG[1] + C_BG[2]) / 3
+        if bg_lum < 0.5:   # dark theme — wallet needs white backdrop for contrast
+            bg_y = H * self._BOT_CROP
+            bg_h = H * (1.0 - self._TOP_CROP - self._BOT_CROP)
+            bg_w = self._BG_W_CLOSED + (self._BG_W_OPEN - self._BG_W_CLOSED) * f
+            bg_x = W - bg_w   # right-aligned
+            bg_path = AppKit.NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
+                AppKit.NSMakeRect(bg_x, bg_y, bg_w, bg_h), 8, 8)
+            AppKit.NSColor.whiteColor().setFill()
+            bg_path.fill()
 
         # ── Layer 2: closed wallet — static, full view, fades out ────────────
         if self._img_close:
@@ -4347,7 +4350,7 @@ def _show_about_view():
     # ── Second row from bottom: github link (centered) ────────────────────────
     GH_Y = PAD_B + ROW_H + GAP
     GH_W = 200
-    gh_btn = _mklinkbtn("[ github.com/alexbic ]", color=C_GREEN_DIM, size=10)
+    gh_btn = _mklinkbtn("[ github.com/alexbic ]", color=C_TEXT, size=10)
     gh_btn.setFrame_(AppKit.NSMakeRect((AW - GH_W) / 2, GH_Y, GH_W, ROW_H))
     gh_btn.setAutoresizingMask_(AppKit.NSViewMinXMargin | AppKit.NSViewMaxXMargin | AppKit.NSViewMaxYMargin)
     gh_btn.setTarget_(_btn_t)
@@ -4357,7 +4360,7 @@ def _show_about_view():
     # ── Third row: copyright + author (centered) → link to site ──────────────
     CR_Y = GH_Y + ROW_H + GAP
     CR_W = 320
-    cr_btn = _mklinkbtn("© 2026 Alexander Bikmukhametov", color=C_IDLE, size=10)
+    cr_btn = _mklinkbtn("© 2026 Alexander Bikmukhametov", color=C_GREEN, size=10)
     cr_btn.setFrame_(AppKit.NSMakeRect((AW - CR_W) / 2, CR_Y, CR_W, ROW_H))
     cr_btn.setAutoresizingMask_(AppKit.NSViewMinXMargin | AppKit.NSViewMaxXMargin | AppKit.NSViewMaxYMargin)
     cr_btn.setTarget_(_btn_t)
