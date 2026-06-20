@@ -529,26 +529,36 @@ _hist_ctrl = None  # strong ref to _HistCtrl — prevents GC while panel is open
 
 # ── Waveform ──────────────────────────────────────────────────────────────────
 
-_wf_lock = threading.Lock()
-_WF_N    = 30
-_wf_bars = [0.0] * _WF_N
+_wf_lock  = threading.Lock()
+_WF_N     = 24
+_wf_bars  = [0.0] * _WF_N   # current display height (smoothed)
+_wf_peaks = [0.0] * _WF_N   # peak-hold per bar
+_wf_t     = 0.0              # idle animation phase (incremented by timer)
 
 def update_waveform(chunk_float32):
-    """Called from recorder callback with raw audio chunk."""
-    n   = _WF_N
-    sz  = max(1, len(chunk_float32) // n)
+    """Called from audio callback with raw float32 PCM."""
+    n  = _WF_N
+    sz = max(1, len(chunk_float32) // n)
     new = []
     for i in range(n):
         seg = chunk_float32[i*sz : (i+1)*sz]
-        v   = min(1.0, (max(abs(x) for x in seg) if len(seg) > 0 else 0.0) * 8.0)
+        v   = min(1.0, (float(max(abs(x) for x in seg)) if len(seg) > 0 else 0.0) * 32.0)
         new.append(v)
     with _wf_lock:
-        # Smooth decay: take max of new value and old*0.55
-        _wf_bars[:] = [max(nv, ov * 0.55) for nv, ov in zip(new, _wf_bars)]
+        for i, nv in enumerate(new):
+            ov = _wf_bars[i]
+            # Fast attack, slow gravity decay
+            _wf_bars[i]  = nv if nv > ov else ov * 0.60
+            # Peak hold: jump up instantly, fall slowly
+            if nv >= _wf_peaks[i]:
+                _wf_peaks[i] = nv
+            else:
+                _wf_peaks[i] = max(0.0, _wf_peaks[i] - 0.018)
 
 def _clear_waveform():
     with _wf_lock:
-        _wf_bars[:] = [0.0] * _WF_N
+        _wf_bars[:]  = [0.0] * _WF_N
+        _wf_peaks[:] = [0.0] * _WF_N
 
 # ── Sound pool ────────────────────────────────────────────────────────────────
 
@@ -1114,48 +1124,74 @@ class _WalletView(AppKit.NSView):
                 full, AppKit.NSZeroRect, AppKit.NSCompositeSourceOver, f)
 
 
+def _draw_wf_bars(bars, peaks, bounds, bar_w=3.0, gap=2.5):
+    """Draw equalizer bars with peak-hold dots and idle breathing animation.
+    bar_w and gap are fixed in points; number of bars is computed from width."""
+    b     = bounds
+    w, h  = b.size.width, b.size.height
+    n_src = len(bars)
+    # Fit as many bars as possible into available width
+    n     = max(4, int((w + gap) / (bar_w + gap)))
+    r     = bar_w / 2
+
+    # Total signal energy — drives idle vs active look
+    energy = sum(bars) / max(1, n_src)
+    active = energy > 0.015
+
+    total_w = n * bar_w + (n - 1) * gap
+    x0      = (w - total_w) / 2   # center the group
+
+    for i in range(n):
+        src_i = int(i * n_src / n)
+        amp   = bars[src_i]
+        peak  = peaks[src_i] if peaks else 0.0
+
+        if active:
+            bh    = max(2.0, amp * h * 0.90)
+            color = C_BAR_ON if amp > 0.05 else C_BAR_OFF
+        else:
+            # Idle breathing: gentle sine wave rippling across bars
+            phase = _wf_t * 2.5 + i * 0.55
+            idle  = 0.10 + 0.08 * math.sin(phase)
+            bh    = max(2.0, idle * h)
+            color = C_BAR_OFF
+
+        x = x0 + i * (bar_w + gap)
+        y = (h - bh) / 2
+        p = AppKit.NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
+            AppKit.NSMakeRect(x, y, bar_w, bh), r, r)
+        color.set()
+        p.fill()
+
+        # Peak-hold dot: 2px bright mark above the bar
+        if active and peak > 0.08:
+            dot_h = max(1.5, bar_w * 0.5)
+            dot_y = (h - peak * h * 0.90) / 2 - dot_h - 1
+            if dot_y > 0:
+                dp = AppKit.NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
+                    AppKit.NSMakeRect(x, dot_y, bar_w, dot_h), r * 0.5, r * 0.5)
+                C_BAR_ON.colorWithAlphaComponent_(0.85).set()
+                dp.fill()
+
+
 class WaveformView(AppKit.NSView):
-    """Animated equalizer bars."""
+    """Reactive equalizer bars with peak-hold and idle breathing."""
 
     def drawRect_(self, rect):
         with _wf_lock:
-            bars = list(_wf_bars)
-        b     = self.bounds()
-        n     = len(bars)
-        slot  = b.size.width / n
-        bar_w = max(1.5, slot * 0.38)
-        for i, amp in enumerate(bars):
-            x  = i * slot + (slot - bar_w) / 2
-            bh = max(2.0, amp * b.size.height)
-            y  = (b.size.height - bh) / 2
-            rc = AppKit.NSMakeRect(x, y, bar_w, bh)
-            p  = AppKit.NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
-                rc, bar_w / 2, bar_w / 2)
-            (C_BAR_ON if amp > 0.04 else C_BAR_OFF).set()
-            p.fill()
+            bars  = list(_wf_bars)
+            peaks = list(_wf_peaks)
+        _draw_wf_bars(bars, peaks, self.bounds(), bar_w=3.0, gap=2.5)
 
 
 class _SilentWaveformView(AppKit.NSView):
-    """Compact equalizer for silent strip — fewer, wider bars sampled from _wf_bars."""
-    _N = 16   # number of bars to display
+    """Compact equalizer for silent strip — same bar size, fewer bars fit."""
 
     def drawRect_(self, rect):
         with _wf_lock:
-            src = list(_wf_bars)
-        b     = self.bounds()
-        n_src = len(src)
-        n     = self._N
-        slot  = b.size.width / n
-        bar_w = max(3.0, slot * 0.52)
-        for i in range(n):
-            amp = src[int(i * n_src / n)]
-            bh  = max(2.0, amp * b.size.height * 0.88)
-            x   = i * slot + (slot - bar_w) / 2
-            y   = (b.size.height - bh) / 2
-            p   = AppKit.NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
-                AppKit.NSMakeRect(x, y, bar_w, bh), bar_w / 2, bar_w / 2)
-            (C_BAR_ON if amp > 0.04 else C_BAR_OFF).set()
-            p.fill()
+            bars  = list(_wf_bars)
+            peaks = list(_wf_peaks)
+        _draw_wf_bars(bars, peaks, self.bounds(), bar_w=3.5, gap=2.5)
 
 
 # Module-level equalizer animation state
@@ -1181,38 +1217,41 @@ class EqBarsView(AppKit.NSView):
         b    = self.bounds()
         w, h = b.size.width, b.size.height
         col  = self._col if self._col else _rgba(1.0, 0.3, 0.7, 1.0)
-        bar_w = 2.5
-        gap_t = 3.5
-        n = max(6, int((w + gap_t) / (bar_w + gap_t)))
-        gap = (w - n * bar_w) / max(1, n - 1)
-        PI2 = math.pi * 2
+        bar_w = 3.0
+        gap   = 2.5
+        n     = max(4, int((w + gap) / (bar_w + gap)))
+        total = n * bar_w + (n - 1) * gap
+        x0    = (w - total) / 2   # center group
+        PI2   = math.pi * 2
 
         for i in range(n):
             fi = i / max(1, n - 1)   # 0.0 → 1.0 across bars
 
             if self._mode == 0:
-                # Gaussian peak slides left → right → left (accordion).
-                # _eq_t: 0→1→0, peak_pos: 0.12→0.88→0.12
+                # Gaussian peak slides left → right → left
                 peak_pos = 0.12 + 0.76 * _eq_t
-                sigma    = 0.20
+                sigma    = 0.18
                 dist     = fi - peak_pos
-                h_factor = 0.05 + 0.95 * math.exp(-(dist * dist) / (2 * sigma * sigma))
-                alpha    = 0.30 + 0.70 * h_factor
+                h_factor = 0.06 + 0.94 * math.exp(-(dist * dist) / (2 * sigma * sigma))
+                alpha    = 0.25 + 0.75 * h_factor
             else:
-                # Gaussian envelope fixed at center; ripple spreads outward from center.
-                center = 0.5
-                dc = abs(fi - center) * 2.0          # 0=center, 1=edge
-                sigma_env = 0.60
-                envelope = math.exp(-(dc * dc) / (2 * sigma_env * sigma_env))
-                ripple   = 0.5 + 0.5 * math.sin(PI2 * (dc * 1.5 - _eq_pulse_t))
-                h_factor = max(0.04, envelope * (0.18 + 0.82 * ripple))
-                alpha    = 0.25 + 0.75 * envelope
+                # Ripple spreads outward from center
+                center    = 0.5
+                dc        = abs(fi - center) * 2.0
+                sigma_env = 0.65
+                envelope  = math.exp(-(dc * dc) / (2 * sigma_env * sigma_env))
+                ripple    = 0.5 + 0.5 * math.sin(PI2 * (dc * 1.5 - _eq_pulse_t))
+                h_factor  = max(0.05, envelope * (0.20 + 0.80 * ripple))
+                alpha     = 0.20 + 0.80 * envelope
 
-            bar_h = max(1.0, h_factor * h)
-            y = (h - bar_h) / 2          # vertically centered
-            x = i * (bar_w + gap)
+            bar_h = max(2.0, h_factor * h)
+            x     = x0 + i * (bar_w + gap)
+            y     = (h - bar_h) / 2
+            r     = bar_w / 2
+            p     = AppKit.NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
+                AppKit.NSMakeRect(x, y, bar_w, bar_h), r, r)
             col.colorWithAlphaComponent_(alpha).set()
-            AppKit.NSBezierPath.fillRect_(AppKit.NSMakeRect(x, y, bar_w, bar_h))
+            p.fill()
 
 
 class _SilentBgView(AppKit.NSView):
@@ -3750,12 +3789,12 @@ def _end_processing():
     if _cfg_hdr_btn: _cfg_hdr_btn.setHidden_(False)
     if _proc_sc_lbl: _proc_sc_lbl.setHidden_(True)
 
-    # Restore waveform; EQ back to its rest slot (centered)
+    # Restore waveform; recompute adaptive EQ width
     if _wf:
         _wf.setHidden_(False)
     if _proc_eq_v:
-        _proc_eq_v.setFrame_(AppKit.NSMakeRect(EQ_CTR_X, HDR_ITEM_Y, EQ_CTR_W, HDR_ITEM_H))
         _proc_eq_v.setHidden_(True)
+    _layout_header_wf()
 
     _stop_timer()
 
@@ -3782,25 +3821,35 @@ def set_undo_scenario_callback(fn):
     _on_undo_sc_cb = fn
 
 
-_HDR_GAP = 8          # symmetric gap: between name and WF, and between WF and right buttons
+_HDR_GAP = 8          # gap between app name and EQ, and between EQ and gear icon
 
 def _layout_header_wf():
-    """Measure app name width and reposition label. Waveform stays at fixed centered position.
+    """Measure app name width, position label, then stretch EQ to fill remaining space.
     Must run on main thread."""
-    ICON_END = STS_X + 22 + 4    # icon right edge (10+22) + inner gap = 36
-    font     = _mono(11)
-    d        = {AppKit.NSFontAttributeName: font}
-    name     = _prev_app_name or ""
-    raw_w    = int(AppKit.NSString.stringWithString_(name).sizeWithAttributes_(d).width) if name else 0
-    name_w   = raw_w + 6          # small padding around text
+    ICON_END  = STS_X + 22 + 4    # icon right edge + inner gap = 36
+    RIGHT_END = CFG_H_X - _HDR_GAP  # left edge of gear icon minus gap
 
-    # Clamp: name must not overlap the fixed EQ start
-    max_name = EQ_CTR_X - _HDR_GAP - ICON_END
+    font  = _mono(11)
+    d     = {AppKit.NSFontAttributeName: font}
+    name  = _prev_app_name or ""
+    raw_w = int(AppKit.NSString.stringWithString_(name).sizeWithAttributes_(d).width) if name else 0
+    name_w = raw_w + 6
+
+    # Name can take up to half the available space
+    max_name = (RIGHT_END - ICON_END - _HDR_GAP) // 2
     name_w   = max(0, min(name_w, max_name))
     name_end = ICON_END + name_w
 
     if _proc_app_lbl:
         _proc_app_lbl.setFrame_(AppKit.NSMakeRect(ICON_END, HDR_ITEM_Y - 2, name_w, HDR_ITEM_H))
+
+    # EQ fills all remaining space: from name_end+gap to gear icon
+    eq_x = name_end + _HDR_GAP
+    eq_w = max(40, RIGHT_END - eq_x)
+    if _wf:
+        _wf.setFrame_(AppKit.NSMakeRect(eq_x, HDR_ITEM_Y, eq_w, HDR_ITEM_H))
+    if _proc_eq_v:
+        _proc_eq_v.setFrame_(AppKit.NSMakeRect(eq_x, HDR_ITEM_Y, eq_w, HDR_ITEM_H))
 
     return name_end
 
@@ -3829,7 +3878,7 @@ def _hide_target_app_header():
         _lbl.setHidden_(False)
     # Reset waveform to fixed centered position
     if _wf:
-        _wf.setFrame_(AppKit.NSMakeRect(EQ_CTR_X, HDR_ITEM_Y, EQ_CTR_W, HDR_ITEM_H))
+        _layout_header_wf()
 
 
 def set_prev_app_icon(app):
@@ -5478,30 +5527,36 @@ def _build_silent_header(show_icon: bool):
     else:
         name_x = WIN_SIDE + PAD
 
-    # App name label
-    eq_x   = WIN_SIDE + CARD_W - PAD - ANIM_W
-    name_w = eq_x - name_x - GAP
+    # App name label — measure actual text width, then EQ takes the rest
     app_name = ""
     if _silent_target_app:
         try:
             app_name = str(_silent_target_app.localizedName() or "")
         except Exception:
             pass
+    font_d   = {AppKit.NSFontAttributeName: _mono(10)}
+    raw_name_w = int(AppKit.NSString.stringWithString_(app_name).sizeWithAttributes_(font_d).width) if app_name else 0
+    right_edge = WIN_SIDE + CARD_W - PAD   # right boundary of card content
+    max_name_w = (right_edge - name_x - GAP) // 2
+    name_w     = min(raw_name_w + 4, max_name_w)
+    eq_x       = name_x + name_w + GAP
+    eq_w       = right_edge - eq_x
+
     NAME_LBL_H  = 14
     name_lbl_y  = WIN_SIDE + (HEADER_H - NAME_LBL_H) // 2
     name_lbl = _mklabel(app_name, size=10, color=C_TEXT)
     name_lbl.setFrame_(AppKit.NSMakeRect(name_x, name_lbl_y, name_w, NAME_LBL_H))
     cv.addSubview_(name_lbl)
 
-    # Waveform — shown during recording (green, audio-driven)
+    # Waveform — fills all space right of app name
     wv = _SilentWaveformView.alloc().initWithFrame_(
-        AppKit.NSMakeRect(eq_x, anim_y, ANIM_W, ANIM_H))
+        AppKit.NSMakeRect(eq_x, anim_y, eq_w, ANIM_H))
     cv.addSubview_(wv)
     _silent_wf = wv
 
     # EQ bars — hidden initially; shown during recognition + LLM
     ev = EqBarsView.alloc().initWithFrame_(
-        AppKit.NSMakeRect(eq_x, anim_y, ANIM_W, ANIM_H))
+        AppKit.NSMakeRect(eq_x, anim_y, eq_w, ANIM_H))
     ev.setHidden_(True)
     cv.addSubview_(ev)
     _silent_eq_v = ev
@@ -5677,24 +5732,31 @@ def _build_processing_card(raw_text: str, show_icon: bool):
     else:
         name_x = WIN_SIDE + PAD
 
-    # app name label
+    # app name label — measure text, EQ gets the rest
     app_name = ""
     if _silent_target_app:
         try:
             app_name = str(_silent_target_app.localizedName() or "")
         except Exception:
             pass
+    font_d     = {AppKit.NSFontAttributeName: _mono(10)}
+    raw_name_w = int(AppKit.NSString.stringWithString_(app_name).sizeWithAttributes_(font_d).width) if app_name else 0
+    right_edge = WIN_SIDE + CARD_W - PAD
+    max_name_w = (right_edge - name_x - GAP) // 2
+    name_lbl_w = min(raw_name_w + 4, max_name_w)
+    card_eq_x  = name_x + name_lbl_w + GAP
+    card_eq_w  = right_edge - card_eq_x
+
     name_lbl = _mklabel(app_name, size=10, color=C_TEXT)
     name_lbl.setFrame_(AppKit.NSMakeRect(
-        name_x, header_y + (HEADER_H - 14) // 2,
-        CARD_W - (name_x - WIN_SIDE) - PAD - ANIM_W - GAP, 14))
+        name_x, header_y + (HEADER_H - 14) // 2, name_lbl_w, 14))
     cv.addSubview_(name_lbl)
 
-    # EQ bars (top-right)
-    eq_x = WIN_SIDE + CARD_W - PAD - ANIM_W
+    # EQ bars — fills all space right of name
+    eq_x = card_eq_x
     eq_y = header_y + (HEADER_H - ANIM_H) // 2
     ev = EqBarsView.alloc().initWithFrame_(
-        AppKit.NSMakeRect(eq_x, eq_y, ANIM_W, ANIM_H))
+        AppKit.NSMakeRect(eq_x, eq_y, card_eq_w, ANIM_H))
     ev.setMode_(1)
     ev.setCol_(C_YEL)
     cv.addSubview_(ev)
@@ -6426,7 +6488,7 @@ def show_processing(name: str, sc_idx: int = None, interrupt_fn=None):
             _eq_pulse_t = 0.0
             _proc_eq_v.setMode_(1)      # pulse mode for LLM processing
             _proc_eq_v.setCol_(C_YEL)   # yellow for LLM phase
-            _proc_eq_v.setFrame_(AppKit.NSMakeRect(EQ_CTR_X, HDR_ITEM_Y, EQ_CTR_W, HDR_ITEM_H))
+            _layout_header_wf()
             _proc_eq_v.setHidden_(False)
 
         # Show scenario name to the right of EQ (in square brackets)
@@ -6609,7 +6671,8 @@ def _animate_text(old_text: str, new_text: str):
 
 class _TimerTarget(AppKit.NSObject):
     def tick_(self, t):
-        global _eq_t, _eq_dir, _eq_pulse_t
+        global _eq_t, _eq_dir, _eq_pulse_t, _wf_t
+        _wf_t = (_wf_t + 0.05) % (math.pi * 20)   # advance idle wave phase
         if _wf:
             _wf.setNeedsDisplay_(True)
         if _silent_wf and _silent_mode and not _silent_wf.isHidden():
