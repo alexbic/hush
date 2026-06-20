@@ -41,6 +41,9 @@ if [ ! -f hush.icns ]; then
     echo "  ✓ hush.icns создан"
 fi
 
+# ── Снимаем хеш parakeet-cli ДО удаления старого бандла ────────────────────
+_OLD_PARAKEET_HASH=$(md5 -q "$APP/Contents/Resources/parakeet-cli" 2>/dev/null || echo "")
+
 # ── Структура bundle ────────────────────────────────────────────────────────
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS"
@@ -102,17 +105,32 @@ for f in "$SRC_DIR"/*.svg; do
 done
 
 # ── parakeet-cli (бинарник распознавания речи) ─────────────────────────────
+PARAKEET_BIN=""
 if [ -f "$SRC_DIR/parakeet-cli" ]; then
-    cp "$SRC_DIR/parakeet-cli" "$APP/Contents/Resources/"
-    chmod +x "$APP/Contents/Resources/parakeet-cli"
-    echo "  + parakeet-cli"
+    PARAKEET_BIN="$SRC_DIR/parakeet-cli"
+elif [ -f "$HOME/.local/bin/parakeet-cli" ]; then
+    PARAKEET_BIN="$HOME/.local/bin/parakeet-cli"
+fi
+if [ -n "$PARAKEET_BIN" ]; then
+    DST="$APP/Contents/Resources/parakeet-cli"
+    SRC_HASH=$(md5 -q "$PARAKEET_BIN")
+    if [ "$SRC_HASH" != "$_OLD_PARAKEET_HASH" ]; then
+        cp "$PARAKEET_BIN" "$DST"
+        chmod +x "$DST"
+        echo "  + parakeet-cli обновлён (хеш изменился — CoreML перекомпилирует модель)"
+    else
+        cp -p "$PARAKEET_BIN" "$DST"   # preserve timestamps to keep CoreML cache
+        echo "  ✓ parakeet-cli без изменений (CoreML-кеш сохранён)"
+    fi
+else
+    echo "  ⚠  parakeet-cli не найден ни в проекте, ни в ~/.local/bin/"
 fi
 
-# ── Модели (CoreML, ~400MB) ─────────────────────────────────────────────────
+# ── Модели (CoreML, ~400MB) — копируем только если изменились ───────────────
 if [ -d "$SRC_DIR/models" ]; then
-    echo "Копируем модели (может занять время)..."
-    cp -r "$SRC_DIR/models" "$APP/Contents/Resources/"
-    echo "  + models/"
+    rsync -a --checksum "$SRC_DIR/models" "$APP/Contents/Resources/" 2>/dev/null \
+        || { echo "  (rsync недоступен, копируем через cp -rp)"; cp -rp "$SRC_DIR/models" "$APP/Contents/Resources/"; }
+    echo "  ✓ models/ синхронизированы"
 else
     echo "  ⚠  Модели не найдены в $SRC_DIR/models"
     echo "     Убедись что ~/.local/bin/parakeet-cli доступен системно."

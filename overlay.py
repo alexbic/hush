@@ -1199,9 +1199,12 @@ class _SilentWaveformView(AppKit.NSView):
 
 
 # Module-level equalizer animation state
-_eq_t       = 0.0   # scan position 0→1→0 (for scan mode)
-_eq_dir     = 1     # scan direction: +1 or -1
-_eq_pulse_t = 0.0   # pulse position 0→1 repeating (for pulse-from-center mode)
+_eq_t             = 0.0   # scan position 0→1→0 (for scan mode)
+_eq_dir           = 1     # scan direction: +1 or -1
+_eq_pulse_t       = 0.0   # pulse position 0→1 repeating (for pulse-from-center mode)
+_eq_countdown_t   = 0.0   # countdown fill 0→1 (for countdown mode)
+_eq_countdown_start = 0.0 # time.time() when countdown started (0 = inactive)
+_eq_countdown_dur   = 2.0 # countdown duration in seconds
 
 class EqBarsView(AppKit.NSView):
     """Equal-height equalizer bars with animated highlight.
@@ -1238,7 +1241,8 @@ class EqBarsView(AppKit.NSView):
                 dist     = fi - peak_pos
                 h_factor = 0.06 + 0.94 * math.exp(-(dist * dist) / (2 * sigma * sigma))
                 alpha    = 0.25 + 0.75 * h_factor
-            else:
+                bar_col  = col
+            elif self._mode == 1:
                 # Ripple spreads outward from center
                 center    = 0.5
                 dc        = abs(fi - center) * 2.0
@@ -1247,6 +1251,15 @@ class EqBarsView(AppKit.NSView):
                 ripple    = 0.5 + 0.5 * math.sin(PI2 * (dc * 1.5 - _eq_pulse_t))
                 h_factor  = max(0.05, envelope * (0.20 + 0.80 * ripple))
                 alpha     = 0.20 + 0.80 * envelope
+                bar_col   = col
+            else:
+                # Countdown fill: bars fill left→right with green→red gradient
+                filled   = fi <= _eq_countdown_t
+                rr       = min(1.0, fi * 2.0)          # 0→1 as bar fills
+                gg       = max(0.0, 1.0 - fi * 1.4)    # 1→0 fading to red
+                bar_col  = _rgba(rr, gg, 0.05, 1.0)
+                h_factor = 0.80 if filled else 0.30
+                alpha    = 0.95 if filled else 0.15
 
             bar_h = max(2.0, h_factor * h)
             x     = x0 + i * (bar_w + gap)
@@ -1254,7 +1267,7 @@ class EqBarsView(AppKit.NSView):
             r     = bar_w / 2
             p     = AppKit.NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
                 AppKit.NSMakeRect(x, y, bar_w, bar_h), r, r)
-            col.colorWithAlphaComponent_(alpha).set()
+            bar_col.colorWithAlphaComponent_(alpha).set()
             p.fill()
 
 
@@ -1307,27 +1320,27 @@ class _HoverOverlayView(AppKit.NSView):
         AppKit.NSColor.clearColor().set()
         AppKit.NSRectFill(rect)
         b = self.bounds()
-        hovered = getattr(self, '_hover_active', False)
-        bg_alpha = 0.95 if hovered else 0.88
-        p = AppKit.NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
-            b, min(b.size.height / 2, 14.0), min(b.size.height / 2, 14.0))
-        _rgba(0.05, 0.05, 0.05, bg_alpha).set()
+        TOP_PAD  = 8   # top inset so overlay doesn't kiss the separator
+        bg_rect  = AppKit.NSMakeRect(0, 0, b.size.width, b.size.height - TOP_PAD)
+        r        = min(bg_rect.size.height / 2, 12.0)
+        p = AppKit.NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(bg_rect, r, r)
+        _rgba(0.05, 0.07, 0.05, 0.92).set()
         p.fill()
         hint = getattr(self, '_hint', None)
         if hint:
             ps = AppKit.NSMutableParagraphStyle.alloc().init()
             ps.setAlignment_(AppKit.NSTextAlignmentCenter)
-            sz   = getattr(self, '_hint_size', 11)
-            bold = getattr(self, '_hint_bold', False)
-            astr = AppKit.NSAttributedString.alloc().initWithString_attributes_(
+            sz    = 14
+            astr  = AppKit.NSAttributedString.alloc().initWithString_attributes_(
                 hint, {
-                    AppKit.NSFontAttributeName:            _mono(sz, bold),
-                    AppKit.NSForegroundColorAttributeName: _rgba(0.95, 0.15, 0.15, 1.0),
+                    AppKit.NSFontAttributeName:            _mono(sz),    # light mono
+                    AppKit.NSForegroundColorAttributeName: C_TEXT,       # scheme text color
                     AppKit.NSParagraphStyleAttributeName:  ps,
                 })
-            text_h = sz + 6
-            astr.drawInRect_(AppKit.NSMakeRect(
-                0, (b.size.height - text_h) / 2, b.size.width, text_h))
+            text_h = sz + 4
+            # center within the padded background rect
+            cy = (bg_rect.size.height - text_h) / 2
+            astr.drawInRect_(AppKit.NSMakeRect(8, cy, b.size.width - 16, text_h))
 
     def mouseDown_(self, event):
         fn = _proc_interrupt_fn if getattr(self, '_is_main', False) else _silent_interrupt_fn
@@ -1344,16 +1357,10 @@ class _SilentContentView(AppKit.NSView):
     def mouseEntered_(self, event):
         if _silent_hover_v:
             _silent_hover_v.setHidden_(False)
-            # Dim EQ bars so they appear "blurred" behind the overlay
-            if _silent_eq_v:
-                _silent_eq_v.setAlphaValue_(0.15)
 
     def mouseExited_(self, event):
         if _silent_hover_v:
             _silent_hover_v.setHidden_(True)
-            # Restore EQ bars
-            if _silent_eq_v:
-                _silent_eq_v.setAlphaValue_(1.0)
 
     def updateTrackingAreas(self):
         for a in list(self.trackingAreas()):
@@ -1602,7 +1609,7 @@ class DragPanel(AppKit.NSPanel):
 
 
 class _SilentPanel(AppKit.NSPanel):
-    """Thin header-strip panel for silent mode — draggable, Escape to dismiss."""
+    """Thin header-strip panel for silent mode — draggable, Escape or click to dismiss."""
     def canBecomeKeyWindow(self): return True
 
     def cancelOperation_(self, sender):
@@ -1955,6 +1962,26 @@ class _ThinGreenScroller(AppKit.NSScroller):
 
     def drawKnobSlotInRect_highlight_(self, slotRect, highlighted):
         pass  # transparent track — no white background
+
+
+class _ThinAccentScroller(AppKit.NSScroller):
+    """4px knob in current theme accent color (C_GREEN_BR), transparent track.
+    Used for accumulation scroll view to match active color scheme."""
+
+    def drawKnob(self):
+        r = self.rectForPart_(getattr(AppKit, 'NSScrollerKnob', 2))
+        if r.size.width <= 0 or r.size.height <= 0:
+            return
+        bar_w = 4.0
+        bx = r.origin.x + r.size.width - bar_w - 2   # 2px from right edge
+        ir = AppKit.NSMakeRect(bx, r.origin.y + 4, bar_w, max(6, r.size.height - 8))
+        path = AppKit.NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
+            ir, 2.0, 2.0)
+        C_GREEN_BR.colorWithAlphaComponent_(0.70).set()
+        path.fill()
+
+    def drawKnobSlotInRect_highlight_(self, slotRect, highlighted):
+        pass  # transparent track
 
 
 # ── Rich text block view ──────────────────────────────────────────────────────
@@ -2766,7 +2793,8 @@ class BtnTarget(AppKit.NSObject):
 
     def openHush_(self, sender):
         """Status-bar menu: open main HUSH window (same as double Option press)."""
-        _main(show_recording)
+        show_recording()
+        AppKit.NSApp.activateIgnoringOtherApps_(True)
 
     def toggleLaunchAtLogin_(self, sender):
         """Status-bar menu: toggle Launch at Login via LaunchAgent plist."""
@@ -3221,7 +3249,11 @@ _silent_target_app   = None   # NSRunningApplication for paste target
 _silent_app_icon_v   = None   # _AppIconView (shown for non-Python apps)
 _silent_hover_v      = None   # _HoverOverlayView (LLM state only)
 _silent_interrupt_fn = None   # callable; called on interrupt click
-_silent_text_v       = None   # NSTextField with recognized text (processing card)
+_silent_text_v       = None   # NSTextField (accumulation) or NSTextField (processing card)
+_silent_scroll_v     = None   # unused slot (kept for legacy reset in hide)
+_silent_block_count  = 0      # unused slot (kept for legacy reset in hide)
+_silent_strip_win_h  = 0      # initial window height (strip only) — set on first accumulation call
+_silent_sep_y        = 0      # y-coordinate of separator (fixed relative to strip top)
 _silent_saved_cx     = None   # saved window center X (persists across rebuilds)
 _silent_saved_sy     = None   # saved window bottom Y (persists across rebuilds)
 
@@ -5679,7 +5711,9 @@ def _populate_silent_app_icon():
 
 
 def show_recording_silent(prev_app=None):
-    """Show floating waveform strip at screen center-bottom; call AFTER _silent_mode is set."""
+    """Show floating waveform strip at screen center-bottom; call AFTER _silent_mode is set.
+    If the silent window already exists (resume in same session), just switch state without rebuild.
+    """
     global _silent_mode, _silent_target_app
     _silent_mode       = True
     _silent_target_app = prev_app
@@ -5688,12 +5722,24 @@ def show_recording_silent(prev_app=None):
         _silent_interrupt_fn = None
         _st["mode"] = "recording"
         _clear_waveform()
+
+        if _silent_win:
+            # Window already exists — cancel countdown, switch to waveform
+            global _eq_countdown_start
+            _eq_countdown_start = 0.0
+            if _silent_wf:
+                _silent_wf.setHidden_(False)
+            if _silent_eq_v:
+                _silent_eq_v.setHidden_(True)
+            _start_timer()
+            _silent_win.orderFrontRegardless()
+            return
+
         show_icon = not _is_python_app(_silent_target_app)
         _build_silent_header(show_icon=show_icon)
 
         _populate_silent_app_icon()
 
-        # Recording: show waveform (audio-driven green bars), hide equalizer
         if _silent_wf:
             _silent_wf.setHidden_(False)
         if _silent_eq_v:
@@ -5720,32 +5766,203 @@ def show_recognizing_silent():
     _main(_)
 
 
+def show_countdown_silent(duration: float = 2.0):
+    """Silent mode: grace period countdown — bars fill left→right (green→red)."""
+    def _():
+        global _eq_countdown_start, _eq_countdown_dur, _eq_countdown_t
+        import time as _tm
+        _eq_countdown_start = _tm.time()
+        _eq_countdown_dur   = duration
+        _eq_countdown_t     = 0.0
+        if _silent_wf:
+            _silent_wf.setHidden_(True)
+        if _silent_eq_v:
+            _silent_eq_v.setMode_(2)
+            _silent_eq_v.setHidden_(False)
+        _start_timer()
+    _main(_)
+
+
+def cancel_countdown_silent():
+    """Cancel countdown and return to scan animation (user pressed Alt during grace)."""
+    def _():
+        global _eq_countdown_start
+        _eq_countdown_start = 0.0
+        if _silent_eq_v and not _silent_eq_v.isHidden() and _silent_eq_v._mode == 2:
+            _silent_eq_v.setMode_(0)
+            _silent_eq_v.setCol_(C_PINK)
+    _main(_)
+
+
 def show_transcribed_silent(text: str):
     """Silent mode: transcription done without LLM — overlay closes immediately after paste."""
     pass
 
 
+def update_silent_accumulation(text: str):
+    """Show accumulated transcribed text in the silent pill.
+
+    Window grows upward based on actual text height.
+    Max = 4 × initial strip height; after that — scrollable.
+    NSScrollView + NSTextView with fully transparent background.
+    """
+    SEP_H    = 1
+    PAD      = 12
+    WIN_SIDE = 4
+    TOP_PAD  = 10   # gap from separator to first line of text
+    BOT_PAD  = 8    # gap from last line to window top edge
+
+    def _():
+        global _silent_text_v, _silent_scroll_v, _silent_strip_win_h, _silent_sep_y
+        import time as _t
+        with open("/tmp/vi_debug.log","a") as f:
+            f.write(f"[{_t.strftime('%H:%M:%S')}] accum: win={_silent_win is not None} tv={_silent_text_v is not None} text={repr(text[:40])}\n")
+        if not _silent_win:
+            return
+
+        fr    = _silent_win.frame()
+        old_h = fr.size.height
+        cw    = fr.size.width
+        CARD_W = cw - WIN_SIDE * 2
+        sv_w   = CARD_W - PAD * 2
+        cv     = _silent_win.contentView()
+
+        if _silent_text_v is None:
+            # ── FIRST CALL: record strip height, create separator + scroll view ─
+            _silent_strip_win_h = int(old_h)
+            _silent_sep_y       = int(old_h - WIN_SIDE)
+
+            # Separator
+            sep = AppKit.NSView.alloc().initWithFrame_(
+                AppKit.NSMakeRect(WIN_SIDE, _silent_sep_y, CARD_W, SEP_H))
+            sep.setWantsLayer_(True)
+            sep.layer().setBackgroundColor_(_rgba(0.15, 0.8, 0.15, 0.3).CGColor())
+            cv.addSubview_(sep)
+
+            # NSScrollView — starts 1px tall, grows below
+            sv_y = _silent_sep_y + SEP_H + TOP_PAD
+            scroll = AppKit.NSScrollView.alloc().initWithFrame_(
+                AppKit.NSMakeRect(WIN_SIDE + PAD, sv_y, sv_w, 1))
+            scroll.setBorderType_(AppKit.NSNoBorder)
+            scroll.setHasVerticalScroller_(False)   # revealed when needed
+            scroll.setHasHorizontalScroller_(False)
+            scroll.setAutohidesScrollers_(True)
+            # Full transparency: scroll view + clip view (NSClipView)
+            scroll.setBackgroundColor_(AppKit.NSColor.clearColor())
+            scroll.setDrawsBackground_(False)
+            scroll.contentView().setDrawsBackground_(False)
+            # Themed scroller: 4px accent-color knob, auto-hides via overlay style
+            scroll.setVerticalScroller_(_ThinAccentScroller.alloc().init())
+            scroll.setScrollerStyle_(getattr(AppKit, 'NSScrollerStyleOverlay', 1))
+
+            # NSTextView — document view, auto-grows vertically
+            tv = AppKit.NSTextView.alloc().initWithFrame_(
+                AppKit.NSMakeRect(0, 0, sv_w, 1))
+            tv.setEditable_(False)
+            tv.setSelectable_(False)
+            tv.setDrawsBackground_(False)
+            tv.setBackgroundColor_(AppKit.NSColor.clearColor())
+            tv.textContainer().setLineFragmentPadding_(0)
+            tv.textContainer().setWidthTracksTextView_(True)
+            tv.textContainer().setHeightTracksTextView_(False)
+            tv.setHorizontallyResizable_(False)
+            tv.setVerticallyResizable_(True)
+            tv.setMinSize_(AppKit.NSMakeSize(sv_w, 0))
+            tv.setMaxSize_(AppKit.NSMakeSize(sv_w, 100000))
+            tv.setAutoresizingMask_(AppKit.NSViewWidthSizable)
+
+            scroll.setDocumentView_(tv)
+            cv.addSubview_(scroll)
+            _silent_scroll_v = scroll
+            _silent_text_v   = tv
+            cv.updateTrackingAreas()
+
+        # ── Set text via NSAttributedString (reliable font + color) ──────────
+        attrs = {
+            AppKit.NSFontAttributeName:            _mono(9.5),
+            AppKit.NSForegroundColorAttributeName: C_TEXT,
+        }
+        astr = AppKit.NSAttributedString.alloc().initWithString_attributes_(text, attrs)
+        _silent_text_v.textStorage().setAttributedString_(astr)
+
+        # ── Measure content height ────────────────────────────────────────────
+        lm = _silent_text_v.layoutManager()
+        lm.ensureLayoutForTextContainer_(_silent_text_v.textContainer())
+        used = lm.usedRectForTextContainer_(_silent_text_v.textContainer())
+        content_h = used.size.height
+
+        # ── Grow or scroll? ───────────────────────────────────────────────────
+        sv_y = _silent_sep_y + SEP_H + TOP_PAD
+        MAX_WIN_H  = _silent_strip_win_h * 4
+        MAX_SV_H   = MAX_WIN_H - sv_y - BOT_PAD - WIN_SIDE
+
+        if content_h <= MAX_SV_H:
+            # Content fits — grow window to show everything
+            sv_h = max(content_h, 12)
+            new_win_h = int(sv_y + sv_h + BOT_PAD + WIN_SIDE)
+            needs_scroller = False
+        else:
+            # Content overflows — lock window at max, enable scroller
+            sv_h = MAX_SV_H
+            new_win_h = int(MAX_WIN_H)
+            needs_scroller = True
+
+        # Resize text view to match content (allows scroll to work)
+        _silent_text_v.setFrameSize_(AppKit.NSMakeSize(sv_w, max(content_h, sv_h)))
+
+        # Grow window if needed
+        if new_win_h > int(old_h):
+            _silent_win.setFrame_display_animate_(
+                AppKit.NSMakeRect(fr.origin.x, fr.origin.y, cw, new_win_h),
+                True, False)
+            cv.setFrame_(AppKit.NSMakeRect(0, 0, cw, new_win_h))
+            for sv in list(cv.subviews()):
+                if isinstance(sv, _SilentBgView):
+                    sv.setFrame_(AppKit.NSMakeRect(
+                        WIN_SIDE, WIN_SIDE, CARD_W, new_win_h - WIN_SIDE * 2))
+                    break
+            cv.updateTrackingAreas()
+
+        # Resize scroll view to fill text area
+        _silent_scroll_v.setFrame_(
+            AppKit.NSMakeRect(WIN_SIDE + PAD, sv_y, sv_w, max(sv_h, 12)))
+
+        # Show/hide scrollbar
+        _silent_scroll_v.setHasVerticalScroller_(needs_scroller)
+
+        # Scroll to latest text (bottom of content view)
+        _silent_text_v.scrollRangeToVisible_(
+            AppKit.NSMakeRange(_silent_text_v.string().length(), 0))
+
+        _silent_win.display()
+
+    _main(_)
+
+
 def _build_processing_card(raw_text: str, show_icon: bool):
     """Build the LLM-processing card (wider, taller than recording strip).
 
-    Layout (dark rounded card):
-      ┌─────────────────────────────────────────┐
-      │ [ICON 28px] App name       [EQ BARS]    │
-      │─────────────────────────────────────────│
+    Layout (dark rounded card, y=0 at bottom):
+      ┌─────────────────────────────────────────┐  ← top
+      │ распознанный текст...                   │  TEXT (high y)
       │ распознанный текст...                   │
-      │ распознанный текст...                   │
-      └─────────────────────────────────────────┘
-    On hover: dim + large "Оставить без обработки" overlay.
+      │─────────────────────────────────────────│  separator
+      │ [ICON 28px] App name       [EQ BARS]    │  HEADER (low y)
+      └─────────────────────────────────────────┘  ← bottom
+    Hover over TEXT area: "Оставить без обработки" (header stays uncovered).
     """
     global _silent_win, _silent_wf, _silent_eq_v
     global _silent_app_icon_v, _silent_hover_v, _silent_text_v
     global _silent_saved_cx, _silent_saved_sy
 
+    # Preserve the current window's height — don't shrink if text area grew during accumulation
+    _prev_win_h = None
     if _silent_win:
         fr = _silent_win.frame()
         _silent_saved_cx = fr.origin.x + fr.size.width / 2
         _silent_saved_sy = fr.origin.y
         _silent_save_pos(_silent_win)
+        _prev_win_h = int(fr.size.height)
         _silent_win.orderOut_(None)
         _silent_win.close()
         _silent_win = None
@@ -5758,16 +5975,18 @@ def _build_processing_card(raw_text: str, show_icon: bool):
     PAD      = 12
     ICON_SZ  = 28
     GAP      = 7
-    ANIM_W   = 88
     ANIM_H   = 22
-    HEADER_H = ICON_SZ + PAD * 2        # 52
+    HEADER_H = ICON_SZ + PAD * 2        # 52 — strip at bottom
     SEP_H    = 1
-    TEXT_H   = 72
-    CARD_H   = HEADER_H + SEP_H + TEXT_H + PAD  # 137
     WIN_SIDE = 4
+    MIN_TEXT_H = 72
+    # Use accumulated window height if it's larger (don't shrink on LLM transition)
+    default_win_h = HEADER_H + SEP_H + MIN_TEXT_H + PAD + WIN_SIDE * 2  # 145
+    win_h   = max(_prev_win_h or 0, default_win_h)
+    CARD_H  = win_h - WIN_SIDE * 2
+    TEXT_H  = CARD_H - HEADER_H - SEP_H - PAD  # variable, fills card
 
     win_w = CARD_W + WIN_SIDE * 2
-    win_h = CARD_H + WIN_SIDE * 2
 
     scr = AppKit.NSScreen.mainScreen()
     if _silent_saved_cx is not None:
@@ -5804,8 +6023,8 @@ def _build_processing_card(raw_text: str, show_icon: bool):
         AppKit.NSMakeRect(WIN_SIDE, WIN_SIDE, CARD_W, CARD_H))
     cv.addSubview_(bg)
 
-    # ── header row (top of card) ──────────────────────────────────────────────
-    header_y = WIN_SIDE + SEP_H + TEXT_H + PAD   # y of header bottom edge
+    # ── header row (BOTTOM of card, same position as recording strip) ─────────
+    header_y = WIN_SIDE   # y of header bottom edge
 
     # app icon (left)
     if show_icon:
@@ -5814,7 +6033,7 @@ def _build_processing_card(raw_text: str, show_icon: bool):
                               header_y + (HEADER_H - ICON_SZ) // 2,
                               ICON_SZ, ICON_SZ))
         cv.addSubview_(iv)
-        iv.applyRoundedMask_(ICON_SZ * 0.22)   # must be after addSubview_ (layer exists)
+        iv.applyRoundedMask_(ICON_SZ * 0.22)
         _silent_app_icon_v = iv
         name_x = WIN_SIDE + PAD + ICON_SZ + GAP
     else:
@@ -5841,25 +6060,26 @@ def _build_processing_card(raw_text: str, show_icon: bool):
     cv.addSubview_(name_lbl)
 
     # EQ bars — fills all space right of name
-    eq_x = card_eq_x
     eq_y = header_y + (HEADER_H - ANIM_H) // 2
     ev = EqBarsView.alloc().initWithFrame_(
-        AppKit.NSMakeRect(eq_x, eq_y, card_eq_w, ANIM_H))
+        AppKit.NSMakeRect(card_eq_x, eq_y, card_eq_w, ANIM_H))
     ev.setMode_(1)
     ev.setCol_(C_YEL)
     cv.addSubview_(ev)
     _silent_eq_v = ev
-    _silent_wf   = None   # no waveform in card mode
+    _silent_wf   = None
 
     # ── separator line ────────────────────────────────────────────────────────
-    sep_y = WIN_SIDE + TEXT_H + PAD
+    sep_y = WIN_SIDE + HEADER_H
     sep = AppKit.NSBox.alloc().initWithFrame_(
-        AppKit.NSMakeRect(WIN_SIDE + PAD, sep_y, CARD_W - PAD * 2, 1))
+        AppKit.NSMakeRect(WIN_SIDE + PAD, sep_y, CARD_W - PAD * 2, SEP_H))
     sep.setBoxType_(AppKit.NSBoxSeparator)
     sep.setBorderColor_(C_GREEN_BORD)
     cv.addSubview_(sep)
 
-    # ── recognized text ───────────────────────────────────────────────────────
+    # ── recognized text (TOP of card, above separator) ────────────────────────
+    TOP_INSET = 10   # breathing room between text view top and card top edge
+    text_y = WIN_SIDE + HEADER_H + SEP_H + PAD // 2
     tv = AppKit.NSTextField.labelWithString_(raw_text or "")
     tv.setEditable_(False)
     tv.setSelectable_(False)
@@ -5868,18 +6088,18 @@ def _build_processing_card(raw_text: str, show_icon: bool):
     tv.setFont_(_mono(10))
     tv.setTextColor_(C_TEXT)
     tv.setLineBreakMode_(AppKit.NSLineBreakByWordWrapping)
-    tv.setMaximumNumberOfLines_(4)
+    tv.setMaximumNumberOfLines_(max(4, TEXT_H // 14))
     tv.setFrame_(AppKit.NSMakeRect(
-        WIN_SIDE + PAD, WIN_SIDE + PAD,
-        CARD_W - PAD * 2, TEXT_H))
+        WIN_SIDE + PAD, text_y,
+        CARD_W - PAD * 2, TEXT_H - TOP_INSET))
     cv.addSubview_(tv)
     _silent_text_v = tv
 
-    # ── hover overlay (interrupt) ─────────────────────────────────────────────
-    # Text drawn in drawRect_ (not as NSTextField subview — would swallow mouse events)
-    # Covers the whole card, but icon+name are re-added after so they float above it.
+    # ── hover overlay (interrupt) — covers TEXT area only, not header ─────────
+    hov_y = WIN_SIDE + HEADER_H + SEP_H
+    hov_h = TEXT_H + PAD
     hov = _HoverOverlayView.alloc().initWithFrame_(
-        AppKit.NSMakeRect(WIN_SIDE, WIN_SIDE, CARD_W, CARD_H))
+        AppKit.NSMakeRect(WIN_SIDE, hov_y, CARD_W, hov_h))
     hov._hint      = "Оставить без обработки"
     hov._hint_size = 16
     hov._hint_bold = True
@@ -5887,19 +6107,8 @@ def _build_processing_card(raw_text: str, show_icon: bool):
     cv.addSubview_(hov)
     _silent_hover_v = hov
 
-    # Bring icon and app-name label above the overlay so they stay readable
-    if _silent_app_icon_v:
-        _silent_app_icon_v.removeFromSuperview()
-        cv.addSubview_positioned_relativeTo_(
-            _silent_app_icon_v, AppKit.NSWindowAbove, hov)
-    if name_lbl:
-        name_lbl.removeFromSuperview()
-        cv.addSubview_positioned_relativeTo_(
-            name_lbl, AppKit.NSWindowAbove, hov)
-
-    # EQ bars stay behind overlay; dim them with a themed fill layer to "blur"
     ev.setWantsLayer_(True)
-    ev.layer().setOpacity_(1.0)   # will be reduced in show_processing_card / restored on hide
+    ev.layer().setOpacity_(1.0)
 
     _silent_win = panel
 
@@ -5910,6 +6119,14 @@ def show_processing_silent(interrupt_fn, raw_text=''):
     _silent_interrupt_fn = interrupt_fn
     def _():
         global _eq_pulse_t
+        import time as _t
+        try:
+            n = str(_silent_target_app.localizedName()) if _silent_target_app else "None"
+            b = str(_silent_target_app.bundleIdentifier()) if _silent_target_app else "None"
+        except Exception as e:
+            n, b = f"ERR:{e}", ""
+        with open("/tmp/vi_debug.log","a") as f:
+            f.write(f"[{_t.strftime('%H:%M:%S')}] processing_silent: target='{n}' bid='{b}'\n")
         show_icon = not _is_python_app(_silent_target_app)
         _build_processing_card(raw_text, show_icon)
         _populate_silent_app_icon()
@@ -5929,6 +6146,11 @@ def get_silent_scenario():
         if sc.get("silent"):
             return sc
     return None
+
+
+def get_silent_interrupt_fn():
+    """Return current interrupt callable (set during LLM processing), or None."""
+    return _silent_interrupt_fn
 
 
 # ── Init ──────────────────────────────────────────────────────────────────────
@@ -6594,13 +6816,23 @@ def show_processing(name: str, sc_idx: int = None, interrupt_fn=None):
 def hide_silent():
     """Hide only the silent strip (double-tap cancel). Does NOT touch the main overlay."""
     def _():
-        global _silent_mode, _silent_wf, _silent_eq_v, _silent_hover_v
-        _silent_mode    = False
-        _silent_wf      = None
-        _silent_eq_v    = None
-        _silent_hover_v = None
-        if _silent_win and _silent_win.isVisible():
+        global _silent_mode, _silent_wf, _silent_eq_v, _silent_hover_v, _silent_win
+        global _silent_text_v, _silent_scroll_v, _silent_block_count, _eq_countdown_start
+        global _silent_strip_win_h, _silent_sep_y
+        _silent_mode        = False
+        _silent_wf          = None
+        _silent_eq_v        = None
+        _silent_hover_v     = None
+        _silent_text_v      = None
+        _silent_scroll_v    = None
+        _silent_block_count = 0
+        _silent_strip_win_h = 0
+        _silent_sep_y       = 0
+        _eq_countdown_start = 0.0
+        if _silent_win:
             _silent_win.orderOut_(None)
+            _silent_win.close()
+            _silent_win = None
     _main(_)
 
 
@@ -6611,26 +6843,49 @@ def hide(force: bool = False):
     """
     def _():
         global _expanded, _font_size_saved, _silent_mode, _silent_interrupt_fn
-        global _silent_wf, _silent_eq_v, _silent_hover_v
+        global _silent_wf, _silent_eq_v, _silent_hover_v, _silent_win, _silent_text_v
+        global _silent_scroll_v, _silent_block_count, _silent_strip_win_h, _silent_sep_y
         import time as _t, traceback as _tb
         _caller = "".join(_tb.format_stack()[-4:-1]).replace('\n',' ')[-200:]
         with open("/tmp/vi_debug.log","a") as f: f.write(f"[{_t.strftime('%H:%M:%S')}] hide(force={force}): mode={_st.get('mode')} | {_caller}\n")
         if not force and _st["mode"] == "history_open":
             return
+        # Kill any running transcription subprocess
+        try:
+            import transcriber as _tc
+            _tc.cancel()
+        except Exception:
+            pass
         _st["mode"]          = "idle"
         _silent_mode         = False
         _silent_interrupt_fn = None
         _silent_wf           = None
         _silent_eq_v         = None
         _silent_hover_v      = None
+        _silent_text_v       = None
+        _silent_scroll_v     = None
+        _silent_block_count  = 0
+        _silent_strip_win_h  = 0
+        _silent_sep_y        = 0
+        global _eq_countdown_start
+        _eq_countdown_start  = 0.0
         global _silent_saved_cx, _silent_saved_sy
-        _silent_saved_cx = None
-        _silent_saved_sy = None
+        # Save current pill/card position to disk BEFORE closing
+        if _silent_win:
+            _silent_save_pos(_silent_win)
+            fr = _silent_win.frame()
+            _silent_saved_cx = fr.origin.x + fr.size.width / 2
+            _silent_saved_sy = fr.origin.y
+        else:
+            _silent_saved_cx = None
+            _silent_saved_sy = None
         _end_processing()
         if _on_session_end_cb:
             _on_session_end_cb()
-        if _silent_win and _silent_win.isVisible():
+        if _silent_win:
             _silent_win.orderOut_(None)
+            _silent_win.close()
+            _silent_win = None
         _st["text"]    = ""
         _st["is_md"]   = False
         _st["md_mode"] = False
@@ -6759,7 +7014,8 @@ def _animate_text(old_text: str, new_text: str):
 
 class _TimerTarget(AppKit.NSObject):
     def tick_(self, t):
-        global _eq_t, _eq_dir, _eq_pulse_t, _wf_t
+        import time as _t_mod
+        global _eq_t, _eq_dir, _eq_pulse_t, _wf_t, _eq_countdown_t
         _wf_t = (_wf_t + 0.05) % (math.pi * 20)   # advance idle wave phase
         if _wf:
             _wf.setNeedsDisplay_(True)
@@ -6767,16 +7023,22 @@ class _TimerTarget(AppKit.NSObject):
             _silent_wf.setNeedsDisplay_(True)
         # advance equalizer animation
         if _silent_mode and _silent_eq_v and not _silent_eq_v.isHidden():
-            if _silent_eq_v._mode == 0:
+            m = _silent_eq_v._mode
+            if m == 0:
                 # scan: _eq_t bounces 0→1→0
                 _eq_t += _eq_dir * 0.045
                 if _eq_t >= 1.0:
                     _eq_t = 1.0; _eq_dir = -1
                 elif _eq_t <= 0.0:
                     _eq_t = 0.0; _eq_dir = 1
-            else:
+            elif m == 1:
                 # pulse: _eq_pulse_t cycles 0→1 repeatedly
                 _eq_pulse_t = (_eq_pulse_t + 0.038) % 1.0
+            else:
+                # countdown: advance fill based on real elapsed time
+                if _eq_countdown_start > 0 and _eq_countdown_dur > 0:
+                    elapsed = _t_mod.time() - _eq_countdown_start
+                    _eq_countdown_t = min(1.0, elapsed / _eq_countdown_dur)
             _silent_eq_v.setNeedsDisplay_(True)
         # main-window EQ: scan during transcription, pulse during LLM processing
         if _proc_eq_v and not _proc_eq_v.isHidden():

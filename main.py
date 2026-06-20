@@ -3,6 +3,7 @@
 Запускается как фоновый процесс без иконки в меню и Dock.
 Активация только хоткеем (Right ⌥); двойное нажатие открывает историю.
 """
+import queue as _qmod
 import re
 import subprocess
 import threading
@@ -210,12 +211,15 @@ def _on_merge_history(text: str, source_ids: list) -> str:
 # ── Предыдущее приложение (для корректной вставки) ───────────────────────────
 
 def _is_excluded_app(app) -> bool:
-    """True for apps we never want as paste target (Python, our own process)."""
+    """True for apps we never want as paste target (background daemons, Python, our own process)."""
     if app is None:
         return True
     try:
         own_pid = AppKit.NSRunningApplication.currentApplication().processIdentifier()
         if app.processIdentifier() == own_pid:
+            return True
+        # Exclude background-only processes (activation policy 2 = Prohibited — no UI)
+        if app.activationPolicy() == AppKit.NSApplicationActivationPolicyProhibited:
             return True
         name = str(app.localizedName() or "").lower()
         bid  = str(app.bundleIdentifier() or "").lower()
@@ -236,14 +240,252 @@ _active_scenario_idx = None   # index of currently applied scenario (for undo)
 _state = {
     "stream":      None,
     "hotkey_held": False,
-    "silent":      False,   # True when in silent mode (set synchronously before async UI)
-    "cancelled":   False,   # True when double-tap cancels an in-progress recording
+    "silent":      False,   # True when session is in silent mode
+    "cancelled":   False,   # set to abort in-flight operations
 }
 
-_last_release_time = 0.0
-DOUBLE_TAP_WINDOW  = 0.40   # seconds between release→press to trigger double-tap
+_audio_queue      = _qmod.Queue()   # wav_path strings pending transcription
+_accum_texts      = []               # text chunks accumulated this session
+_accum_lock       = threading.Lock()
+_worker_alive     = False            # True while transcription worker thread is running
+_worker_lock      = threading.Lock()
+_stopping         = 0               # count of _stop_and_queue threads currently running
+_in_countdown     = False           # True while grace-period countdown is showing
+_processing_locked = False          # True during LLM/paste — Alt is disabled
 
-_kbd = kb.Controller()   # universal keyboard for paste — works in any app via HID tap
+# Per-session temp directory: /tmp/hush_session_YYYYMMDD_HHMMSS/
+_session_dir   = None
+_chunk_counter = 0
+_chunk_lock    = threading.Lock()
+
+# Grace period: how long to wait after last activity before finalizing session
+FINALIZE_GRACE_S = 4.0
+
+_last_release_time = 0.0
+DOUBLE_TAP_WINDOW  = 0.40
+
+_kbd = kb.Controller()
+
+
+def _is_session_active() -> bool:
+    """True if recording, stopping, transcribing, or accumulated text exists."""
+    return (bool(_state.get("stream")) or
+            _stopping > 0 or
+            _worker_alive or
+            not _audio_queue.empty() or
+            bool(_accum_texts))
+
+
+def _session_dir_cleanup():
+    """Remove current session temp directory."""
+    global _session_dir
+    import shutil
+    if _session_dir:
+        shutil.rmtree(_session_dir, ignore_errors=True)
+        _session_dir = None
+
+
+def _session_reset():
+    """Clear state for a fresh session."""
+    global _session_dir, _chunk_counter
+    with _accum_lock:
+        _accum_texts.clear()
+    _state["cancelled"] = False
+    while not _audio_queue.empty():
+        try: _audio_queue.get_nowait()
+        except Exception: pass
+    _session_dir   = None
+    _chunk_counter = 0
+
+
+def _cancel_all():
+    """Abort everything: recording, transcription queue, accumulated text."""
+    _dbg("_cancel_all()")
+    _state["cancelled"] = True
+    _state["stream"]    = None
+    transcriber.cancel()
+    while not _audio_queue.empty():
+        try: _audio_queue.get_nowait()
+        except Exception: pass
+    with _accum_lock:
+        # Save whatever was transcribed to history before discarding
+        if _accum_texts:
+            snapshot = " ".join(_accum_texts)
+            _accum_texts.clear()
+        else:
+            snapshot = None
+    if snapshot:
+        _add_to_history(snapshot)
+    AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(
+        lambda: overlay.hide(force=True))
+    AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(overlay.hide_silent)
+
+
+def _ensure_worker_running():
+    global _worker_alive
+    with _worker_lock:
+        if _worker_alive:
+            return
+        _worker_alive = True
+    threading.Thread(target=_transcription_worker, daemon=True,
+                     name="hush-worker").start()
+
+
+def _transcription_worker():
+    """Drain _audio_queue; finalize session after FINALIZE_GRACE_S of inactivity."""
+    global _worker_alive, _in_countdown
+    _last_activity    = time.time()
+    _countdown_shown  = False   # True while countdown animation is visible
+    try:
+        while True:
+            try:
+                wav_path = _audio_queue.get(timeout=0.2)
+                _last_activity   = time.time()
+                if _countdown_shown:
+                    _countdown_shown = False
+                    _in_countdown = False
+                    AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(
+                        overlay.cancel_countdown_silent)
+            except _qmod.Empty:
+                # Nothing in queue — decide whether to finalize or keep waiting
+                if _state.get("stream") or _stopping > 0:
+                    if _countdown_shown:
+                        _countdown_shown = False
+                        _in_countdown = False
+                        AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(
+                            overlay.cancel_countdown_silent)
+                    continue   # still recording / stop thread running
+                if not _audio_queue.empty():
+                    continue   # item added between timeout and here
+                if not _accum_texts:
+                    # Nothing accumulated — close overlay and exit cleanly
+                    AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(overlay.hide)
+                    AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(overlay.hide_silent)
+                    return
+                # We have accumulated text — show countdown then finalize
+                if not _countdown_shown:
+                    _countdown_shown = True
+                    _in_countdown = True
+                    AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(
+                        lambda: overlay.show_countdown_silent(FINALIZE_GRACE_S))
+                if time.time() - _last_activity < FINALIZE_GRACE_S:
+                    continue   # still within grace window
+                # Grace period expired → finalize, then always exit.
+                # Each session gets its own worker; staying alive risks picking up
+                # the next session's queue items under the current session's state.
+                _countdown_shown = False
+                _in_countdown = False
+                _session_finalize()
+                return
+
+            if _state.get("cancelled"):
+                continue
+
+            # Show scan animation only if not currently recording
+            if not _state.get("stream"):
+                if _state.get("silent"):
+                    AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(
+                        overlay.show_recognizing_silent)
+                else:
+                    AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(
+                        overlay.show_transcribing)
+
+            text = transcriber.transcribe(wav_path)
+            _last_activity = time.time()
+
+            if _state.get("cancelled"):
+                continue
+
+            if text:
+                with _accum_lock:
+                    _accum_texts.append(text)
+                accum = "\n\n".join(_accum_texts)
+                if _state.get("silent"):
+                    AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(
+                        lambda t=accum: overlay.update_silent_accumulation(t))
+                    if not _state.get("stream"):
+                        AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(
+                            overlay.show_recognizing_silent)
+                else:
+                    AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(
+                        lambda t=accum: overlay.show_result(t))
+    finally:
+        _worker_alive = False
+
+
+def _session_finalize():
+    """All audio transcribed, grace period expired. Apply scenario or stay (full mode)."""
+    global _processing_locked
+    # Clean up session dir BEFORE locking — so any new press after this point
+    # always creates a fresh session dir (eliminates race with _stop_and_queue).
+    _session_dir_cleanup()
+    if _state.get("cancelled"):
+        return
+    _processing_locked = True
+    try:
+        _session_finalize_inner()
+    finally:
+        _processing_locked = False
+
+
+def _session_finalize_inner():
+    """Core paste/LLM logic called under _processing_locked."""
+
+    with _accum_lock:
+        texts = list(_accum_texts)
+        _accum_texts.clear()
+
+    if not texts:
+        AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(overlay.hide)
+        AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(overlay.hide_silent)
+        return
+
+    full_text = "\n\n".join(texts)
+
+    if _state.get("silent"):
+        silent_sc = overlay.get_silent_scenario()
+        if silent_sc and silent_sc.get("prompt"):
+            cancel_ev = threading.Event()
+
+            def _interrupt(raw=full_text, ev=cancel_ev):
+                global _processing_locked
+                ev.set()
+                raw_s = _strip_markdown(raw)
+                subprocess.run(["pbcopy"], input=raw_s.encode("utf-8"), check=False)
+                _add_to_history(raw)
+                _commit_and_paste(raw_s)
+                _processing_locked = False   # release immediately — don't wait for LLM to cancel
+
+            AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(
+                lambda fn=_interrupt, t=full_text: overlay.show_processing_silent(fn, t))
+
+            final_text = processor.process_with_prompt(
+                full_text, silent_sc["prompt"], model=silent_sc.get("model"))
+
+            if not cancel_ev.is_set():
+                final_s = _strip_markdown(final_text)
+                subprocess.run(["pbcopy"], input=final_s.encode("utf-8"), check=False)
+                _add_to_history(final_text)
+                _commit_and_paste(final_s)
+        else:
+            time.sleep(0.8)
+            final_s = _strip_markdown(full_text)
+            subprocess.run(["pbcopy"], input=final_s.encode("utf-8"), check=False)
+            _add_to_history(full_text)
+            _commit_and_paste(final_s)
+    else:
+        subprocess.run(["pbcopy"], input=full_text.encode("utf-8"), check=False)
+        AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(
+            lambda: overlay.show_result(full_text))
+
+
+def _force_finalize_now():
+    """Force immediate finalize during countdown (double-tap during grace period)."""
+    global _in_countdown
+    _in_countdown = False
+    AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(
+        overlay.cancel_countdown_silent)
+    _session_finalize()
 
 
 def _on_hotkey_press():
@@ -258,27 +500,55 @@ def _on_hotkey_press():
     if not _is_excluded_app(front):
         _prev_app = front
         overlay.set_prev_app_icon(_prev_app)
-    _active_scenario_idx = None   # new session clears active filter
+    _active_scenario_idx = None
 
-    # Double-tap: cancel any in-progress recording, open context window (no history)
-    if time.time() - _last_release_time < DOUBLE_TAP_WINDOW:
-        _dbg("DOUBLE_TAP fired")
-        _state["stream"]    = None
-        _state["silent"]    = False
-        _state["cancelled"] = True   # tell _do() to abort if still running
-        overlay.hide_silent()        # close silent strip without touching main overlay
-        overlay.show_recording()
+    is_double = time.time() - _last_release_time < DOUBLE_TAP_WINDOW
+    active    = _is_session_active()
+
+    # During LLM processing: only double-tap is allowed — triggers interrupt (paste raw)
+    if _processing_locked:
+        if is_double:
+            fn = overlay.get_silent_interrupt_fn()
+            if fn:
+                threading.Thread(target=fn, daemon=True, name="hush-dbl-interrupt").start()
         return
 
-    # Single press: silent mode when window is closed, full mode when already open
-    if overlay.is_idle():
-        _state["silent"] = True    # set synchronously BEFORE async UI dispatch
-        overlay._silent_mode = True  # also set overlay flag immediately (thread-safe read)
+    if is_double:
+        _dbg("DOUBLE_TAP fired")
+        if active:
+            if _in_countdown:
+                # Countdown active → double-tap = force immediate paste, not cancel
+                threading.Thread(target=_force_finalize_now, daemon=True,
+                                 name="hush-force-fin").start()
+            else:
+                _cancel_all()
+        else:
+            # Open full overlay mode
+            _session_reset()
+            _state["silent"] = False
+            overlay._silent_mode = False
+            overlay.show_recording()
+            _state["stream"] = recorder.start(on_chunk=overlay.update_waveform)
+        return
+
+    if _state.get("stream"):
+        return  # already recording
+
+    if not active:
+        # Fresh session → silent mode
+        _session_reset()
+        _state["silent"] = True
+        overlay._silent_mode = True
         overlay.show_recording_silent(_prev_app)
     else:
-        _state["silent"] = False
-        overlay.show_recording()
+        # Resume recording in current session
+        if _state.get("silent"):
+            overlay.show_recording_silent(_prev_app)
+        else:
+            overlay.show_recording()
+
     _state["stream"] = recorder.start(on_chunk=overlay.update_waveform)
+
 
 def _on_hotkey_release():
     global _last_release_time
@@ -289,74 +559,51 @@ def _on_hotkey_release():
 
     stream = _state.get("stream")
     if not stream:
-        return   # double-tap mode or no recording started
+        return
 
-    def _do():
-        wav_path, _ = recorder.stop(stream)
-        _dbg(f"_do: stop done, cancelled={_state.get('cancelled')}, wav={bool(wav_path)}")
-        # Double-tap cancelled this session while we were recording/transcribing
-        if _state.get("cancelled"):
-            _state["cancelled"] = False
-            _dbg("_do: cancelled, returning")
-            return
-        if not wav_path:
-            AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(overlay.hide)
-            return
+    def _stop_and_queue():
+        global _stopping, _chunk_counter, _session_dir
+        _stopping += 1   # prevent premature finalize while we're processing
+        try:
+            wav_path, _ = recorder.stop(stream)
+            _state["stream"] = None
+            _dbg(f"_stop_and_queue: wav={bool(wav_path)}, cancelled={_state.get('cancelled')}")
+            if _state.get("cancelled") or not wav_path:
+                return
 
-        if _state.get("silent"):
-            AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(
-                overlay.show_recognizing_silent
-            )
-        else:
-            AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(overlay.show_transcribing)
+            # Lazy: create session dir on first chunk of this session
+            if not _session_dir:
+                ts = time.strftime("%Y%m%d_%H%M%S")
+                new_dir = f"/tmp/hush_session_{ts}"
+                os.makedirs(new_dir, exist_ok=True)
+                _session_dir = new_dir
+                _chunk_counter = 0
 
-        text = transcriber.transcribe(wav_path)
-        if _state.get("cancelled"):
-            _state["cancelled"] = False
-            return
-        if not text:
-            AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(overlay.hide)
-            return
+            # Move chunk to session dir with sequential name
+            with _chunk_lock:
+                _chunk_counter += 1
+                seq = _chunk_counter
+            dest = os.path.join(_session_dir, f"chunk_{seq:04d}.wav")
+            try:
+                os.rename(wav_path, dest)
+            except Exception:
+                dest = wav_path  # fallback: use original UUID path
 
-        if _state.get("silent"):
-            silent_sc = overlay.get_silent_scenario()
-            if silent_sc and silent_sc.get("prompt"):
-                # LLM scenario: show card with recognized text + interrupt overlay
-                cancel_ev = threading.Event()
+            _audio_queue.put(dest)
 
-                def _interrupt(raw=text, ev=cancel_ev):
-                    ev.set()
-                    raw_s = _strip_markdown(raw)
-                    subprocess.run(["pbcopy"], input=raw_s.encode("utf-8"), check=False)
-                    _add_to_history(raw)
-                    _commit_and_paste(raw_s)
-
+            # Show scan animation immediately on release (recording just stopped)
+            if _state.get("silent"):
                 AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(
-                    lambda fn=_interrupt, t=text: overlay.show_processing_silent(fn, t)
-                )
-
-                final_text = processor.process_with_prompt(
-                    text, silent_sc["prompt"], model=silent_sc.get("model"))
-
-                if not cancel_ev.is_set():
-                    final_s = _strip_markdown(final_text)
-                    subprocess.run(["pbcopy"], input=final_s.encode("utf-8"), check=False)
-                    _add_to_history(final_text)
-                    _commit_and_paste(final_s)
+                    overlay.show_recognizing_silent)
             else:
-                # No scenario: brief pause so user can see the text, then paste
-                time.sleep(0.8)
-                final_s = _strip_markdown(text)
-                subprocess.run(["pbcopy"], input=final_s.encode("utf-8"), check=False)
-                _add_to_history(text)
-                _commit_and_paste(final_s)
-        else:
-            subprocess.run(["pbcopy"], input=text.encode("utf-8"), check=False)
-            AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(
-                lambda: overlay.show_result(text)
-            )
+                AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(
+                    overlay.show_transcribing)
 
-    threading.Thread(target=_do, daemon=True).start()
+            _ensure_worker_running()
+        finally:
+            _stopping -= 1  # always decrement, even on error
+
+    threading.Thread(target=_stop_and_queue, daemon=True, name="hush-stopper").start()
 
 # ── Сценарии ──────────────────────────────────────────────────────────────────
 
@@ -443,44 +690,43 @@ def _activate_prev_app():
 
 
 def _commit_and_paste(text: str):
-    """Скрываем оверлей, активируем предыдущее приложение, вставляем текст."""
+    """Скрываем оверлей, активируем предыдущее приложение, вставляем текст.
+    Runs synchronously in the caller's thread (worker) so _processing_locked stays
+    True until paste is fully done — prevents race where hide() kills the new session."""
     prev_app_ref = _prev_app
 
+    # Hide overlay on main thread first
     def on_main():
         if prev_app_ref:
             prev_app_ref.activateWithOptions_(AppKit.NSApplicationActivateIgnoringOtherApps)
         overlay.hide()
     AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(on_main)
 
-    def _do():
+    try:
+        time.sleep(0.35)
+        _activate_prev_app()   # bundle-ID backup in case activateWithOptions_ insufficient
+        time.sleep(0.35)
+        subprocess.run(["pbcopy"], input=text.encode("utf-8"), check=False)
+        time.sleep(0.15)
+
         try:
-            time.sleep(0.35)
-            _activate_prev_app()   # bundle-ID backup in case activateWithOptions_ insufficient
-            time.sleep(0.35)
-            subprocess.run(["pbcopy"], input=text.encode("utf-8"), check=False)
-            time.sleep(0.15)
+            import ApplicationServices as _AS
+            ax_ok = _AS.AXIsProcessTrustedWithOptions({"AXTrustedCheckOptionPrompt": False})
+        except Exception:
+            ax_ok = True
+        _dbg(f"paste: AX trusted={ax_ok}, firing Cmd+V")
 
-            # Check Accessibility trust before injecting keystrokes
-            try:
-                import ApplicationServices as _AS
-                ax_ok = _AS.AXIsProcessTrustedWithOptions({"AXTrustedCheckOptionPrompt": False})
-            except Exception:
-                ax_ok = True  # assume ok if check fails
-            _dbg(f"paste: AX trusted={ax_ok}, firing Cmd+V")
-
-            if ax_ok:
-                _kbd.press(kb.Key.cmd)
-                _kbd.tap('v')
-                _kbd.release(kb.Key.cmd)
-                _dbg("paste: pynput Cmd+V done")
-                time.sleep(0.05)
-                _kbd.tap(' ')   # trailing space so next dictation joins cleanly
-            else:
-                _dbg("paste: SKIPPED — no Accessibility permission. Text is in clipboard, use Cmd+V manually.")
-                print("⚠️  Нет Accessibility разрешения. Текст в буфере — вставьте вручную Cmd+V.")
-        except Exception as e:
-            _dbg(f"paste ERROR: {e}")
-    threading.Thread(target=_do, daemon=True).start()
+        if ax_ok:
+            _kbd.press(kb.Key.cmd)
+            _kbd.tap('v')
+            _kbd.release(kb.Key.cmd)
+            _dbg("paste: pynput Cmd+V done")
+            time.sleep(0.05)
+            _kbd.tap(' ')   # trailing space so next dictation joins cleanly
+        else:
+            _dbg("paste: SKIPPED — no Accessibility permission. Text is in clipboard, use Cmd+V manually.")
+    except Exception as e:
+        _dbg(f"paste ERROR: {e}")
 
 def _on_history_load(item_id: str):
     """Called when user loads item(s) from history panel into the editor."""
@@ -713,14 +959,58 @@ class _AppObserver(AppKit.NSObject):
 _app_observer = None   # keep strong reference
 
 
+class _SleepObserver(AppKit.NSObject):
+    """Handles system sleep/wake to reinitialize PortAudio after wake."""
+
+    def systemWillSleep_(self, notification):
+        """On sleep: abort any active recording cleanly."""
+        stream = _state.get("stream")
+        if stream:
+            try:
+                stream.stop()
+                stream.close()
+            except Exception:
+                pass
+            _state["stream"] = None
+
+    def systemDidWake_(self, notification):
+        """On wake: reinitialize PortAudio so sounddevice works again."""
+        import sounddevice as sd
+        try:
+            sd._terminate()
+        except Exception:
+            pass
+        try:
+            sd._initialize()
+        except Exception:
+            pass
+        _dbg("systemDidWake_: PortAudio reinitialized")
+
+
+_sleep_observer = None
+
+
 def _setup_app_observer():
-    global _app_observer
+    global _app_observer, _sleep_observer
     _app_observer = _AppObserver.alloc().init()
     ws = AppKit.NSWorkspace.sharedWorkspace()
     ws.notificationCenter().addObserver_selector_name_object_(
         _app_observer,
         objc.selector(_app_observer.appActivated_, selector=b"appActivated:"),
         AppKit.NSWorkspaceDidActivateApplicationNotification,
+        None,
+    )
+    _sleep_observer = _SleepObserver.alloc().init()
+    ws.notificationCenter().addObserver_selector_name_object_(
+        _sleep_observer,
+        objc.selector(_sleep_observer.systemWillSleep_, selector=b"systemWillSleep:"),
+        AppKit.NSWorkspaceWillSleepNotification,
+        None,
+    )
+    ws.notificationCenter().addObserver_selector_name_object_(
+        _sleep_observer,
+        objc.selector(_sleep_observer.systemDidWake_, selector=b"systemDidWake:"),
+        AppKit.NSWorkspaceDidWakeNotification,
         None,
     )
 
@@ -742,12 +1032,38 @@ def _check_accessibility():
         _dbg(f"AX check error: {e}")
 
 
+def _first_run_setup():
+    """On first install: copy parakeet-cli and models from bundle to stable paths.
+    Stable paths preserve CoreML cache across app rebuilds/updates.
+    Subsequent launches skip this (paths already exist)."""
+    import shutil
+    import config as _cfg
+
+    # parakeet-cli → ~/.local/bin/parakeet-cli
+    stable_bin = os.path.expanduser("~/.local/bin/parakeet-cli")
+    if not os.path.isfile(stable_bin) and os.path.isfile(_cfg._bundle_parakeet):
+        os.makedirs(os.path.dirname(stable_bin), exist_ok=True)
+        shutil.copy2(_cfg._bundle_parakeet, stable_bin)
+        os.chmod(stable_bin, 0o755)
+        _dbg("first-run: copied parakeet-cli to ~/.local/bin/")
+
+    # models → ~/.local/share/hush/models/<model>
+    stable_models = os.path.expanduser("~/.local/share/hush/models")
+    stable_model  = os.path.join(stable_models, "parakeet-tdt-0.6b-v3-coreml")
+    if not os.path.exists(stable_model) and os.path.isdir(_cfg._bundle_models):
+        os.makedirs(stable_models, exist_ok=True)
+        _dbg("first-run: copying models (~400 MB) to ~/.local/share/hush/ …")
+        shutil.copytree(_cfg._bundle_models, stable_model)
+        _dbg("first-run: models copied")
+
+
 class _AppDelegate(AppKit.NSObject):
     """Minimal NSApplicationDelegate so macOS runs applicationDidFinishLaunching:
     before the Scene lifecycle tries to set up windows. Without this delegate,
     NSSceneStatusItem gets a zero-height window when launched via `open .app`."""
 
     def applicationDidFinishLaunching_(self, notification):
+        _first_run_setup()          # copy binary+models to stable paths (once)
         _check_accessibility()
         _load_history()
         overlay.init(

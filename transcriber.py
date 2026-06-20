@@ -1,25 +1,43 @@
+import re
+import signal
 import subprocess
 import threading
 import struct
 import os
 from config import PARAKEET_CLI, LANG_ID, MODEL_DIR
 
-# Diagnostic messages that parakeet-cli prints to stdout but are not transcription
-_SYSTEM_PREFIXES = (
-    "Unable to load",
-    "GetMPSGraph",
-    "MPSGraph",
-    "/Users/",
-    "/private/",
-)
+_current_proc = None   # type: subprocess.Popen | None
+_proc_lock    = threading.Lock()
+
+def cancel():
+    """Kill any in-flight parakeet subprocess immediately."""
+    with _proc_lock:
+        proc = _current_proc
+    if proc and proc.poll() is None:
+        try:
+            proc.kill()
+        except Exception:
+            pass
 
 # First run compiles CoreML model (~4 min). After caching: ~33 s for 15 s audio.
 # 360 s covers cold start + up to ~2 min of audio.
 _TIMEOUT = 360
 
+# Patterns that parakeet-cli sometimes concatenates with transcription on same line.
+# We strip them inline (not the whole line) so the transcription isn't lost.
+_INLINE_NOISE = re.compile(
+    r'(Unable to load[^\n]*?@ GetMPSGraphExecutable'
+    r'|GetMPSGraph\w*'
+    r'|MPSGraph\w*'
+    r'|/Users/\S+'
+    r'|/private/\S+)',
+    re.DOTALL
+)
+
 def _clean(raw: str) -> str:
-    lines = [l for l in raw.splitlines()
-             if not any(l.startswith(p) or p in l for p in _SYSTEM_PREFIXES)]
+    # Strip inline system noise anywhere it appears, then drop blank lines
+    cleaned = _INLINE_NOISE.sub('', raw)
+    lines = [l.strip() for l in cleaned.splitlines() if l.strip()]
     return "\n".join(lines).strip()
 
 def _make_silent_wav(path: str, duration_s: float = 1.0, sample_rate: int = 16000):
@@ -64,25 +82,48 @@ def warm_up():
     threading.Thread(target=_run, daemon=True, name="parakeet-warmup").start()
 
 def transcribe(wav_path: str) -> str:
+    global _current_proc
     import time as _t
+    # Guard: parakeet crashes with ExtAudioFileOpenURL error on missing/empty files
+    try:
+        if not os.path.exists(wav_path) or os.path.getsize(wav_path) < 256:
+            with open("/tmp/vi_transcribe.log", "a") as _f:
+                _f.write(f"\n[{_t.strftime('%H:%M:%S')}] SKIP: invalid file {wav_path}\n")
+            return ""
+    except Exception:
+        return ""
     env = os.environ.copy()
     env["PARAKEET_LANG_ID"] = str(LANG_ID)
     env["PARAKEET_MODEL_DIR"] = MODEL_DIR
-    result = subprocess.run(
+    proc = subprocess.Popen(
         [PARAKEET_CLI, wav_path],
-        capture_output=True,
-        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         env=env,
-        timeout=_TIMEOUT,
     )
-    cleaned = _clean(result.stdout)
+    with _proc_lock:
+        _current_proc = proc
+    try:
+        stdout_b, stderr_b = proc.communicate(timeout=_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        stdout_b, stderr_b = proc.communicate()
+    finally:
+        with _proc_lock:
+            if _current_proc is proc:
+                _current_proc = None
+    if proc.returncode == -9:  # killed by cancel()
+        return ""
+    result_stdout = stdout_b.decode("utf-8", errors="replace")
+    result_stderr = stderr_b.decode("utf-8", errors="replace")
+    cleaned = _clean(result_stdout)
     try:
         with open("/tmp/vi_transcribe.log", "a") as f:
             f.write(f"\n[{_t.strftime('%H:%M:%S')}]\n"
-                    f"  stdout={repr(result.stdout[:500])}\n"
-                    f"  stderr_tail={repr(result.stderr[-300:])}\n"
+                    f"  stdout={repr(result_stdout[:500])}\n"
+                    f"  stderr_tail={repr(result_stderr[-300:])}\n"
                     f"  cleaned={repr(cleaned)}\n"
-                    f"  rc={result.returncode}\n")
+                    f"  rc={proc.returncode}\n")
     except Exception:
         pass
     return cleaned

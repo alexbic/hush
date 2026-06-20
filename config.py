@@ -5,12 +5,16 @@ import os
 _RSRC     = os.environ.get("RESOURCEPATH")
 _APP_DIR  = _RSRC if _RSRC else os.path.dirname(os.path.abspath(__file__))
 
-# parakeet-cli: look next to source files first, then ~/.local/bin
-_local_parakeet = os.path.join(_APP_DIR, "parakeet-cli")
-PARAKEET_CLI = _local_parakeet if os.path.isfile(_local_parakeet) \
-               else os.path.expanduser("~/.local/bin/parakeet-cli")
+# parakeet-cli: prefer ~/.local/bin (stable path = CoreML cache survives rebuilds)
+_stable_parakeet = os.path.expanduser("~/.local/bin/parakeet-cli")
+_bundle_parakeet = os.path.join(_APP_DIR, "parakeet-cli")
+PARAKEET_CLI = _stable_parakeet if os.path.isfile(_stable_parakeet) \
+               else _bundle_parakeet
 
-MODEL_DIR = os.path.join(_APP_DIR, "models", "parakeet-tdt-0.6b-v3-coreml")
+# Models: prefer ~/.local/share/hush (stable), fall back to bundle Resources
+_stable_models = os.path.expanduser("~/.local/share/hush/models/parakeet-tdt-0.6b-v3-coreml")
+_bundle_models  = os.path.join(_APP_DIR, "models", "parakeet-tdt-0.6b-v3-coreml")
+MODEL_DIR = _stable_models if os.path.isdir(_stable_models) else _bundle_models
 LANG_ID = int(os.environ.get("VOICE_LANG_ID", "157"))  # 157=ru, 64=en
 
 # LLM для обработки текста в сценариях.
