@@ -4,6 +4,7 @@ Session window: opens on hotkey press, accumulates text, closes on [×] or PASTE
 Branch: ui/terminal-green
 """
 import re
+import sys
 import math
 import threading
 import time
@@ -2760,6 +2761,25 @@ class BtnTarget(AppKit.NSObject):
         """Status-bar menu: always show About card."""
         _main(_show_about_view)
 
+    def openHush_(self, sender):
+        """Status-bar menu: open main HUSH window (same as double Option press)."""
+        _main(show_recording)
+
+    def toggleLaunchAtLogin_(self, sender):
+        """Status-bar menu: toggle Launch at Login via LaunchAgent plist."""
+        _toggle_launch_at_login()
+        state = 1 if _is_launch_at_login() else 0
+        sender.setState_(state)
+        item = getattr(self, '_login_menu_item', None)
+        if item:
+            item.setState_(state)
+
+    def menuNeedsUpdate_(self, menu):
+        """NSMenuDelegate: refresh checkmark before menu opens."""
+        item = getattr(self, '_login_menu_item', None)
+        if item:
+            item.setState_(1 if _is_launch_at_login() else 0)
+
     def quitApp_(self, sender):
         """Status-bar menu: quit the application."""
         AppKit.NSApp.terminate_(None)
@@ -4180,6 +4200,53 @@ def _rebuild_hist_scroll(ctrl):
         ctrl._all_btn.setHidden_(len(ctrl._items) == 0)
 
 
+_LAUNCH_AGENT_LABEL = "net.alexbic.hush"
+_LAUNCH_AGENT_PLIST = os.path.expanduser(
+    f"~/Library/LaunchAgents/{_LAUNCH_AGENT_LABEL}.plist")
+
+def _is_launch_at_login():
+    return os.path.exists(_LAUNCH_AGENT_PLIST)
+
+def _toggle_launch_at_login():
+    import subprocess
+    if _is_launch_at_login():
+        subprocess.call(["launchctl", "unload", _LAUNCH_AGENT_PLIST],
+                        stderr=subprocess.DEVNULL)
+        try:
+            os.remove(_LAUNCH_AGENT_PLIST)
+        except OSError:
+            pass
+    else:
+        python = sys.executable
+        script = os.path.abspath(os.path.join(os.path.dirname(__file__), "main.py"))
+        plist = f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>{_LAUNCH_AGENT_LABEL}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{python}</string>
+        <string>{script}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <false/>
+    <key>StandardOutPath</key>
+    <string>{os.path.expanduser("~/Library/Logs/hush.log")}</string>
+    <key>StandardErrorPath</key>
+    <string>{os.path.expanduser("~/Library/Logs/hush.log")}</string>
+</dict>
+</plist>
+"""
+        os.makedirs(os.path.dirname(_LAUNCH_AGENT_PLIST), exist_ok=True)
+        with open(_LAUNCH_AGENT_PLIST, "w") as f:
+            f.write(plist)
+
+
 def _setup_status_bar():
     """Create macOS menu bar status item with About and Quit."""
     global _status_bar_item
@@ -4198,15 +4265,33 @@ def _setup_status_bar():
             btn.setFont_(_mono(13, True))
         btn.setToolTip_("HUSH — голосовой ввод")
     menu = AppKit.NSMenu.alloc().init()
+    open_item = AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+        "Открыть HUSH", "openHush:", "")
+    open_item.setTarget_(_btn_t)
+    # Subtitle hint (macOS 14+); fallback gracefully on older versions
+    try:
+        open_item.setSubtitle_("Двойное нажатие ⌥ Option")
+    except Exception:
+        pass
+    menu.addItem_(open_item)
+    menu.addItem_(AppKit.NSMenuItem.separatorItem())
     about_item = AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
         "О приложении", "showAbout:", "")
     about_item.setTarget_(_btn_t)
     menu.addItem_(about_item)
     menu.addItem_(AppKit.NSMenuItem.separatorItem())
+    login_item = AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+        "Запускать при входе в систему", "toggleLaunchAtLogin:", "")
+    login_item.setTarget_(_btn_t)
+    login_item.setState_(1 if _is_launch_at_login() else 0)
+    menu.addItem_(login_item)
+    _btn_t._login_menu_item = login_item   # keep reference for updates
+    menu.addItem_(AppKit.NSMenuItem.separatorItem())
     quit_item = AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
         "Завершить HUSH", "quitApp:", "")
     quit_item.setTarget_(_btn_t)
     menu.addItem_(quit_item)
+    menu.setDelegate_(_btn_t)   # menuNeedsUpdate_ refreshes checkmark on open
     _status_bar_item.setMenu_(menu)
     # macOS 14+: NSStatusItem.visible persists and may default to hidden in some contexts
     try:

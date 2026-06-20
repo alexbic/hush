@@ -10,11 +10,23 @@ import signal
 import time
 import json
 import os
+import sys
 import uuid
 from datetime import datetime, timezone
 import AppKit
 import objc
 from pynput import keyboard as kb
+
+# ── Single-instance guard via lock file ──────────────────────────────────────
+_LOCK_FILE = "/tmp/hush.lock"
+try:
+    import fcntl
+    _lock_fd = open(_LOCK_FILE, "w")
+    fcntl.flock(_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    _lock_fd.write(str(os.getpid()))
+    _lock_fd.flush()
+except (IOError, OSError):
+    sys.exit(0)   # another instance is already running — exit silently
 
 import recorder
 import transcriber
