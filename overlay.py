@@ -623,9 +623,7 @@ def _update_magnet_btn(key):
         return
     try:
         is_on = _magnet_on.get(key, False)
-        col   = C_GREEN_BR if is_on else C_GREEN_DIM
-        lbl   = "[+]" if is_on else "[-]"
-        btn.setAttributedTitle_(_atitle(lbl, size=8, color=col))
+        btn.setAlphaValue_(1.0 if is_on else 0.35)
     except Exception:
         pass
 
@@ -644,12 +642,11 @@ def _update_panel_drag_end(key, panel):
     except Exception:
         pass
 
-def _mkmagnet_btn(key, cv, x, y, w=28, h=16):
+def _mkmagnet_btn(key, cv, x, y, w=22, h=22):
     is_on = _magnet_on.get(key, False)
-    lbl   = "[+]" if is_on else "[-]"
-    col   = C_GREEN_BR if is_on else C_GREEN_DIM
-    btn   = _mkbtn(lbl, color=col, size=8)
+    btn   = _mkbtn("🧲", color=AppKit.NSColor.whiteColor(), size=13)
     btn.setFrame_(AppKit.NSMakeRect(x, y, w, h))
+    btn.setAlphaValue_(1.0 if is_on else 0.35)
     btn.setTag_(_MAGNET_KEYS.index(key))
     btn.setTarget_(_btn_t)
     btn.setAction_(BtnTarget.panelMagnet_)
@@ -2987,7 +2984,6 @@ class BtnTarget(AppKit.NSObject):
         _toggle_cfg_panel()
 
     def cfgProviders_(self, sender):
-        _close_cfg_panel()
         _toggle_providers_panel()
 
     def scProviderChanged_(self, sender):
@@ -4828,9 +4824,10 @@ def _show_hist_panel(history):
 
     # ── Header: three filter tabs + select-all checkbox ──────────────────────
     hdr_y   = ph - HDR_H
-    TAB_GAP = 6
-    n_tabs  = 3
-    tab_area_w = pw - CHK_W - CHK_R - 12
+    TAB_GAP  = 6
+    MAG_OFF  = 30   # left offset for magnet icon
+    n_tabs   = 3
+    tab_area_w = pw - CHK_W - CHK_R - 12 - MAG_OFF
     tab_w      = (tab_area_w - TAB_GAP * (n_tabs - 1)) // n_tabs
     tab_h      = 20
     tab_y      = hdr_y + (HDR_H - tab_h) // 2
@@ -4843,7 +4840,7 @@ def _show_hist_panel(history):
     for ti, (mode, key) in enumerate(tab_specs):
         lbl = _T(key)
         col = C_CYAN if mode == _hist_filter else C_GREEN_DIM
-        tx  = 8 + ti * (tab_w + TAB_GAP)
+        tx  = MAG_OFF + ti * (tab_w + TAB_GAP)
         tb  = _mkbtn(lbl, color=col, size=9)
         tb.setFrame_(AppKit.NSMakeRect(tx, tab_y, tab_w, tab_h))
         tb.setRepresentedObject_(mode)
@@ -4869,8 +4866,7 @@ def _show_hist_panel(history):
     cv.addSubview_(all_btn)
     ctrl._all_btn = all_btn
 
-    HMAG_W = 28
-    _mkmagnet_btn("hist", cv, pw - CHK_W - CHK_R - HMAG_W - 4, hdr_y + 6, HMAG_W, 18)
+    _mkmagnet_btn("hist", cv, 6, hdr_y + (HDR_H - 22) // 2, 22, 22)
 
     # ── Scrollable list ───────────────────────────────────────────────────────
     scroll_y = BOT_PAD + FOOT_H
@@ -5624,8 +5620,7 @@ def _toggle_cfg_panel():
     btn_keys.setToolTip_("Настройка провайдеров и API ключей")
     cv.addSubview_(btn_keys)
 
-    MAG_W = 28
-    _mkmagnet_btn("cfg", cv, pw - INFO_SZ - KEYS_W - MAG_W - 20, ph - INFO_SZ - 4, MAG_W, INFO_SZ)
+    _mkmagnet_btn("cfg", cv, 6, ph - INFO_SZ - 4, 22, INFO_SZ)
 
     # ── OPACITY FIELDSET (narrow) ─────────────────────────────────────────────────
     op_cv, op_cw, op_ch = _fieldset(op_x, box_y, op_w, BOX_H, _T("cfg_opacity"))
@@ -7338,11 +7333,10 @@ def _toggle_providers_panel():
     y = PH - 8
 
     # ── Header ────────────────────────────────────────────────────────────────
+    _mkmagnet_btn("providers", cv, 6, y - LBL_H - 2, 22, LBL_H + 4)
     hdr = _mklabel("ПРОВАЙДЕРЫ / API КЛЮЧИ", size=10, color=C_IDLE)
-    hdr.setFrame_(AppKit.NSMakeRect(MARGIN, y - LBL_H, FW - 60, LBL_H))
+    hdr.setFrame_(AppKit.NSMakeRect(32, y - LBL_H, FW - 32, LBL_H))
     cv.addSubview_(hdr)
-    MAG_W_P = 28
-    _mkmagnet_btn("providers", cv, PW - MARGIN - MAG_W_P, y - LBL_H, MAG_W_P, LBL_H)
     y -= LBL_H + 5
     cv.addSubview_(_sep_line(MARGIN, y, FW, pin="top"))
     y -= 8
