@@ -877,8 +877,13 @@ def _snap_attached_panels_live(new_wx, new_wy):
 
 
 def _smart_snap_panel(key, panel):
-    """On mouseUp: if a magnetic panel is off the current screen, reassign it
-    to the nearest free grid cell.  No overlaps, fits within screen bounds."""
+    """On mouseUp: handle panel position after drag.
+
+    Magnetic panels (magnet ON): if off-screen, reassign to nearest free grid
+    cell so there are no overlaps.
+    Free panels (magnet OFF): only clamp to screen — no grid assignment, the
+    user placed it intentionally.
+    """
     win = globals().get("_win")
     if not win or not panel:
         return
@@ -896,17 +901,23 @@ def _smart_snap_panel(key, panel):
     if not off:
         return
 
+    if not _magnet_on.get(key, False):
+        # Free panel: just clamp to screen, respect user's drag position
+        nx = max(vx, min(px, vx2 - pw))
+        ny = max(vy, min(py, vy2 - ph))
+        _magnet_free_pos[key] = (nx, ny)
+        panel.setFrameOrigin_(AppKit.NSMakePoint(nx, ny))
+        _magnet_save()
+        return
+
+    # Magnetic panel: find nearest free grid cell
     result = _assign_cell(key, wx, wy, ww, wh, pw, ph, vx, vy, vx2, vy2)
     if result is None:
         return
     _col, _row, nx, ny = result
-    # Clamp to screen bounds (safety)
     nx = max(vx, min(nx, vx2 - pw))
     ny = max(vy, min(ny, vy2 - ph))
-    if _magnet_on.get(key, False):
-        _magnet_offset[key] = (nx - wx, ny - wy)
-    else:
-        _magnet_free_pos[key] = (nx, ny)
+    _magnet_offset[key] = (nx - wx, ny - wy)
     panel.setFrameOrigin_(AppKit.NSMakePoint(nx, ny))
     _magnet_save()
 
