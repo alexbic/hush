@@ -302,9 +302,9 @@ STRINGS = {
         "cfg_hotkey":     "мастер-клавиша",
         "cfg_theme":      "цвет",
         "cfg_scenes":     "сценарии",
-        "hist_mixed":     "все",
-        "hist_sessions":  "сессии",
-        "hist_blocks":    "блоки",
+        "hist_mixed":     "ВСЕ",
+        "hist_sessions":  "СЕССИИ",
+        "hist_blocks":    "БЛОКИ",
         "about_body": (
             "HUSH\n"
             "Hear · Understand · Shape · Hand back\n"
@@ -355,9 +355,9 @@ STRINGS = {
         "cfg_hotkey":     "modifier key",
         "cfg_theme":      "color",
         "cfg_scenes":     "scenarios",
-        "hist_mixed":     "all",
-        "hist_sessions":  "sessions",
-        "hist_blocks":    "blocks",
+        "hist_mixed":     "ALL",
+        "hist_sessions":  "SESSIONS",
+        "hist_blocks":    "BLOCKS",
         "about_body": (
             "HUSH\n"
             "Hear · Understand · Shape · Hand back\n"
@@ -407,9 +407,9 @@ STRINGS = {
         "cfg_hotkey":     "tecla mod.",
         "cfg_theme":      "color",
         "cfg_scenes":     "escenarios",
-        "hist_mixed":     "todo",
-        "hist_sessions":  "sesiones",
-        "hist_blocks":    "bloques",
+        "hist_mixed":     "TODO",
+        "hist_sessions":  "SESIONES",
+        "hist_blocks":    "BLOQUES",
         "about_body": (
             "HUSH\n"
             "Hear · Understand · Shape · Hand back\n"
@@ -559,7 +559,7 @@ def _repel_from_others(panel):
 
 
 _MAGNET_KEYS    = ["cfg", "hist", "editor", "providers"]  # tag=index
-_MAGNET_DEFAULT = {"cfg": True, "hist": True, "editor": False, "providers": False}
+_MAGNET_DEFAULT = {"cfg": True, "hist": True, "editor": True, "providers": True}
 _magnet_on      = dict(_MAGNET_DEFAULT)
 _magnet_offset  = {}   # {key: (dx, dy)} from _win origin when ON
 _magnet_free_pos = {}  # {key: (x, y)} saved free position when OFF
@@ -4402,9 +4402,9 @@ def _reposition_attached_panels():
 
 
 def _reset_panels_layout():
-    """Reset magnets to defaults and reopen all visible panels at default positions."""
+    """Reset: all magnets ON, all panels open at default positions around main window."""
     global _magnet_on, _magnet_offset, _magnet_free_pos
-    _magnet_on       = dict(_MAGNET_DEFAULT)
+    _magnet_on       = dict(_MAGNET_DEFAULT)   # all True
     _magnet_offset   = {}
     _magnet_free_pos = {}
     for k in _MAGNET_KEYS:
@@ -4413,34 +4413,19 @@ def _reset_panels_layout():
     if not win:
         _magnet_save()
         return
-    mf  = win.frame()
-    GAP = 6
-    # Free panels: move to default positions
-    _free_defaults = {
-        "editor":    (mf.origin.x + mf.size.width + GAP, mf.origin.y),
-        "providers": (mf.origin.x - mf.size.width - GAP, mf.origin.y),
-    }
-    for key, panel_name in [("editor", "_sc_editor_panel"), ("providers", "_prov_panel")]:
-        _magnet_free_pos[key] = _free_defaults[key]
-        panel = globals().get(panel_name)
-        if panel and panel.isVisible():
-            try:
-                panel.setFrameOrigin_(AppKit.NSMakePoint(*_free_defaults[key]))
-            except Exception:
-                pass
     _magnet_save()
-    # Reopen visible attached panels at new default positions
-    # (close + reopen so panel visibly snaps to default)
-    cfg_was_open  = bool(_cfg_panel  and _cfg_panel.isVisible())
-    hist_was_open = bool(_hist_panel and _hist_panel.isVisible())
-    if cfg_was_open:
-        _close_cfg_panel()
-        _toggle_cfg_panel()
-    elif hist_was_open:
-        # hist panel: just reposition (reopening is complex)
-        _reposition_attached_panels()
-    else:
-        _reposition_attached_panels()
+    # Ensure all panels are open (open if not already visible)
+    if not (_hist_panel and _hist_panel.isVisible()):
+        _toggle_hist_panel()
+    if not (_prov_panel and _prov_panel.isVisible()):
+        _toggle_providers_panel()
+    if not (_sc_editor_panel and _sc_editor_panel.isVisible()):
+        sc_list = _st.get("scenarios", [])
+        if sc_list:
+            _show_sc_editor_impl(0)
+    # Reopen cfg panel so it snaps to default position (visible effect)
+    _close_cfg_panel()
+    _toggle_cfg_panel()
 
 
 def _restore_overlay_after_panel():
@@ -5031,7 +5016,7 @@ def _sc_edit_dirty() -> bool:
 
 
 def _close_editor_now(pending_fn=None):
-    """Close scenario editor panel, restore main window."""
+    """Close scenario editor panel."""
     global _sc_editor_panel, _sc_edit_pending, _editing_scenario
     _editing_scenario = False
     if _sc_editor_panel:
@@ -5039,8 +5024,6 @@ def _close_editor_now(pending_fn=None):
         _sc_editor_panel.close()
         _sc_editor_panel = None
     _sc_edit_pending = None
-    if _win:
-        _win.orderFrontRegardless()
     # Rebuild cfg panel so the highlighted card resets to normal color
     if _cfg_panel and _cfg_panel.isVisible():
         _close_cfg_panel_rebuild()
@@ -5156,7 +5139,6 @@ def _do_delete_scenario(sc_idx: int):
         _sc_editor_panel = None
 
     if _win:
-        _win.orderFrontRegardless()
         _relayout_buttons(W if not _expanded else W_EXP)
 
     _close_cfg_panel_rebuild()
@@ -5241,16 +5223,16 @@ def _show_sc_editor_impl(sc_idx):
     scenarios = _st.get("scenarios", [])
     sc = scenarios[sc_idx] if sc_idx is not None and sc_idx < len(scenarios) else {}
 
-    # Use main window size so editor visually replaces it
+    # Fixed size — same as all other auxiliary panels
     mf      = _win.frame()
-    EDIT_W  = int(mf.size.width)
-    EDIT_H  = int(mf.size.height)
+    EDIT_W  = W
+    EDIT_H  = H_PANEL
     MARGIN  = 12
     LABEL_H = 13
     TF_H    = 22
     GAP     = 3
     BTN_H   = 22
-    BTN_W   = 60
+    BTN_W   = 72     # wide enough for Russian "[Сохранить]"
 
     # Use _EditorPanel so text fields can receive focus/keyboard input
     panel = _EditorPanel.alloc().initWithContentRect_styleMask_backing_defer_(
@@ -5271,14 +5253,16 @@ def _show_sc_editor_impl(sc_idx):
 
     y = EDIT_H - 8
 
-    # Header: title + right-side action button
+    # Header: 🧲 + title + right-side action button
+    MAG_END = 30
     is_default_sc = sc_idx is not None and sc_idx < len(DEFAULT_SCENARIOS)
     is_custom_sc  = sc_idx is not None and sc_idx >= len(DEFAULT_SCENARIOS)
     RIGHT_BTN_W   = 56 if is_custom_sc else 34
     has_right_btn = is_default_sc or is_custom_sc
-    hdr_w = EDIT_W - MARGIN * 2 - (RIGHT_BTN_W + 4 if has_right_btn else 0)
-    hdr = _mklabel(_T("sc_edit_hdr"), size=10, color=C_IDLE)
-    hdr.setFrame_(AppKit.NSMakeRect(MARGIN, y - LABEL_H, hdr_w, LABEL_H))
+    _mkmagnet_btn("editor", cv, 6, y - LABEL_H - 2, 22, LABEL_H + 4)
+    hdr_w = EDIT_W - MAG_END - MARGIN - (RIGHT_BTN_W + 4 if has_right_btn else 0)
+    hdr = _mklabel("НАСТРОЙКИ СЦЕНАРИЯ", size=10, color=C_IDLE)
+    hdr.setFrame_(AppKit.NSMakeRect(MAG_END, y - LABEL_H, hdr_w, LABEL_H))
     cv.addSubview_(hdr)
     if is_default_sc:
         btn_rst = _mkbtn("[↺]", color=C_GREEN_DIM, size=9)
@@ -5476,9 +5460,18 @@ def _show_sc_editor_impl(sc_idx):
     _sc_editor_panel._panel_key = "editor"
     _editing_scenario = True
 
-    # Position editor exactly over main window, hide main window behind it
-    panel.setFrameOrigin_(AppKit.NSMakePoint(mf.origin.x, mf.origin.y))
-    _win.orderOut_(None)
+    # Position as floating auxiliary panel (magnet-aware), main window stays visible
+    if _magnet_on.get("editor", True) and "editor" in _magnet_offset:
+        dx, dy = _magnet_offset["editor"]
+        ex, ey = int(mf.origin.x + dx), int(mf.origin.y + dy)
+    elif "editor" in _magnet_free_pos and not _magnet_on.get("editor", True):
+        ex, ey = int(_magnet_free_pos["editor"][0]), int(_magnet_free_pos["editor"][1])
+    else:
+        ex = int(mf.origin.x + mf.size.width + 6)
+        ey = int(mf.origin.y)
+        if _magnet_on.get("editor", True):
+            _magnet_offset["editor"] = (mf.size.width + 6, 0)
+    panel.setFrameOrigin_(AppKit.NSMakePoint(ex, ey))
     AppKit.NSApp.activateIgnoringOtherApps_(True)
     panel.makeKeyAndOrderFront_(None)
     panel.makeFirstResponder_(tf_en)
@@ -5550,7 +5543,6 @@ def _sc_editor_save():
         _sc_editor_panel = None
 
     if _win:
-        _win.orderFrontRegardless()
         _relayout_buttons(W if not _expanded else W_EXP)
 
     if pending_fn:
@@ -5670,6 +5662,9 @@ def _toggle_cfg_panel():
     cv.addSubview_(btn_keys)
 
     _mkmagnet_btn("cfg", cv, 6, ph - INFO_SZ - 4, 22, INFO_SZ)
+    cfg_hdr = _mklabel("НАСТРОЙКИ", size=10, color=C_IDLE)
+    cfg_hdr.setFrame_(AppKit.NSMakeRect(32, ph - INFO_SZ - 4, pw - 32 - INFO_SZ - KEYS_W - 20, INFO_SZ))
+    cv.addSubview_(cfg_hdr)
 
     # ── OPACITY FIELDSET (narrow) ─────────────────────────────────────────────────
     op_cv, op_cw, op_ch = _fieldset(op_x, box_y, op_w, BOX_H, _T("cfg_opacity"))
