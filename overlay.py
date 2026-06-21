@@ -641,29 +641,47 @@ def _panel_side(key, ww, wh, pw, ph):
     return "top" if dy >= 0 else "bottom"
 
 
-def _end_of_side_pos(side, excl_key, wx, wy, ww, wh, pw, ph):
-    """Return absolute (nx, ny) for a new panel placed at the END of the chain
-    on the given side (past all panels already there, excluding excl_key)."""
+def _first_free_slot_on_side(side, excl_key, wx, wy, ww, wh, pw, ph):
+    """Return absolute (nx, ny) for the FIRST FREE slot on the given side,
+    scanning from closest-to-main outward (skips slots occupied by other panels)."""
     G = _SNAP_GAP
-    others = []
+    occupied = []
     for k in _MAGNET_KEYS:
         if k == excl_key or not _magnet_on.get(k, False) or k not in _magnet_offset:
             continue
         if _panel_side(k, ww, wh, pw, ph) == side:
-            others.append(_magnet_offset[k])
+            occupied.append(_magnet_offset[k])
 
+    for n in range(8):
+        if side == "top":
+            slot = wh + G + n * (ph + G)
+            if not any(abs(d[1] - slot) < ph for d in occupied):
+                return int(wx), int(wy + slot)
+        elif side == "bottom":
+            slot = -(ph + G + n * (ph + G))
+            if not any(abs(d[1] - slot) < ph for d in occupied):
+                return int(wx), int(wy + slot)
+        elif side == "right":
+            slot = ww + G + n * (pw + G)
+            if not any(abs(d[0] - slot) < pw for d in occupied):
+                return int(wx + slot), int(wy)
+        else:  # left
+            slot = -(pw + G + n * (pw + G))
+            if not any(abs(d[0] - slot) < pw for d in occupied):
+                return int(wx + slot), int(wy)
+
+    # Fallback: place beyond all occupied (end of chain)
     if side == "left":
-        base_dx = -(pw + G) if not others else min(d[0] for d in others) - pw - G
-        return int(wx + base_dx), int(wy)
+        base = min((d[0] for d in occupied), default=-(pw + G)) - pw - G
+        return int(wx + base), int(wy)
     if side == "right":
-        base_dx = ww + G if not others else max(d[0] for d in others) + pw + G
-        return int(wx + base_dx), int(wy)
+        base = max((d[0] for d in occupied), default=ww + G) + pw + G
+        return int(wx + base), int(wy)
     if side == "top":
-        base_dy = wh + G if not others else max(d[1] for d in others) + ph + G
-        return int(wx), int(wy + base_dy)
-    # bottom
-    base_dy = -(ph + G) if not others else min(d[1] for d in others) - ph - G
-    return int(wx), int(wy + base_dy)
+        base = max((d[1] for d in occupied), default=wh + G) + ph + G
+        return int(wx), int(wy + base)
+    base = min((d[1] for d in occupied), default=-(ph + G)) - ph - G
+    return int(wx), int(wy + base)
 
 
 def _opp_side(off_left, off_right, off_top, off_bottom):
@@ -714,14 +732,14 @@ def _snap_attached_panels_live(new_wx, new_wy):
             continue
 
         side = _opp_side(off_left, off_right, off_top, off_bottom)
-        nx, ny = _end_of_side_pos(side, key, new_wx, new_wy, ww, wh, pw, ph)
+        nx, ny = _first_free_slot_on_side(side, key, new_wx, new_wy, ww, wh, pw, ph)
         nx = max(vx, min(nx, vx + vw - pw))
         ny = max(vy, min(ny, vy + vh - ph))
         _magnet_offset[key] = (nx - new_wx, ny - new_wy)
 
 
 def _smart_snap_panel(key, panel):
-    """On mouseUp: if panel is off-screen, jump to opposite side at end of chain."""
+    """On mouseUp: if panel is off-screen, jump to opposite side to first free slot."""
     win = globals().get("_win")
     if not win or not panel:
         return
@@ -747,7 +765,7 @@ def _smart_snap_panel(key, panel):
         return
 
     side = _opp_side(off_left, off_right, off_top, off_bottom)
-    nx, ny = _end_of_side_pos(side, key, wx, wy, ww, wh, pw, ph)
+    nx, ny = _first_free_slot_on_side(side, key, wx, wy, ww, wh, pw, ph)
     nx = max(vx, min(nx, vx + vw - pw))
     ny = max(vy, min(ny, vy + vh - ph))
 
@@ -7862,6 +7880,8 @@ def hide(force: bool = False):
         _close_editor_now()
         _close_cfg_panel()
         _close_providers_panel()
+        global _panels_reset_open
+        _panels_reset_open = False   # sync toggle state: panels are now all closed
         _win_save_pos()
         _win.orderOut_(None)
         AppKit.NSApp.setActivationPolicy_(AppKit.NSApplicationActivationPolicyAccessory)
