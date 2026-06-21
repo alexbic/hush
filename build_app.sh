@@ -81,7 +81,7 @@ fi
 
 # ── Python-файлы приложения ─────────────────────────────────────────────────
 echo "Копируем исходники..."
-for f in main.py overlay.py recorder.py transcriber.py injector.py processor.py config.py; do
+for f in main.py overlay.py recorder.py transcriber.py injector.py processor.py config.py provider_config.py; do
     [ -f "$SRC_DIR/$f" ] && cp "$SRC_DIR/$f" "$APP/Contents/Resources/" && echo "  + $f"
 done
 
