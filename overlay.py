@@ -3175,7 +3175,19 @@ def _style_tf(tf, placeholder=""):
         cell.setPlaceholderAttributedString_(pa)
 
 def _main(fn):
-    AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(fn)
+    def _safe():
+        try:
+            fn()
+        except Exception:
+            import traceback, time
+            tb = traceback.format_exc()
+            print(tb, flush=True)
+            try:
+                with open("/tmp/hush_main_err.log", "a") as _f:
+                    _f.write(f"[{time.strftime('%H:%M:%S')}]\n{tb}\n")
+            except Exception:
+                pass
+    AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(_safe)
 
 # ── Layout constants ──────────────────────────────────────────────────────────
 
@@ -4936,11 +4948,20 @@ def _update_sc_cfg_colors():
 
 
 def _show_sc_editor(sc_idx):
-    """Open scenario editor covering the main window.
-    cfg_panel stays open in its position. sc_idx=None = add new.
-    """
+    """Open scenario editor covering the main window."""
     global _sc_editor_panel, _sc_edit_refs, _sc_edit_pending, _editing_scenario
     _sc_edit_pending = None
+    try:
+        return _show_sc_editor_impl(sc_idx)
+    except Exception as _e:
+        import traceback
+        traceback.print_exc()
+        with open("/tmp/hush_sc_editor.log", "a") as _f:
+            traceback.print_exc(file=_f)
+
+
+def _show_sc_editor_impl(sc_idx):
+    global _sc_editor_panel, _sc_edit_refs, _editing_scenario
 
     if _sc_editor_panel:
         _sc_editor_panel.orderOut_(None)
@@ -5037,12 +5058,12 @@ def _show_sc_editor(sc_idx):
 
     # provider label + model label
     lbl_p = _mklabel("провайдер", size=9, color=C_IDLE)
-    lbl_p.setFrame_(AppKit.NSMakeRect(MARGIN, y - LBL_H, HALF_W, LBL_H))
+    lbl_p.setFrame_(AppKit.NSMakeRect(MARGIN, y - LABEL_H, HALF_W, LABEL_H))
     cv.addSubview_(lbl_p)
     lbl_m = _mklabel("модель", size=9, color=C_IDLE)
-    lbl_m.setFrame_(AppKit.NSMakeRect(MARGIN + HALF_W + 6, y - LBL_H, HALF_W, LBL_H))
+    lbl_m.setFrame_(AppKit.NSMakeRect(MARGIN + HALF_W + 6, y - LABEL_H, HALF_W, LABEL_H))
     cv.addSubview_(lbl_m)
-    y -= LBL_H + 2
+    y -= LABEL_H + 2
 
     # provider popup
     prov_items = ["авто"] + _pc.available_providers()
