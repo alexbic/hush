@@ -681,10 +681,10 @@ _MAGNET_PANEL_GLOBALS = {
     "providers": "_prov_panel",
 }
 
-def _first_free_slot_on_side(side, excl_key, wx, wy, ww, wh, pw, ph, perp=0):
-    """Return (nx, ny) for slot 0 on `side` if it is free, else None.
-    3×2 grid constraint: max 1 panel per cardinal side.  Closed/hidden panels
-    never block a slot."""
+def _first_free_slot_on_side(side, excl_key, wx, wy, ww, wh, pw, ph, perp=0, max_slots=1):
+    """Return (nx, ny) for the first free slot on `side`, scanning outward up to
+    `max_slots` deep.  Returns None when all slots are occupied.
+    Hidden panels never block a slot."""
     G = _SNAP_GAP
     occupied = []
     for k in _MAGNET_KEYS:
@@ -696,27 +696,29 @@ def _first_free_slot_on_side(side, excl_key, wx, wy, ww, wh, pw, ph, perp=0):
         if _panel_side(k, ww, wh, pw, ph) == side:
             occupied.append(_magnet_offset[k])
 
-    if side == "top":
-        slot = wh + G
-        same_lane = [d for d in occupied if abs(d[0] - perp) < pw]
-        if not any(abs(d[1] - slot) < ph for d in same_lane):
-            return int(wx + perp), int(wy + slot)
-    elif side == "bottom":
-        slot = -(ph + G)
-        same_lane = [d for d in occupied if abs(d[0] - perp) < pw]
-        if not any(abs(d[1] - slot) < ph for d in same_lane):
-            return int(wx + perp), int(wy + slot)
-    elif side == "right":
-        slot = ww + G
-        same_lane = [d for d in occupied if abs(d[1] - perp) < ph]
-        if not any(abs(d[0] - slot) < pw for d in same_lane):
-            return int(wx + slot), int(wy + perp)
-    else:  # left
-        slot = -(pw + G)
-        same_lane = [d for d in occupied if abs(d[1] - perp) < ph]
-        if not any(abs(d[0] - slot) < pw for d in same_lane):
-            return int(wx + slot), int(wy + perp)
-    return None  # slot 0 occupied on this side
+    step_h = pw + G if side in ("left", "right") else ph + G
+    for n in range(max(1, max_slots)):
+        if side == "top":
+            slot = wh + G + n * (ph + G)
+            same_lane = [d for d in occupied if abs(d[0] - perp) < pw]
+            if not any(abs(d[1] - slot) < ph for d in same_lane):
+                return int(wx + perp), int(wy + slot)
+        elif side == "bottom":
+            slot = -(ph + G + n * (ph + G))
+            same_lane = [d for d in occupied if abs(d[0] - perp) < pw]
+            if not any(abs(d[1] - slot) < ph for d in same_lane):
+                return int(wx + perp), int(wy + slot)
+        elif side == "right":
+            slot = ww + G + n * (pw + G)
+            same_lane = [d for d in occupied if abs(d[1] - perp) < ph]
+            if not any(abs(d[0] - slot) < pw for d in same_lane):
+                return int(wx + slot), int(wy + perp)
+        else:  # left
+            slot = -(pw + G + n * (pw + G))
+            same_lane = [d for d in occupied if abs(d[1] - perp) < ph]
+            if not any(abs(d[0] - slot) < pw for d in same_lane):
+                return int(wx + slot), int(wy + perp)
+    return None  # all slots occupied within max_slots
 
 
 def _diag_pos_free(excl_key, wx, wy, nx, ny, pw, ph):
@@ -735,33 +737,100 @@ def _diag_pos_free(excl_key, wx, wy, nx, ny, pw, ph):
 
 def _best_slot(key, prefer_side, avoid_side, wx, wy, ww, wh, pw, ph,
                vx, vy, vx2, vy2, GRAB=40):
-    """Find the best free grid cell for `key` and return (label, nx, ny).
-    Tries 4 cardinal sides first (1 slot each — 3×2 constraint), then 4 diagonal
-    corners as overflow.  Returns (None, None, None) if no position gives ≥GRAB px."""
-    G = _SNAP_GAP
+    """Find the best free grid position for `key`.  Returns (label, nx, ny)
+    or (None, None, None).
+
+    Layout rules:
+    - Each cardinal side gets as many slots as physically fit on the screen.
+    - Before placing on top/bottom, check the full centre column
+      (top_panel + main + bottom_panel) fits vertically.  If not, skip that
+      side and go horizontal instead — and vice-versa for portrait screens.
+    - When all cardinal slots are full or don't fit, fall back to 4 diagonals.
+    """
+    G  = _SNAP_GAP
+    vw = vx2 - vx
+    vh = vy2 - vy
     best_label, best_nx, best_ny, best_vis = None, None, None, -1
 
-    # ── Cardinal slots (max 1 per side) ──────────────────────────────────────
-    cardinal = [prefer_side] + [s for s in ("left", "right", "top", "bottom")
-                                 if s != prefer_side and s != avoid_side]
+    # Helper: is the opposite vertical/horizontal side already occupied?
+    def _opp_occupied(opp):
+        for k2 in _MAGNET_KEYS:
+            if k2 == key or not _magnet_on.get(k2, False) or k2 not in _magnet_offset:
+                continue
+            p2 = globals().get(_MAGNET_PANEL_GLOBALS.get(k2, ""))
+            if p2 is None or not p2.isVisible():
+                continue
+            if _panel_side(k2, ww, wh, pw, ph) == opp:
+                return True
+        return False
+
+    # ── Orientation: prefer the axis with more free space ────────────────────
+    # horiz_free = total free space left + right of main
+    # vert_free  = total free space above + below main
+    horiz_free = (wx - vx) + (vx2 - wx - ww)
+    vert_free  = (wy - vy) + (vy2 - wy - wh)
+    landscape  = horiz_free >= vert_free  # more room side-to-side
+
+    # Build ordered cardinal list: prefer the axis that has more free space
+    if landscape:
+        axis_first  = ["left", "right"]
+        axis_second = ["top", "bottom"]
+    else:
+        axis_first  = ["top", "bottom"]
+        axis_second = ["left", "right"]
+
+    def _order_by_prefer(sides):
+        return ([prefer_side] if prefer_side in sides else []) + \
+               [s for s in sides if s != prefer_side and s != avoid_side]
+
+    cardinal = _order_by_prefer(axis_first) + _order_by_prefer(axis_second)
+
+    # ── Cardinal slots ────────────────────────────────────────────────────────
     for side in cardinal:
-        pos = _first_free_slot_on_side(side, key, wx, wy, ww, wh, pw, ph, 0)
+        # How many panel-widths fit on this side of main
+        if side == "left":
+            avail = wx - vx - G
+            max_s = max(1, int(avail // (pw + G)))
+        elif side == "right":
+            avail = vx2 - wx - ww - G
+            max_s = max(1, int(avail // (pw + G)))
+        elif side == "top":
+            avail = vy2 - wy - wh - G
+            max_s = max(1, int(avail // (ph + G)))
+        else:  # bottom
+            avail = wy - vy - G
+            max_s = max(1, int(avail // (ph + G)))
+
+        # Orientation feasibility: skip a vertical side if the full centre
+        # column (top_panel + main + bottom_panel) would exceed screen height,
+        # i.e., the opposite vertical side is already claimed.
+        if side in ("top", "bottom") and _opp_occupied(_OPP[side]):
+            if ph + G + wh + G + ph > vh:
+                continue  # 3-tall column won't fit → go horizontal
+
+        # Same check for horizontal sides on portrait screens
+        if side in ("left", "right") and _opp_occupied(_OPP[side]):
+            if pw + G + ww + G + pw > vw:
+                continue  # 3-wide row won't fit → go vertical
+
+        pos = _first_free_slot_on_side(side, key, wx, wy, ww, wh, pw, ph, 0, max_s)
         if pos is None:
-            continue  # slot 0 already taken by another panel
+            continue
         nx, ny = pos
-        vis = (max(0, min(nx + pw, vx2) - max(nx, vx)) if side in ("left", "right")
-               else max(0, min(ny + ph, vy2) - max(ny, vy)))
-        if vis > best_vis:
+        if side in ("left", "right"):
+            vis = max(0, min(nx + pw, vx2) - max(nx, vx))
+        else:
+            vis = max(0, min(ny + ph, vy2) - max(ny, vy))
+        if vis >= GRAB and vis > best_vis:
             best_vis, best_label, best_nx, best_ny = vis, side, nx, ny
 
-    # ── Diagonal fallback — "second row" in the 3×2 grid ─────────────────────
+    # ── Diagonal fallback ─────────────────────────────────────────────────────
     diagonals = [
         ("top-left",     wx - pw - G, wy + wh + G),
         ("top-right",    wx + ww + G, wy + wh + G),
         ("bottom-left",  wx - pw - G, wy - ph - G),
         ("bottom-right", wx + ww + G, wy - ph - G),
     ]
-    # Prefer diagonals on the same row as prefer_side
     if prefer_side in ("top", "bottom"):
         row = "top" if prefer_side == "top" else "bottom"
         diagonals.sort(key=lambda d: (0 if row in d[0] else 1))
@@ -775,7 +844,7 @@ def _best_slot(key, prefer_side, avoid_side, wx, wy, ww, wh, pw, ph,
         x_vis = max(0, min(nx + pw, vx2) - max(nx, vx))
         y_vis = max(0, min(ny + ph, vy2) - max(ny, vy))
         vis = min(x_vis, y_vis)
-        if vis > best_vis:
+        if vis >= GRAB and vis > best_vis:
             best_vis, best_label, best_nx, best_ny = vis, label, nx, ny
 
     if best_vis < GRAB:
