@@ -732,12 +732,16 @@ def _snap_attached_panels_live(new_wx, new_wy):
             continue
         dx, dy = _magnet_offset[key]
         px, py = new_wx + dx, new_wy + dy
-        off_screen = (px + pw > vx + vw + MARGIN or px < vx - MARGIN or
-                      py + ph > vy + vh + MARGIN or py < vy - MARGIN)
-        if not off_screen:
-            continue
         cur_side = _panel_side(key, ww, wh, pw, ph)
         if cur_side is None:
+            continue
+        # Only check off-screen on the panel's own axis — side panels never
+        # snap because they extend above/below the screen, and vice versa.
+        if cur_side in ("left", "right"):
+            off_screen = (px < vx - MARGIN or px + pw > vx + vw + MARGIN)
+        else:
+            off_screen = (py < vy - MARGIN or py + ph > vy + vh + MARGIN)
+        if not off_screen:
             continue
         # Slot distance = how far along its own axis the panel is from main window
         slot_dist = abs(dx) if cur_side in ("left", "right") else abs(dy)
@@ -1964,8 +1968,9 @@ class DragPanel(AppKit.NSPanel):
                     y1   = min(s.visibleFrame().origin.y for s in scrs)
                     x2   = max(s.visibleFrame().origin.x + s.visibleFrame().size.width  for s in scrs)
                     y2   = max(s.visibleFrame().origin.y + s.visibleFrame().size.height for s in scrs)
+                    wh_  = wf.size.height
                     new_x = max(x1 - ww_ + GRAB, min(new_x, x2 - GRAB))
-                    new_y = max(y1, min(new_y, y2 - GRAB))
+                    new_y = max(y1, min(new_y, y2 - wh_))
                 except Exception:
                     pass
                 try: _snap_attached_panels_live(new_x, new_y)
