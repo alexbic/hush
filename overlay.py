@@ -5000,16 +5000,8 @@ def _show_sc_editor(sc_idx):
     tf_model = cb_model   # keep tf_model alias for backward compat with save/refs code
     y       -= TF_H + GAP + 2
 
-    # Color model field: green = reachable, red = unavailable (runs in background)
-    _model_init = sc.get("model", "") or ""
-    if _model_init:
-        def _check_model_field(cb=cb_model, m=_model_init):
-            ok = _model_available(m)
-            def _apply(field=cb, good=ok):
-                field.setTextColor_(C_GREEN_BR if good else C_REC)
-                field.setNeedsDisplay_(True)
-            AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(_apply)
-        threading.Thread(target=_check_model_field, daemon=True).start()
+    # Color model field hint — skipped for NSComboBox (popup state makes it unsafe)
+    # _model_available runs a blocking HTTP request so we intentionally skip it here.
 
     # Silent mode checkbox row — separated by thin lines, looks like a setting option
     SIL_H   = 28
@@ -7071,12 +7063,13 @@ def _refresh_prov_dots():
 def update_provider_status():
     """Called from main.py when provider probe completes — refresh UI dots."""
     _refresh_prov_dots()
-    # Also refresh model combobox in open scenario editor if any
-    _refresh_sc_model_combo()
 
 
 def _refresh_sc_model_combo():
-    """Update scenario editor model combo items when Ollama models are re-probed."""
+    """Update scenario editor model combo items when Ollama models are re-probed.
+    NOT called automatically — only on explicit re-open of the scenario editor.
+    Mutating NSComboBox items while its popup is visible causes SIGSEGV.
+    """
     combo = (_sc_edit_refs or {}).get("cb_model")
     if not combo:
         return
