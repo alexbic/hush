@@ -739,6 +739,28 @@ def _first_free_slot_on_side(side, excl_key, wx, wy, ww, wh, pw, ph, perp=0):
     return int(wx + perp), int(wy + base)
 
 
+def _best_slot(key, prefer_side, avoid_side, wx, wy, ww, wh, pw, ph,
+               vx, vy, vx2, vy2, GRAB=40):
+    """Try all 4 sides and return (best_side, nx, ny) — the slot with the most
+    visible panel area.  `prefer_side` is tried first; `avoid_side` is skipped
+    (it's the side the panel came from).  Returns (None, None, None) if no side
+    gives at least GRAB pixels of visibility."""
+    best_side, best_nx, best_ny, best_vis = None, None, None, -1
+    order = [prefer_side] + [s for s in ("left", "right", "top", "bottom")
+                              if s != prefer_side and s != avoid_side]
+    for side in order:
+        nx, ny = _first_free_slot_on_side(side, key, wx, wy, ww, wh, pw, ph, 0)
+        if side in ("left", "right"):
+            vis = max(0, min(nx + pw, vx2) - max(nx, vx))
+        else:
+            vis = max(0, min(ny + ph, vy2) - max(ny, vy))
+        if vis > best_vis:
+            best_vis, best_side, best_nx, best_ny = vis, side, nx, ny
+    if best_vis < GRAB:
+        return None, None, None
+    return best_side, best_nx, best_ny
+
+
 def _snap_attached_panels_live(new_wx, new_wy):
     """During main-window drag: panels that go off-screen jump to the opposite
     side of their CURRENT AXIS (left↔right or top↔bottom), preserving their
@@ -793,27 +815,22 @@ def _snap_attached_panels_live(new_wx, new_wy):
     now = _time.monotonic()
     _SNAP_COOLDOWN_S = 0.4   # seconds before the same panel can snap again
     candidates.sort(key=lambda c: c[0])
-    for _, key, cur_side, target, dx, dy, pw, ph in candidates:
+    for _, key, cur_side, target0, dx, dy, pw, ph in candidates:
         # Cooldown: prevent oscillation — a panel that just snapped can't snap again
         # within _SNAP_COOLDOWN_S seconds (main window must move away first).
-        last = _snap_ts.get(key, 0.0)
-        if now - last < _SNAP_COOLDOWN_S:
+        if now - _snap_ts.get(key, 0.0) < _SNAP_COOLDOWN_S:
             continue
-        # perp=0: all panels same height → always align flush with main window edges
-        nx, ny = _first_free_slot_on_side(target, key, new_wx, new_wy, ww, wh, pw, ph, 0)
-        # Feasibility: don't snap if the TARGET position is also off-screen — that
-        # would just trigger an immediate oscillation snap back.
-        GRAB = 40
-        if target in ("left", "right"):
-            fits = (min(nx + pw, vx2) - max(nx, vx)) >= GRAB
-        else:
-            fits = (min(ny + ph, vy2) - max(ny, vy)) >= GRAB
-        if not fits:
-            continue
-        _snap_ts[key] = now  # record snap time
-        # Store IDEAL (unclamped) offset — prevents overlap when two panels land on
-        # the same side and clamping would force both to the same Y/X position.
-        _magnet_offset[key] = (nx - new_wx, ny - new_wy)  # updated immediately so next panel sees it
+        # Find best available slot: prefer opposite side, then try all 4 directions.
+        # This gives "3×2 grid" behaviour — if top/bottom are full, wrap to side.
+        best_side, nx, ny = _best_slot(
+            key, target0, cur_side,
+            new_wx, new_wy, ww, wh, pw, ph,
+            vx, vy, vx2, vy2)
+        if best_side is None:
+            continue  # no room on any side — skip (oscillation guard)
+        _snap_ts[key] = now
+        # Store IDEAL (unclamped) offset so panels never overlap after clamping
+        _magnet_offset[key] = (nx - new_wx, ny - new_wy)  # updated immediately
 
 
 def _smart_snap_panel(key, panel):
@@ -834,15 +851,14 @@ def _smart_snap_panel(key, panel):
 
     cur_side = _panel_side(key, ww, wh, pw, ph) if key in _magnet_offset else None
     if cur_side:
-        # Check off-screen only on the panel's own axis
         if cur_side in ("left", "right"):
             off_screen = (px < vx - MARGIN or px + pw > vx + vw + MARGIN)
         else:
             off_screen = (py < vy - MARGIN or py + ph > vy + vh + MARGIN)
         if not off_screen:
             return
-        target = _OPP[cur_side]
-        perp = 0  # all panels same height → always align flush with main window edges
+        avoid = cur_side
+        prefer = _OPP[cur_side]
     else:
         off_screen = (px + pw > vx + vw + MARGIN or px < vx - MARGIN or
                       py + ph > vy + vh + MARGIN or py < vy - MARGIN)
@@ -850,20 +866,39 @@ def _smart_snap_panel(key, panel):
             return
         off_right = px + pw > vx + vw + MARGIN
         off_left  = px < vx - MARGIN
-        target    = "left" if off_right else ("right" if off_left else
-                    ("bottom" if py + ph > vy + vh + MARGIN else "top"))
-        perp = 0
+        avoid   = "right" if off_right else ("left" if off_left else
+                  ("top" if py + ph > vy + vh + MARGIN else "bottom"))
+        prefer  = _OPP[avoid]
 
-    nx, ny = _first_free_slot_on_side(target, key, wx, wy, ww, wh, pw, ph, perp)
-    # Store IDEAL offset (no clamping) — prevents overlap when clamping would
-    # force two panels to the same position. Panel may go off-screen; that is
-    # preferable to overlapping. Clamp only for the physical display position.
+    # Find best slot across all 4 directions — enables "3×2 grid" wrapping:
+    # if opposite side is also off-screen, try perpendicular sides.
+    best_side, nx, ny = _best_slot(key, prefer, avoid, wx, wy, ww, wh, pw, ph, vx, vy, vx2, vy2)
+
+    if best_side is None:
+        # ── Last resort: nudge main window toward the edge to free up space ──
+        # e.g. panel can't go left/right → pin main to one edge → other side opens up
+        win2 = globals().get("_win")
+        if win2:
+            if avoid in ("left", "right"):
+                # Horizontal — push main to the edge that maximises the free side
+                nudge_x = vx if avoid == "right" else vx2 - ww
+                win2.setFrameOrigin_(AppKit.NSMakePoint(nudge_x, wy))
+                wx = int(nudge_x)
+            else:
+                nudge_y = vy if avoid == "top" else vy2 - wh
+                win2.setFrameOrigin_(AppKit.NSMakePoint(wx, nudge_y))
+                wy = int(nudge_y)
+            _reposition_attached_panels()
+            best_side, nx, ny = _best_slot(key, prefer, avoid, wx, wy, ww, wh, pw, ph, vx, vy, vx2, vy2)
+        if best_side is None:
+            return  # screen too small even after nudge
+
     if _magnet_on.get(key, False):
         _magnet_offset[key] = (nx - wx, ny - wy)
     else:
         _magnet_free_pos[key] = (nx, ny)
-    # Display: clamp only on snap axis so at least the panel is within reach
-    if target in ("left", "right"):
+    # Display: clamp only on snap axis so panel stays reachable
+    if best_side in ("left", "right"):
         nx = max(vx, min(nx, vx + vw - pw))
     else:
         ny = max(vy, min(ny, vy + vh - ph))
