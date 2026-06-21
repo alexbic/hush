@@ -628,6 +628,76 @@ def _update_magnet_btn(key):
     except Exception:
         pass
 
+def _smart_snap_panel(key, panel):
+    """If panel is off-screen after drag, jump it to the opposite side of main window."""
+    win = globals().get("_win")
+    if not win or not panel:
+        return
+    screen = AppKit.NSScreen.mainScreen()
+    if not screen:
+        return
+    vis = screen.visibleFrame()
+    pf  = panel.frame()
+    mf  = win.frame()
+    GAP = 6
+    px, py = pf.origin.x, pf.origin.y
+    pw, ph = pf.size.width, pf.size.height
+    vx, vy = vis.origin.x, vis.origin.y
+    vw, vh = vis.size.width, vis.size.height
+    MARGIN = 30  # pixels — how far off-screen before snapping
+
+    off_right  = px + pw > vx + vw + MARGIN
+    off_left   = px < vx - MARGIN
+    off_top    = py + ph > vy + vh + MARGIN
+    off_bottom = py < vy - MARGIN
+
+    if not (off_right or off_left or off_top or off_bottom):
+        return  # panel is safely on-screen
+
+    wx, wy = mf.origin.x, mf.origin.y
+    ww, wh = mf.size.width, mf.size.height
+
+    # Candidate positions for each side around main window
+    candidates = {
+        "right":  (wx + ww + GAP, wy),
+        "left":   (wx - pw - GAP, wy),
+        "top":    (wx, wy + wh + GAP),
+        "bottom": (wx, wy - ph - GAP),
+    }
+
+    # Build preference order: opposite of where it went, then others
+    order = []
+    if off_right:   order.append("left")
+    if off_left:    order.append("right")
+    if off_top:     order.append("bottom")
+    if off_bottom:  order.append("top")
+    for s in ("right", "left", "bottom", "top"):
+        if s not in order:
+            order.append(s)
+
+    # Pick first candidate that fits fully on-screen
+    for side in order:
+        nx, ny = candidates[side]
+        if nx >= vx and ny >= vy and nx + pw <= vx + vw and ny + ph <= vy + vh:
+            panel.setFrameOrigin_(AppKit.NSMakePoint(nx, ny))
+            if _magnet_on.get(key, False):
+                _magnet_offset[key] = (nx - wx, ny - wy)
+            else:
+                _magnet_free_pos[key] = (nx, ny)
+            _magnet_save()
+            return
+
+    # Fallback: clamp to visible screen area
+    nx = max(vx, min(px, vx + vw - pw))
+    ny = max(vy, min(py, vy + vh - ph))
+    panel.setFrameOrigin_(AppKit.NSMakePoint(nx, ny))
+    if _magnet_on.get(key, False):
+        _magnet_offset[key] = (nx - wx, ny - wy)
+    else:
+        _magnet_free_pos[key] = (nx, ny)
+    _magnet_save()
+
+
 def _update_panel_drag_end(key, panel):
     win = globals().get("_win")
     if not panel or not win:
@@ -640,6 +710,11 @@ def _update_panel_drag_end(key, panel):
         else:
             _magnet_free_pos[key] = (pf.origin.x, pf.origin.y)
         _magnet_save()
+    except Exception:
+        pass
+    # Snap panel to opposite side if it went off-screen
+    try:
+        _smart_snap_panel(key, panel)
     except Exception:
         pass
 
@@ -1783,13 +1858,15 @@ class DragPanel(AppKit.NSPanel):
                                       ("hist",      "_hist_panel"),
                                       ("editor",    "_sc_editor_panel"),
                                       ("providers", "_prov_panel")]:
-                    if not _magnet_on.get(_key, False):
-                        _p = globals().get(_pname)
-                        if _p and _p.isVisible():
-                            try:
+                    _p = globals().get(_pname)
+                    if _p and _p.isVisible():
+                        try:
+                            if _magnet_on.get(_key, False):
+                                _smart_snap_panel(_key, _p)
+                            else:
                                 _repel_from_others(_p)
-                            except Exception:
-                                pass
+                        except Exception:
+                            pass
         objc.super(DragPanel, self).sendEvent_(event)
 
 
@@ -2853,32 +2930,20 @@ def _finalize_tv_to_block(add_to_history=False):
 # ── ObjC action targets ───────────────────────────────────────────────────────
 
 class BtnTarget(AppKit.NSObject):
-    @staticmethod
-    def _editor_active() -> bool:
-        """Return True and refocus editor if scenario editor is open."""
-        if _editing_scenario and _sc_editor_panel and _sc_editor_panel.isVisible():
-            _sc_editor_panel.makeKeyAndOrderFront_(None)
-            return True
-        return False
-
     def scenario_(self, sender):
-        if self._editor_active(): return
         idx = int(sender.tag())
         sc  = _st["scenarios"]
         if _on_scenario_cb and 0 <= idx < len(sc):
             _on_scenario_cb(sc[idx], idx)
 
     def close_(self, sender):
-        if self._editor_active(): return
         hide(force=True)
 
     def actionCancel_(self, sender):
         """Smart cancel: undo scenario if active, stay in window after interrupt, else close."""
-        if self._editor_active(): return
         if _st.get("active_sc") is not None:
             self.undoScenario_(sender)
         elif _st.get("post_interrupt"):
-            # After full_default interrupt: just clear the flag, stay in editing window
             _st["post_interrupt"] = False
             _refresh_scenario_colors()
         else:
@@ -2886,7 +2951,6 @@ class BtnTarget(AppKit.NSObject):
 
     def actionScene_(self, sender):
         """Toggle scenario picker in bottom row."""
-        if self._editor_active(): return
         _st["sc_picker"] = not _st.get("sc_picker", False)
         def _():
             if _win:
@@ -2895,7 +2959,7 @@ class BtnTarget(AppKit.NSObject):
         _main(_)
 
     def history_(self, sender):
-        if self._editor_active(): return
+
         # Corner button (tag=9): distinguish single vs double click without opening
         # history on the first click of a double-click.
         if callable(getattr(sender, 'tag', None)) and sender.tag() == 9:
@@ -3266,11 +3330,9 @@ class BtnTarget(AppKit.NSObject):
             fn()
 
     def expand_(self, sender):
-        if self._editor_active(): return
         _main(_toggle_expand)
 
     def send_(self, sender):
-        if self._editor_active(): return
         if _on_paste_cb:
             _on_paste_cb(mode="shift_enter")   # [Отправить] — apply full_default if set
 
