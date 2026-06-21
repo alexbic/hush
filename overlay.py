@@ -3140,6 +3140,9 @@ class BtnTarget(AppKit.NSObject):
     def hushResetPanels_(self, sender):
         _main(lambda: _reset_panels_layout())
 
+    def hushDefaultCross_(self, sender):
+        _main(lambda: _reset_to_cross_layout())
+
     def cfgInfo_(self, sender):
         """Toggle About card as standalone centered panel."""
         if _about_panel and _about_panel.isVisible():
@@ -4509,14 +4512,16 @@ def _reposition_attached_panels():
     win = globals().get("_win")
     if not win:
         return
-    wo  = win.frame().origin
     mf  = win.frame()
-    GAP = 6
+    wo  = mf.origin
+    ww  = int(mf.size.width)
+    wh  = int(mf.size.height)
+    GAP = _SNAP_GAP
     _default_offset = {
-        "cfg":       (0,          mf.size.height + 4),
-        "hist":      (0,          -(mf.size.height + GAP)),
-        "editor":    (mf.size.width + GAP, 0),
-        "providers": (-(mf.size.width + GAP), 0),
+        "cfg":       (0,        wh + 4),
+        "hist":      (0,       -(H_PANEL + GAP)),
+        "editor":    (ww + GAP, 0),
+        "providers": (-(ww + GAP), 0),
     }
     for key, panel_name in [("cfg",       "_cfg_panel"),
                               ("hist",      "_hist_panel"),
@@ -4530,6 +4535,7 @@ def _reposition_attached_panels():
         try:
             if not panel.isVisible():
                 continue
+            ph = int(panel.frame().size.height)
         except Exception:
             continue
         if key in _magnet_offset:
@@ -4537,18 +4543,26 @@ def _reposition_attached_panels():
         else:
             dx, dy = _default_offset.get(key, (0, 0))
             _magnet_offset[key] = (dx, dy)
+        nx, ny = int(wo.x + dx), int(wo.y + dy)
+        # Safety: never let a "top" panel overlap the main window from above
+        if dy > 0 and ny < int(wo.y) + wh + 2:
+            ny = int(wo.y) + wh + GAP
+            _magnet_offset[key] = (dx, wh + GAP)
+        # Safety: never let a "bottom" panel overlap from below
+        elif dy < 0 and ny + ph > int(wo.y) - 2:
+            ny = int(wo.y) - ph - GAP
+            _magnet_offset[key] = (dx, -(ph + GAP))
         try:
-            panel.setFrameOrigin_(AppKit.NSMakePoint(wo.x + dx, wo.y + dy))
+            panel.setFrameOrigin_(AppKit.NSMakePoint(nx, ny))
         except Exception:
             pass
 
 
 def _reset_panels_layout():
-    """🎯 first press: open all panels at default positions. Second press: close all."""
-    global _magnet_on, _magnet_offset, _magnet_free_pos, _panels_reset_open
+    """🎯 toggle: first press shows all panels at their SAVED positions; second press hides all."""
+    global _panels_reset_open
 
     if _panels_reset_open:
-        # Second press — close everything except main window
         _panels_reset_open = False
         _close_editor_now()
         _close_providers_panel()
@@ -4560,17 +4574,10 @@ def _reset_panels_layout():
         return
 
     _panels_reset_open = True
-    _magnet_on       = dict(_MAGNET_DEFAULT)   # all True
-    _magnet_offset   = {}
-    _magnet_free_pos = {}
-    for k in _MAGNET_KEYS:
-        _update_magnet_btn(k)
     win = globals().get("_win")
     if not win:
-        _magnet_save()
         return
-    _magnet_save()
-    # Open panels that aren't visible yet
+    # Show panels at wherever their saved offsets put them (no reset of offsets)
     if not (_cfg_panel and _cfg_panel.isVisible()):
         _toggle_cfg_panel()
     if not (_prov_panel and _prov_panel.isVisible()):
@@ -4581,8 +4588,47 @@ def _reset_panels_layout():
     history = _on_history_cb() if _on_history_cb else []
     if not (_hist_panel and _hist_panel.isVisible()):
         _show_hist_panel(history)
-    # Clear offsets again so _reposition_attached_panels uses clean defaults
-    _magnet_offset = {}
+    _reposition_attached_panels()
+
+
+def _reset_to_cross_layout():
+    """[✚] Hard reset to default cross: cfg top, hist bottom, providers left, editor right."""
+    global _magnet_on, _magnet_offset, _magnet_free_pos, _panels_reset_open
+
+    _panels_reset_open = True
+    # All panels magneted for the default cross
+    _magnet_on       = {k: True for k in _MAGNET_KEYS}
+    _magnet_free_pos = {}
+    for k in _MAGNET_KEYS:
+        _update_magnet_btn(k)
+    win = globals().get("_win")
+    if not win:
+        _magnet_save()
+        return
+    mf = win.frame()
+    ww = int(mf.size.width)
+    wh = int(mf.size.height)
+    G  = _SNAP_GAP
+    # Force default cross offsets
+    _magnet_offset = {
+        "cfg":       (0,        wh + 4),
+        "hist":      (0,       -(H_PANEL + G)),
+        "editor":    (ww + G,   0),
+        "providers": (-(ww + G), 0),
+    }
+    _magnet_save()
+    # Reopen cfg to pick up new offset (close→open for visual snap effect)
+    if _cfg_panel and _cfg_panel.isVisible():
+        _close_cfg_panel_rebuild()
+    _toggle_cfg_panel()
+    if not (_prov_panel and _prov_panel.isVisible()):
+        _toggle_providers_panel()
+    sc_list = _st.get("scenarios", [])
+    if sc_list and not (_sc_editor_panel and _sc_editor_panel.isVisible()):
+        _show_sc_editor_impl(0)
+    history = _on_history_cb() if _on_history_cb else []
+    if not (_hist_panel and _hist_panel.isVisible()):
+        _show_hist_panel(history)
     _reposition_attached_panels()
 
 
@@ -6059,20 +6105,32 @@ def _toggle_cfg_panel():
     # ── SEP between scenarios and quit ───────────────────────────────────────────
     cv.addSubview_(_sep_line(MARGIN, QUIT_H, pw - MARGIN * 2, pin="bottom"))
 
-    # ── QUIT SECTION (quit btn + reset-layout btn) ────────────────────────────────
-    RST_W = 32
+    # ── QUIT SECTION: [ВЫХОД] [🎯] [✚] ───────────────────────────────────────────
+    SB_W = 30   # small button width
+    SB_G = 4    # gap between small buttons
+    BTN_Y = (QUIT_H - 22) // 2 + 4
+    quit_w = pw - MARGIN * 2 - SB_W * 2 - SB_G - 6
     btn_quit = _mkbtn(_T("btn_quit"), color=C_REC, size=10)
-    btn_quit.setFrame_(AppKit.NSMakeRect(MARGIN, (QUIT_H - 22) // 2 + 4, pw - MARGIN * 2 - RST_W - 6, 22))
+    btn_quit.setFrame_(AppKit.NSMakeRect(MARGIN, BTN_Y, quit_w, 22))
     btn_quit.setTarget_(_btn_t)
     btn_quit.setAction_(BtnTarget.cfgQuit_)
     cv.addSubview_(btn_quit)
 
+    # 🎯 — show/hide all panels at saved positions
     btn_rst = _mkbtn("🎯", color=C_GREEN_DIM, size=14)
-    btn_rst.setFrame_(AppKit.NSMakeRect(pw - MARGIN - RST_W, (QUIT_H - 22) // 2 + 4, RST_W, 22))
+    btn_rst.setFrame_(AppKit.NSMakeRect(pw - MARGIN - SB_W * 2 - SB_G, BTN_Y, SB_W, 22))
     btn_rst.setTarget_(_btn_t)
     btn_rst.setAction_(BtnTarget.hushResetPanels_)
-    btn_rst.setToolTip_("Расставить все окна по умолчанию")
+    btn_rst.setToolTip_("Показать/скрыть все панели")
     cv.addSubview_(btn_rst)
+
+    # ✚ — reset to default cross layout
+    btn_cross = _mkbtn("✚", color=C_GREEN_DIM, size=12)
+    btn_cross.setFrame_(AppKit.NSMakeRect(pw - MARGIN - SB_W, BTN_Y, SB_W, 22))
+    btn_cross.setTarget_(_btn_t)
+    btn_cross.setAction_(BtnTarget.hushDefaultCross_)
+    btn_cross.setToolTip_("Сброс в крест: настройки↑  история↓  провайдеры←  сценарии→")
+    cv.addSubview_(btn_cross)
 
     _cfg_panel.setAlphaValue_(_st.get("opacity", 0.88))
 
@@ -6081,7 +6139,7 @@ def _toggle_cfg_panel():
     mf = _win.frame()
     if _magnet_on.get("cfg", True):
         if "cfg" not in _magnet_offset:
-            _magnet_offset["cfg"] = (mf.size.width - pw, mf.size.height + CFG_GAP)
+            _magnet_offset["cfg"] = (0, int(mf.size.height) + CFG_GAP)
         dx, dy = _magnet_offset["cfg"]
         px = mf.origin.x + dx
         py = mf.origin.y + dy
