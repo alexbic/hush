@@ -1778,7 +1778,20 @@ class DragPanel(AppKit.NSPanel):
                 self.setFrameOrigin_(AppKit.NSMakePoint(self._wd_o.x + dx, self._wd_o.y + dy))
                 _reposition_attached_panels()
         elif t == _LU:
+            did_drag = getattr(self, '_wd_a', False)
             self._wd_s = None; self._wd_a = False
+            if did_drag:
+                for _key, _pname in [("cfg",       "_cfg_panel"),
+                                      ("hist",      "_hist_panel"),
+                                      ("editor",    "_sc_editor_panel"),
+                                      ("providers", "_prov_panel")]:
+                    if not _magnet_on.get(_key, False):
+                        _p = globals().get(_pname)
+                        if _p and _p.isVisible():
+                            try:
+                                _repel_from_others(_p)
+                            except Exception:
+                                pass
         objc.super(DragPanel, self).sendEvent_(event)
 
 
@@ -7326,15 +7339,10 @@ def _toggle_providers_panel():
 
     # ── Header ────────────────────────────────────────────────────────────────
     hdr = _mklabel("ПРОВАЙДЕРЫ / API КЛЮЧИ", size=10, color=C_IDLE)
-    hdr.setFrame_(AppKit.NSMakeRect(MARGIN, y - LBL_H, FW - 30, LBL_H))
+    hdr.setFrame_(AppKit.NSMakeRect(MARGIN, y - LBL_H, FW - 60, LBL_H))
     cv.addSubview_(hdr)
-    btn_x = _mkbtn("[✕]", color=C_GREEN_DIM, size=9)
-    btn_x.setFrame_(AppKit.NSMakeRect(PW - MARGIN - 28, y - LBL_H, 28, LBL_H))
-    btn_x.setTarget_(_btn_t)
-    btn_x.setAction_(BtnTarget.provClose_)
-    cv.addSubview_(btn_x)
     MAG_W_P = 28
-    _mkmagnet_btn("providers", cv, PW - MARGIN - 28 - MAG_W_P - 4, y - LBL_H, MAG_W_P, LBL_H)
+    _mkmagnet_btn("providers", cv, PW - MARGIN - MAG_W_P, y - LBL_H, MAG_W_P, LBL_H)
     y -= LBL_H + 5
     cv.addSubview_(_sep_line(MARGIN, y, FW, pin="top"))
     y -= 8
