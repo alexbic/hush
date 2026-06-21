@@ -2866,9 +2866,6 @@ class BtnTarget(AppKit.NSObject):
             if new_url != _pc.get("ollama", "base_url"):
                 _pc.set_field("ollama", "base_url", new_url)
                 changed_ollama = True
-        if "ollama_model" in refs:
-            _pc.set_field("ollama", "default_model",
-                          refs["ollama_model"].stringValue().strip() or "qwen3:8b")
         for pid in ("anthropic", "openai", "glm"):
             key = f"{pid}_key"
             if key in refs:
@@ -3293,7 +3290,6 @@ _about_panel        = None   # standalone NSPanel for About card (centered on sc
 _prov_panel         = None   # drop panel for provider/API-key configuration
 _prov_field_refs    = {}     # {"ollama_url": tf, "ollama_model": combo, "anthropic_key": tf, ...}
 _prov_dot_refs      = {}     # {"ollama": NSTextField dot, ...}
-_prov_model_combo   = None   # NSComboBox for Ollama default model in providers panel
 _status_bar_item    = None   # NSStatusItem for macOS menu bar
 _hist_panel       = None   # drop panel for history
 _hist_panel_side  = None   # "below" | "right" | "left" — current placement
@@ -5101,8 +5097,22 @@ def _show_sc_editor(sc_idx):
     cv.addSubview_(_sep_line(MARGIN, y, FW, pin="top"))
     y -= 1 + SIL_SEP
 
-    # Prompt textarea — expands to fill remaining space (no save/cancel buttons)
-    BOT_PAD       = 10
+    # ── Footer: Cancel + Save buttons ─────────────────────────────────────────
+    FOOT_H  = MARGIN + BTN_H + 6 + 1   # margin + btn + gap + sep
+    cv.addSubview_(_sep_line(MARGIN, MARGIN + BTN_H + 6, FW, pin="top"))
+    btn_cancel = _mkbtn("[Отмена]", color=C_GREEN_DIM, size=10)
+    btn_cancel.setFrame_(AppKit.NSMakeRect(MARGIN, MARGIN, BTN_W, BTN_H))
+    btn_cancel.setTarget_(_btn_t)
+    btn_cancel.setAction_(BtnTarget.cfgScCancel_)
+    cv.addSubview_(btn_cancel)
+    btn_save = _mkbtn("[Сохранить]", color=C_GREEN_BR, size=10)
+    btn_save.setFrame_(AppKit.NSMakeRect(EDIT_W - MARGIN - BTN_W, MARGIN, BTN_W, BTN_H))
+    btn_save.setTarget_(_btn_t)
+    btn_save.setAction_(BtnTarget.cfgScSave_)
+    cv.addSubview_(btn_save)
+
+    # Prompt textarea — expands to fill remaining space above footer
+    BOT_PAD       = FOOT_H + 4
     prompt_area_h = max(y - BOT_PAD, 40)
     outer_frame   = AppKit.NSMakeRect(MARGIN, BOT_PAD, FW, prompt_area_h)
 
@@ -6981,20 +6991,19 @@ def show_scenario_result(text: str, hist_id: str = None):
 # ── Providers panel ───────────────────────────────────────────────────────────
 
 def _close_providers_panel():
-    global _prov_panel, _prov_field_refs, _prov_dot_refs, _prov_model_combo
+    global _prov_panel, _prov_field_refs, _prov_dot_refs
     if _prov_panel:
         _prov_panel.orderOut_(None)
         _prov_panel.close()
         _prov_panel = None
     _prov_field_refs = {}
     _prov_dot_refs   = {}
-    _prov_model_combo = None
     if _win:
         _win.orderFrontRegardless()
 
 
 def _toggle_providers_panel():
-    global _prov_panel, _prov_field_refs, _prov_dot_refs, _prov_model_combo
+    global _prov_panel, _prov_field_refs, _prov_dot_refs
     if _prov_panel and _prov_panel.isVisible():
         _close_providers_panel()
         return
@@ -7011,18 +7020,12 @@ def _toggle_providers_panel():
     BTN_H  = 22
 
     # ── Pre-calculate content height ──────────────────────────────────────────
-    # Header: label + gap + sep + gap
-    HDR_H  = LBL_H + 5 + 1 + 8                          # 27
-    # Each section: (label+GAP) + fields + bottom_gap + sep + gap_after_sep
-    #   OLLAMA:    label(17) + url(26) + combo(32) + sep+gap(9) = 84
-    #   ANTHROPIC: label(17) + key(32) + sep+gap(9) = 58
-    #   OPENAI:    label(17) + key(26) + url(32) + sep+gap(9) = 84
-    #   GLM:       label(17) + key(26) + url(26) + bottom_gap(12) = 81
-    SC_OLLAMA = (LBL_H+GAP) + (TF_H+GAP) + (TF_H+10) + 1 + 8
+    HDR_H  = LBL_H + 5 + 1 + 8
+    SC_OLLAMA = (LBL_H+GAP) + (TF_H+10) + 1 + 8          # url only, no model combo
     SC_ANTHR  = (LBL_H+GAP) + (TF_H+10) + 1 + 8
     SC_OPENAI = (LBL_H+GAP) + (TF_H+GAP) + (TF_H+10) + 1 + 8
-    SC_GLM    = (LBL_H+GAP) + (TF_H+GAP) + (TF_H+16)   # last section: extra padding, no sep
-    FOOT_H    = 1 + 6 + BTN_H + MARGIN                  # sep + pad + btn + margin = 41
+    SC_GLM    = (LBL_H+GAP) + (TF_H+GAP) + (TF_H+16)
+    FOOT_H    = 1 + 6 + BTN_H + MARGIN
     NEEDED_H  = 8 + HDR_H + SC_OLLAMA + SC_ANTHR + SC_OPENAI + SC_GLM + FOOT_H
 
     # ── Clamp to visible screen height ────────────────────────────────────────
@@ -7088,29 +7091,6 @@ def _toggle_providers_panel():
     y -= LBL_H + GAP
     _prov_field_refs["ollama_url"] = _tf(y - TF_H, "http://localhost:11434",
         _pc.get("ollama", "base_url", "http://localhost:11434"))
-    y -= TF_H + GAP
-
-    combo = AppKit.NSComboBox.alloc().initWithFrame_(
-        AppKit.NSMakeRect(MARGIN, y - TF_H, FW, TF_H))
-    combo.setFont_(_mono(10))
-    combo.setTextColor_(C_TEXT)
-    combo.setEditable_(True)
-    combo.setCompletes_(True)
-    combo.setNumberOfVisibleItems_(8)
-    combo.setFocusRingType_(AppKit.NSFocusRingTypeNone)
-    combo.setWantsLayer_(True)
-    combo.layer().setBackgroundColor_(_rgba(*C_BG).CGColor())
-    combo.layer().setBorderColor_(C_GREEN_BORD.CGColor())
-    combo.layer().setBorderWidth_(0.5)
-    combo.layer().setCornerRadius_(2.0)
-    models = _pc.get_ollama_models()
-    if models:
-        combo.addItemsWithObjectValues_(models)
-    combo.setStringValue_(_pc.get("ollama", "default_model", "qwen3:8b"))
-    combo.cell().setPlaceholderString_("модель по умолчанию")
-    cv.addSubview_(combo)
-    _prov_field_refs["ollama_model"] = combo
-    _prov_model_combo = combo
     y -= TF_H + 10
     cv.addSubview_(_sep_line(MARGIN, y, FW, pin="top"))
     y -= 8
@@ -7182,13 +7162,6 @@ def _refresh_prov_dots():
             dot.setTextColor_(C_REC)
         else:
             dot.setTextColor_(C_GREEN_DIM)
-    if _prov_model_combo:
-        models = _pc.get_ollama_models()
-        current = _prov_model_combo.stringValue()
-        _prov_model_combo.removeAllItems()
-        if models:
-            _prov_model_combo.addItemsWithObjectValues_(models)
-        _prov_model_combo.setStringValue_(current or _pc.get("ollama", "default_model", "qwen3:8b"))
 
 
 def update_provider_status():
