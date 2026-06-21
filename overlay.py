@@ -641,9 +641,14 @@ def _panel_side(key, ww, wh, pw, ph):
     return "top" if dy >= 0 else "bottom"
 
 
-def _first_free_slot_on_side(side, excl_key, wx, wy, ww, wh, pw, ph):
-    """Return absolute (nx, ny) for the FIRST FREE slot on the given side,
-    scanning from closest-to-main outward (skips slots occupied by other panels)."""
+_OPP = {"left": "right", "right": "left", "top": "bottom", "bottom": "top"}
+
+
+def _first_free_slot_on_side(side, excl_key, wx, wy, ww, wh, pw, ph, perp=0):
+    """Return absolute (nx, ny) for the first free slot on `side`, scanning
+    closest-to-main outward.  `perp` is the perpendicular offset preserved
+    from the snapping panel's current lane (dy for left/right, dx for top/bottom).
+    Two panels conflict only if they share the same lane AND same slot."""
     G = _SNAP_GAP
     occupied = []
     for k in _MAGNET_KEYS:
@@ -655,45 +660,46 @@ def _first_free_slot_on_side(side, excl_key, wx, wy, ww, wh, pw, ph):
     for n in range(8):
         if side == "top":
             slot = wh + G + n * (ph + G)
-            if not any(abs(d[1] - slot) < ph for d in occupied):
-                return int(wx), int(wy + slot)
+            same_lane = [d for d in occupied if abs(d[0] - perp) < pw]
+            if not any(abs(d[1] - slot) < ph for d in same_lane):
+                return int(wx + perp), int(wy + slot)
         elif side == "bottom":
             slot = -(ph + G + n * (ph + G))
-            if not any(abs(d[1] - slot) < ph for d in occupied):
-                return int(wx), int(wy + slot)
+            same_lane = [d for d in occupied if abs(d[0] - perp) < pw]
+            if not any(abs(d[1] - slot) < ph for d in same_lane):
+                return int(wx + perp), int(wy + slot)
         elif side == "right":
             slot = ww + G + n * (pw + G)
-            if not any(abs(d[0] - slot) < pw for d in occupied):
-                return int(wx + slot), int(wy)
+            same_lane = [d for d in occupied if abs(d[1] - perp) < ph]
+            if not any(abs(d[0] - slot) < pw for d in same_lane):
+                return int(wx + slot), int(wy + perp)
         else:  # left
             slot = -(pw + G + n * (pw + G))
-            if not any(abs(d[0] - slot) < pw for d in occupied):
-                return int(wx + slot), int(wy)
+            same_lane = [d for d in occupied if abs(d[1] - perp) < ph]
+            if not any(abs(d[0] - slot) < pw for d in same_lane):
+                return int(wx + slot), int(wy + perp)
 
-    # Fallback: place beyond all occupied (end of chain)
+    # Fallback: end of chain in this lane
+    same_lane_all = [d for d in occupied if (
+        abs(d[0] - perp) < pw if side in ("top", "bottom") else abs(d[1] - perp) < ph
+    )]
     if side == "left":
-        base = min((d[0] for d in occupied), default=-(pw + G)) - pw - G
-        return int(wx + base), int(wy)
+        base = min((d[0] for d in same_lane_all), default=-(pw + G)) - pw - G
+        return int(wx + base), int(wy + perp)
     if side == "right":
-        base = max((d[0] for d in occupied), default=ww + G) + pw + G
-        return int(wx + base), int(wy)
+        base = max((d[0] for d in same_lane_all), default=ww + G) + pw + G
+        return int(wx + base), int(wy + perp)
     if side == "top":
-        base = max((d[1] for d in occupied), default=wh + G) + ph + G
-        return int(wx), int(wy + base)
-    base = min((d[1] for d in occupied), default=-(ph + G)) - ph - G
-    return int(wx), int(wy + base)
-
-
-def _opp_side(off_left, off_right, off_top, off_bottom):
-    if off_left:   return "right"
-    if off_right:  return "left"
-    if off_bottom: return "top"
-    return "bottom"
+        base = max((d[1] for d in same_lane_all), default=wh + G) + ph + G
+        return int(wx + perp), int(wy + base)
+    base = min((d[1] for d in same_lane_all), default=-(ph + G)) - ph - G
+    return int(wx + perp), int(wy + base)
 
 
 def _snap_attached_panels_live(new_wx, new_wy):
-    """Called DURING main-window drag (before repositioning): if any magneted panel
-    would exit the screen at new_wx/new_wy, update its offset to the opposite side."""
+    """During main-window drag: panels that go off-screen jump to the opposite
+    side of their CURRENT AXIS (left↔right or top↔bottom), preserving their
+    perpendicular lane so panels never mix axes."""
     win = globals().get("_win")
     if not win:
         return
@@ -724,22 +730,27 @@ def _snap_attached_panels_live(new_wx, new_wy):
 
         dx, dy = _magnet_offset[key]
         px, py = new_wx + dx, new_wy + dy
-        off_right  = px + pw > vx + vw + MARGIN
-        off_left   = px < vx - MARGIN
-        off_top    = py + ph > vy + vh + MARGIN
-        off_bottom = py < vy - MARGIN
-        if not (off_right or off_left or off_top or off_bottom):
+        off_screen = (px + pw > vx + vw + MARGIN or px < vx - MARGIN or
+                      py + ph > vy + vh + MARGIN or py < vy - MARGIN)
+        if not off_screen:
             continue
 
-        side = _opp_side(off_left, off_right, off_top, off_bottom)
-        nx, ny = _first_free_slot_on_side(side, key, new_wx, new_wy, ww, wh, pw, ph)
+        # Snap to opposite of panel's CURRENT SIDE, not just any off-screen edge
+        cur_side = _panel_side(key, ww, wh, pw, ph)
+        if cur_side is None:
+            continue
+        target = _OPP[cur_side]
+
+        # Perpendicular component preserved (dy for left/right, dx for top/bottom)
+        perp = dy if cur_side in ("left", "right") else dx
+        nx, ny = _first_free_slot_on_side(target, key, new_wx, new_wy, ww, wh, pw, ph, perp)
         nx = max(vx, min(nx, vx + vw - pw))
         ny = max(vy, min(ny, vy + vh - ph))
         _magnet_offset[key] = (nx - new_wx, ny - new_wy)
 
 
 def _smart_snap_panel(key, panel):
-    """On mouseUp: if panel is off-screen, jump to opposite side to first free slot."""
+    """On mouseUp: if panel is off-screen, jump to opposite side (axis-aligned)."""
     win = globals().get("_win")
     if not win or not panel:
         return
@@ -757,15 +768,25 @@ def _smart_snap_panel(key, panel):
     ww, wh = mf.size.width, mf.size.height
     MARGIN = 20
 
-    off_right  = px + pw > vx + vw + MARGIN
-    off_left   = px < vx - MARGIN
-    off_top    = py + ph > vy + vh + MARGIN
-    off_bottom = py < vy - MARGIN
-    if not (off_right or off_left or off_top or off_bottom):
+    off_screen = (px + pw > vx + vw + MARGIN or px < vx - MARGIN or
+                  py + ph > vy + vh + MARGIN or py < vy - MARGIN)
+    if not off_screen:
         return
 
-    side = _opp_side(off_left, off_right, off_top, off_bottom)
-    nx, ny = _first_free_slot_on_side(side, key, wx, wy, ww, wh, pw, ph)
+    cur_side = _panel_side(key, ww, wh, pw, ph) if key in _magnet_offset else None
+    if cur_side:
+        target = _OPP[cur_side]
+        dx, dy = _magnet_offset.get(key, (px - wx, py - wy))
+        perp = dy if cur_side in ("left", "right") else dx
+    else:
+        # panel not magneted — use screen-edge heuristic
+        off_right = px + pw > vx + vw + MARGIN
+        off_left  = px < vx - MARGIN
+        target    = "left" if off_right else ("right" if off_left else
+                    ("bottom" if py + ph > vy + vh + MARGIN else "top"))
+        perp = 0
+
+    nx, ny = _first_free_slot_on_side(target, key, wx, wy, ww, wh, pw, ph, perp)
     nx = max(vx, min(nx, vx + vw - pw))
     ny = max(vy, min(ny, vy + vh - ph))
 
