@@ -943,7 +943,7 @@ def _on_copy(mode: str = "raw"):
 
 
 def _on_paste(mode: str = "raw"):
-    """[↵] / Shift+Enter → plain paste (strip MD); Alt+Shift+Enter → paste MD as-is."""
+    """Shift+Enter → raw paste (no scenario); [Отправить] → apply full_default if set; Alt+Shift+Enter → paste MD."""
     global _full_mode_standby
     text = overlay.get_text()
     if not text:

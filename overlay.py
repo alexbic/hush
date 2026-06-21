@@ -1794,9 +1794,9 @@ class TerminalTextView(AppKit.NSTextView):
             if _on_copy_cb:
                 _on_copy_cb()
         elif kc == ENTER and mods == SHIFT:
-            # Shift+Enter → paste stripping MD markers; may trigger full_default scenario
+            # Shift+Enter → fast raw paste, no scenario processing
             if _on_paste_cb:
-                _on_paste_cb(mode="shift_enter")
+                _on_paste_cb()
         elif kc == ENTER and not mods:
             # Plain Enter → finalize manually typed text into a block
             if _tv and str(_tv.string()).strip():
@@ -2103,7 +2103,7 @@ class _BlockTV(AppKit.NSTextView):
             if _on_copy_cb: _on_copy_cb()
             return
         elif kc == ENTER and mods == SHIFT:
-            if _on_paste_cb: _on_paste_cb(mode="shift_enter")
+            if _on_paste_cb: _on_paste_cb()   # fast raw paste
             return
 
         objc.super(_BlockTV, self).keyDown_(event)
@@ -3002,7 +3002,7 @@ class BtnTarget(AppKit.NSObject):
     def send_(self, sender):
         if self._editor_active(): return
         if _on_paste_cb:
-            _on_paste_cb()   # [Отправить] — raw paste, no full_default scenario
+            _on_paste_cb(mode="shift_enter")   # [Отправить] — apply full_default if set
 
     def scPrev_(self, sender):
         global _sc_page
