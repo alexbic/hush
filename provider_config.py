@@ -124,9 +124,13 @@ def get_ollama_models() -> list:
 
 
 def all_model_options() -> list:
-    """Full list for scenario model picker: detected Ollama + known cloud models."""
-    ollama = [f"ollama:{m}" for m in _ollama_models]
-    return ollama + CLOUD_MODELS
+    """Models for scenario picker: Ollama (if running) + cloud (only if key set)."""
+    result = [f"ollama:{m}" for m in _ollama_models]
+    for entry in CLOUD_MODELS:
+        provider = entry.split(":")[0]
+        if _data.get(provider, {}).get("api_key", ""):
+            result.append(entry)
+    return result
 
 
 def add_status_callback(fn):
