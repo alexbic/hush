@@ -256,6 +256,7 @@ def _save_settings():
             "magnet_on":     _cfg_saved.get("magnet_on",     {}),
             "magnet_offset": _cfg_saved.get("magnet_offset", {}),
             "magnet_free":   _cfg_saved.get("magnet_free",   {}),
+            "panels_open":   _cfg_saved.get("panels_open",   {}),
         }
         with open(SETTINGS_FILE, "w") as f:
             json.dump(data, f)
@@ -1904,31 +1905,38 @@ class _EditorPanel(AppKit.NSPanel):
     def sendEvent_(self, event):
         _LD = 1; _LU = 2; _LDRAG = 6; _THRESH2 = 25.0
         t = event.type()
+        w   = globals().get("_win")
+        key = getattr(self, '_panel_key', None)
+        is_attached = _magnet_on.get(key, False) if key else False
         if t == _LD:
             self._wd_s = AppKit.NSEvent.mouseLocation()
-            self._wd_o = self.frame().origin
+            self._wd_o = w.frame().origin if (is_attached and w) else self.frame().origin
             self._wd_a = False
-        elif t == _LDRAG and getattr(self, '_wd_s', None) is not None:
+        elif t == _LDRAG and getattr(self, '_wd_s', None) is not None and self._wd_o is not None:
             cur = AppKit.NSEvent.mouseLocation()
             dx  = cur.x - self._wd_s.x
             dy  = cur.y - self._wd_s.y
             if self._wd_a or dx*dx + dy*dy > _THRESH2:
                 self._wd_a = True
-                self.setFrameOrigin_(AppKit.NSMakePoint(self._wd_o.x + dx, self._wd_o.y + dy))
+                if is_attached and w:
+                    w.setFrameOrigin_(AppKit.NSMakePoint(self._wd_o.x + dx, self._wd_o.y + dy))
+                    _reposition_attached_panels()
+                else:
+                    self.setFrameOrigin_(AppKit.NSMakePoint(self._wd_o.x + dx, self._wd_o.y + dy))
         elif t == _LU:
             did_drag = getattr(self, '_wd_a', False)
             self._wd_s = None; self._wd_a = False
             if did_drag:
-                key = getattr(self, '_panel_key', None)
                 if key:
                     try:
                         _update_panel_drag_end(key, self)
                     except Exception:
                         pass
-                try:
-                    _repel_from_others(self)
-                except Exception:
-                    pass
+                if not is_attached:
+                    try:
+                        _repel_from_others(self)
+                    except Exception:
+                        pass
         objc.super(_EditorPanel, self).sendEvent_(event)
 
     def performKeyEquivalent_(self, event):
@@ -4416,7 +4424,8 @@ def _reset_panels_layout():
     _magnet_save()
     # Ensure all panels are open (open if not already visible)
     if not (_hist_panel and _hist_panel.isVisible()):
-        _toggle_hist_panel()
+        history = _on_history_cb() if _on_history_cb else []
+        _show_hist_panel(history)
     if not (_prov_panel and _prov_panel.isVisible()):
         _toggle_providers_panel()
     if not (_sc_editor_panel and _sc_editor_panel.isVisible()):
@@ -4782,6 +4791,8 @@ def _show_hist_panel(history):
         # Reset history-browser mode if active
         if _st["mode"] == "history_open":
             _st["mode"] = "idle" if not _st["text"] else "ready"
+        _cfg_saved.setdefault("panels_open", {})["hist"] = False
+        _save_settings()
         return
 
     CHK_W   = 26
@@ -4963,6 +4974,8 @@ def _show_hist_panel(history):
     _hist_panel.setFrameOrigin_(panel_origin)
     AppKit.NSApp.activateIgnoringOtherApps_(True)
     _hist_panel.makeKeyAndOrderFront_(None)
+    _cfg_saved.setdefault("panels_open", {})["hist"] = True
+    _save_settings()
 
 
 def _sc_model_from_refs() -> str:
@@ -6060,8 +6073,6 @@ def refresh_hist_panel():
 def show_history_browser(history):
     """Open overlay in history-browser mode (double-tap hotkey)."""
     def _():
-        import time as _t
-        with open("/tmp/vi_debug.log","a") as f: f.write(f"[{_t.strftime('%H:%M:%S')}] show_history_browser: mode={_st.get('mode')} hist_panel_vis={bool(_hist_panel and _hist_panel.isVisible())}\n")
         _st["mode"] = "history_open"
         _show_target_app_header()   # keep showing target app, no status text
         _show_buttons(False)
@@ -7213,12 +7224,10 @@ def show_recording():
     """Start a recording session (or continue an existing one)."""
     def _():
         global _silent_mode
-        # Cancel any pending delayed-history open and close visible panels
+        # Cancel any pending delayed-history open
         if _btn_t:
             AppKit.NSObject.cancelPreviousPerformRequestsWithTarget_selector_object_(
                 _btn_t, b'_openHistDelayed:', None)
-        if _hist_panel and _hist_panel.isVisible():
-            _hist_panel.orderOut_(None)
         # Hide silent strip — full overlay takes over
         if _silent_win and _silent_win.isVisible():
             _silent_win.orderOut_(None)
@@ -7232,6 +7241,10 @@ def show_recording():
         _show_buttons(False)
         _start_timer()
         _win.orderFrontRegardless()
+        # Restore hist panel if it was open on last session
+        if _cfg_saved.get("panels_open", {}).get("hist") and not (_hist_panel and _hist_panel.isVisible()):
+            history = _on_history_cb() if _on_history_cb else []
+            _show_hist_panel(history)
     _main(_)
 
 
@@ -7273,10 +7286,11 @@ def show_result(text: str):
         _st["is_md"]   = _is_markdown(new_full)
         _show_buttons(True)
         _refresh_scenario_colors()
-        AppKit.NSApp.activateIgnoringOtherApps_(True)
-        _win.makeKeyAndOrderFront_(None)
-        if _tv:
-            _win.makeFirstResponder_(_tv)
+        if not _editing_scenario:
+            AppKit.NSApp.activateIgnoringOtherApps_(True)
+            _win.makeKeyAndOrderFront_(None)
+            if _tv:
+                _win.makeFirstResponder_(_tv)
         _st["md_mode"] = False
         _update_format_indicator()
         # Show text immediately — no typewriter animation
@@ -7308,8 +7322,6 @@ def _close_providers_panel():
         _prov_panel = None
     _prov_field_refs = {}
     _prov_dot_refs   = {}
-    if _win:
-        _win.orderFrontRegardless()
 
 
 def _toggle_providers_panel():
