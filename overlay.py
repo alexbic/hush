@@ -15,6 +15,7 @@ import AppKit
 import objc
 import html2text as _html2text
 import markdown as _markdown
+import provider_config as _pc
 
 # ── Scenarios ─────────────────────────────────────────────────────────────────
 
@@ -2774,6 +2775,10 @@ class BtnTarget(AppKit.NSObject):
         _close_cfg_panel_rebuild()
         _toggle_cfg_panel()
 
+    def cfgProviders_(self, sender):
+        _close_cfg_panel()
+        _toggle_providers_panel()
+
     def cfgInfo_(self, sender):
         """Toggle About card as standalone centered panel."""
         if _about_panel and _about_panel.isVisible():
@@ -2840,6 +2845,36 @@ class BtnTarget(AppKit.NSObject):
         _close_cfg_panel()
         _win_save_pos()
         AppKit.NSApplication.sharedApplication().terminate_(None)
+
+    def provClose_(self, sender):
+        _close_providers_panel()
+
+    def provSave_(self, sender):
+        """Save all provider fields to providers.json and re-probe."""
+        refs = _prov_field_refs
+        changed_ollama = False
+        if "ollama_url" in refs:
+            new_url = refs["ollama_url"].stringValue().strip()
+            if new_url != _pc.get("ollama", "base_url"):
+                _pc.set_field("ollama", "base_url", new_url)
+                changed_ollama = True
+        if "ollama_model" in refs:
+            _pc.set_field("ollama", "default_model",
+                          refs["ollama_model"].stringValue().strip() or "qwen3:8b")
+        for pid in ("anthropic", "openai", "glm"):
+            key = f"{pid}_key"
+            if key in refs:
+                _pc.set_field(pid, "api_key", refs[key].stringValue().strip())
+        if "openai_base" in refs:
+            _pc.set_field("openai", "base_url",
+                          refs["openai_base"].stringValue().strip() or "https://api.openai.com/v1")
+        # Re-probe after save
+        if changed_ollama:
+            _pc.probe_ollama()
+        else:
+            import threading as _th
+            _th.Thread(target=_pc._probe_cloud, daemon=True).start()
+        _close_providers_panel()
 
     def cfgScResetOne_(self, sender):
         """Restore default scenario fields to factory defaults (without saving)."""
@@ -3244,6 +3279,10 @@ _sc_avail         = {}      # {sc_idx: bool} cached model availability for main 
 _float_target     = None    # which _RichBlockView the float bar controls
 
 _about_panel        = None   # standalone NSPanel for About card (centered on screen)
+_prov_panel         = None   # drop panel for provider/API-key configuration
+_prov_field_refs    = {}     # {"ollama_url": tf, "ollama_model": combo, "anthropic_key": tf, ...}
+_prov_dot_refs      = {}     # {"ollama": NSTextField dot, ...}
+_prov_model_combo   = None   # NSComboBox for Ollama default model in providers panel
 _status_bar_item    = None   # NSStatusItem for macOS menu bar
 _hist_panel       = None   # drop panel for history
 _hist_panel_side  = None   # "below" | "right" | "left" — current placement
@@ -4946,15 +4985,27 @@ def _show_sc_editor(sc_idx):
     y       -= TF_H + GAP
     tf_es    = _make_tf("ES — nombre del botón, hasta 6 símbolos", label_val.get("es", ""))
     y       -= TF_H + GAP
-    tf_model = _make_tf("модель: ollama:qwen3:8b  (пусто = авто)", sc.get("model", "") or "")
-    y       -= TF_H + GAP
+    # Model selector: NSComboBox (type or pick from available providers)
+    cb_model = AppKit.NSComboBox.alloc().initWithFrame_(
+        AppKit.NSMakeRect(MARGIN, y - TF_H, FW, TF_H + 2))
+    cb_model.setFont_(_mono(9))
+    cb_model.setTextColor_(C_TEXT)
+    cb_model.setEditable_(True)
+    cb_model.setCompletes_(True)
+    cb_model.setNumberOfVisibleItems_(10)
+    cb_model.addItemsWithObjectValues_(_pc.all_model_options())
+    cb_model.setStringValue_(sc.get("model", "") or "")
+    cb_model.cell().setPlaceholderString_("авто (Ollama → Anthropic)")
+    cv.addSubview_(cb_model)
+    tf_model = cb_model   # keep tf_model alias for backward compat with save/refs code
+    y       -= TF_H + GAP + 2
 
     # Color model field: green = reachable, red = unavailable (runs in background)
     _model_init = sc.get("model", "") or ""
     if _model_init:
-        def _check_model_field(tf=tf_model, m=_model_init):
+        def _check_model_field(cb=cb_model, m=_model_init):
             ok = _model_available(m)
-            def _apply(field=tf, good=ok):
+            def _apply(field=cb, good=ok):
                 field.setTextColor_(C_GREEN_BR if good else C_REC)
                 field.setNeedsDisplay_(True)
             AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(_apply)
@@ -5042,7 +5093,8 @@ def _show_sc_editor(sc_idx):
         "tf_ru":        tf_ru,
         "tf_en":        tf_en,
         "tf_es":        tf_es,
-        "tf_model":     tf_model,
+        "tf_model":     tf_model,   # alias → cb_model
+        "cb_model":     cb_model,
         "sil_btn":      sil_btn,
         "silent":       is_silent,   # current toggle state (Python bool, toggled in action)
         "fd_btn":       fd_btn,
@@ -5221,14 +5273,22 @@ def _toggle_cfg_panel():
         bcv = box.contentView()
         return bcv, int(bcv.frame().size.width), int(bcv.frame().size.height)
 
-    # ── [ⓘ] INFO BUTTON — top-right corner of panel ──────────────────────────────
-    INFO_SZ = 18
+    # ── [ⓘ] INFO + [КЛЮЧИ] BUTTONS — top-right corner of panel ──────────────────
+    INFO_SZ  = 18
+    KEYS_W   = 46
     btn_info = _mkbtn("ⓘ", color=C_GREEN_DIM, size=12)
     btn_info.setFrame_(AppKit.NSMakeRect(pw - INFO_SZ - 8, ph - INFO_SZ - 4, INFO_SZ, INFO_SZ))
     btn_info.setTarget_(_btn_t)
     btn_info.setAction_(BtnTarget.cfgInfo_)
     btn_info.setToolTip_("О приложении")
     cv.addSubview_(btn_info)
+
+    btn_keys = _mkbtn("[КЛЮЧИ]", color=C_GREEN_DIM, size=9)
+    btn_keys.setFrame_(AppKit.NSMakeRect(pw - INFO_SZ - KEYS_W - 14, ph - INFO_SZ - 4, KEYS_W, INFO_SZ))
+    btn_keys.setTarget_(_btn_t)
+    btn_keys.setAction_(BtnTarget.cfgProviders_)
+    btn_keys.setToolTip_("Настройка провайдеров и API ключей")
+    cv.addSubview_(btn_keys)
 
     # ── OPACITY FIELDSET (narrow) ─────────────────────────────────────────────────
     op_cv, op_cw, op_ch = _fieldset(op_x, box_y, op_w, BOX_H, _T("cfg_opacity"))
@@ -6842,6 +6902,190 @@ def show_scenario_result(text: str, hist_id: str = None):
     _load_history_combined(text, loaded_id=hist_id, keep_active=True)
 
 
+# ── Providers panel ───────────────────────────────────────────────────────────
+
+def _close_providers_panel():
+    global _prov_panel
+    if _prov_panel:
+        _prov_panel.orderOut_(None)
+        _prov_panel = None
+
+
+def _toggle_providers_panel():
+    global _prov_panel, _prov_field_refs, _prov_dot_refs, _prov_model_combo
+    if _prov_panel and _prov_panel.isVisible():
+        _close_providers_panel()
+        return
+
+    pw     = int(_win.frame().size.width)
+    MARGIN = 10
+    FW     = pw - 2 * MARGIN
+    ROW_H  = 22
+    GAP    = 6
+    SEC_H  = 72    # height of each provider section
+    HDR_H  = 32
+    BTN_H  = 28
+    ph     = HDR_H + 4 * (SEC_H + GAP) + BTN_H + MARGIN * 2
+
+    _close_providers_panel()
+    _prov_panel    = _make_drop_panel(pw, ph)
+    _prov_field_refs = {}
+    _prov_dot_refs   = {}
+    cv = _prov_panel.contentView()
+
+    # ── Header ────────────────────────────────────────────────────────────────
+    hdr = _mklabel("ПРОВАЙДЕРЫ", size=10, bold=True, color=C_GREEN_DIM)
+    hdr.setFrame_(AppKit.NSMakeRect(MARGIN, ph - HDR_H + 4, FW - 40, HDR_H - 4))
+    cv.addSubview_(hdr)
+
+    btn_x = _mkbtn("×", color=C_GREEN_DIM, size=13)
+    btn_x.setFrame_(AppKit.NSMakeRect(pw - 28, ph - HDR_H + 4, 22, HDR_H - 4))
+    btn_x.setTarget_(_btn_t)
+    btn_x.setAction_(BtnTarget.provClose_)
+    cv.addSubview_(btn_x)
+
+    cv.addSubview_(_sep_line(MARGIN, ph - HDR_H, FW, pin="top"))
+
+    # ── Provider sections ─────────────────────────────────────────────────────
+    PROVIDERS = [
+        ("ollama",    "Ollama"),
+        ("anthropic", "Anthropic"),
+        ("openai",    "OpenAI"),
+        ("glm",       "GLM"),
+    ]
+    y = ph - HDR_H - GAP
+
+    def _make_field(placeholder, value, y_pos, secure=False):
+        cls = AppKit.NSSecureTextField if secure else AppKit.NSTextField
+        tf = cls.alloc().initWithFrame_(AppKit.NSMakeRect(MARGIN, y_pos, FW, ROW_H))
+        tf.setFont_(_mono(9))
+        tf.setTextColor_(C_TEXT)
+        tf.setBackgroundColor_(_rgba(*C_BG))
+        tf.setDrawsBackground_(True)
+        tf.setBezeled_(True)
+        tf.setBezelStyle_(AppKit.NSTextFieldSquareBezel)
+        tf.setStringValue_(value)
+        tf.cell().setPlaceholderString_(placeholder)
+        tf.cell().setPlaceholderAttributedString_(
+            AppKit.NSAttributedString.alloc().initWithString_attributes_(
+                placeholder, {
+                    AppKit.NSFontAttributeName: _mono(9),
+                    AppKit.NSForegroundColorAttributeName: C_GREEN_DIM,
+                }))
+        cv.addSubview_(tf)
+        return tf
+
+    for pid, label in PROVIDERS:
+        y -= SEC_H
+        # Provider name label + status dot
+        dot = _mklabel("●", size=9, color=C_GREEN_DIM)
+        dot.setFrame_(AppKit.NSMakeRect(MARGIN, y + SEC_H - ROW_H - 2, 14, ROW_H))
+        cv.addSubview_(dot)
+        _prov_dot_refs[pid] = dot
+
+        lbl = _mklabel(label, size=9, bold=True, color=C_GREEN_BR)
+        lbl.setFrame_(AppKit.NSMakeRect(MARGIN + 16, y + SEC_H - ROW_H - 2, FW - 16, ROW_H))
+        cv.addSubview_(lbl)
+
+        if pid == "ollama":
+            tf_url = _make_field(
+                "http://localhost:11434",
+                _pc.get("ollama", "base_url", "http://localhost:11434"),
+                y + SEC_H - ROW_H * 2 - GAP - 4,
+            )
+            _prov_field_refs["ollama_url"] = tf_url
+
+            # Combobox for default model
+            combo_y = y + 4
+            combo = AppKit.NSComboBox.alloc().initWithFrame_(
+                AppKit.NSMakeRect(MARGIN, combo_y, FW, ROW_H))
+            combo.setFont_(_mono(9))
+            combo.setEditable_(True)
+            combo.setCompletes_(True)
+            combo.setNumberOfVisibleItems_(8)
+            combo.setDrawsBackground_(True)
+            models = _pc.get_ollama_models()
+            if models:
+                combo.addItemsWithObjectValues_(models)
+            combo.setStringValue_(_pc.get("ollama", "default_model", "qwen3:8b"))
+            cv.addSubview_(combo)
+            _prov_field_refs["ollama_model"] = combo
+            _prov_model_combo = combo
+        else:
+            key_val = _pc.get(pid, "api_key")
+            tf_key = _make_field(
+                f"API ключ {label}",
+                key_val,
+                y + SEC_H - ROW_H * 2 - GAP - 4,
+                secure=False,
+            )
+            _prov_field_refs[f"{pid}_key"] = tf_key
+            if pid == "openai":
+                tf_url2 = _make_field(
+                    "https://api.openai.com/v1",
+                    _pc.get("openai", "base_url", "https://api.openai.com/v1"),
+                    y + 4,
+                )
+                _prov_field_refs["openai_base"] = tf_url2
+
+        cv.addSubview_(_sep_line(MARGIN, y - GAP // 2, FW, pin="top"))
+        y -= GAP
+
+    # ── Save button ───────────────────────────────────────────────────────────
+    btn_save = _mkbtn("[Сохранить]", color=C_GREEN_BR, size=11)
+    btn_save.setFrame_(AppKit.NSMakeRect(pw - 130 - MARGIN, MARGIN, 130, BTN_H))
+    btn_save.setTarget_(_btn_t)
+    btn_save.setAction_(BtnTarget.provSave_)
+    cv.addSubview_(btn_save)
+
+    # ── Position panel ────────────────────────────────────────────────────────
+    px, py = _panel_origin(pw, ph, align="right", prefer="above")
+    _prov_panel.setFrameOrigin_(AppKit.NSMakePoint(px, py))
+    _prov_panel.orderFront_(None)
+
+    # Update status dots immediately with current known state
+    _refresh_prov_dots()
+
+
+def _refresh_prov_dots():
+    """Update status dot colors based on current provider_config probe results."""
+    if not _prov_dot_refs:
+        return
+    for pid, dot in _prov_dot_refs.items():
+        status = _pc.get_status(pid)
+        if status is True:
+            dot.setTextColor_(C_GREEN_BR)
+        elif status is False:
+            dot.setTextColor_(C_REC)
+        else:
+            dot.setTextColor_(C_GREEN_DIM)
+    if _prov_model_combo:
+        models = _pc.get_ollama_models()
+        current = _prov_model_combo.stringValue()
+        _prov_model_combo.removeAllItems()
+        if models:
+            _prov_model_combo.addItemsWithObjectValues_(models)
+        _prov_model_combo.setStringValue_(current or _pc.get("ollama", "default_model", "qwen3:8b"))
+
+
+def update_provider_status():
+    """Called from main.py when provider probe completes — refresh UI dots."""
+    _refresh_prov_dots()
+    # Also refresh model combobox in open scenario editor if any
+    _refresh_sc_model_combo()
+
+
+def _refresh_sc_model_combo():
+    """Update scenario editor model combo items when Ollama models are re-probed."""
+    combo = (_sc_edit_refs or {}).get("cb_model")
+    if not combo:
+        return
+    current = combo.stringValue()
+    combo.removeAllItems()
+    combo.addItemsWithObjectValues_(_pc.all_model_options())
+    combo.setStringValue_(current)
+
+
 def restore_ready():
     """After full_default interrupt: restore ready UI without touching existing text."""
     def _():
@@ -7008,6 +7252,7 @@ def hide(force: bool = False):
         if _hist_panel and _hist_panel.isVisible():
             _hist_panel.orderOut_(None)
         _close_cfg_panel()   # restores win Y before saving position
+        _close_providers_panel()
         _win_save_pos()
         _win.orderOut_(None)
         AppKit.NSApp.setActivationPolicy_(AppKit.NSApplicationActivationPolicyAccessory)

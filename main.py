@@ -39,6 +39,7 @@ def _dbg(msg):
             f.write(f"[{time.strftime('%H:%M:%S')}] {msg}\n")
     except Exception:
         pass
+import provider_config
 import processor
 import injector
 import overlay
@@ -1195,6 +1196,11 @@ class _AppDelegate(AppKit.NSObject):
         _setup_hotkey()
         _setup_keepalive()
         _setup_app_observer()
+        # Async probe all LLM providers; update overlay status dots when done
+        provider_config.add_status_callback(
+            lambda: AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(
+                overlay.update_provider_status))
+        provider_config.probe_all()
         transcriber.warm_up()
         print("Voice Input запущен. Right ⌥ — запись, Right ⌥ × 2 — история. Ctrl+C — выход.")
 
