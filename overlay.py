@@ -752,8 +752,11 @@ def _snap_attached_panels_live(new_wx, new_wy):
     for _, key, cur_side, target, dx, dy, pw, ph in candidates:
         perp = dy if cur_side in ("left", "right") else dx
         nx, ny = _first_free_slot_on_side(target, key, new_wx, new_wy, ww, wh, pw, ph, perp)
-        nx = max(vx, min(nx, vx + vw - pw))
-        ny = max(vy, min(ny, vy + vh - ph))
+        # Clamp only on the snap axis — perpendicular axis tracks main window
+        if target in ("left", "right"):
+            nx = max(vx, min(nx, vx + vw - pw))
+        else:
+            ny = max(vy, min(ny, vy + vh - ph))
         _magnet_offset[key] = (nx - new_wx, ny - new_wy)  # updated immediately so next panel sees it
 
 
@@ -776,18 +779,23 @@ def _smart_snap_panel(key, panel):
     ww, wh = mf.size.width, mf.size.height
     MARGIN = 20
 
-    off_screen = (px + pw > vx + vw + MARGIN or px < vx - MARGIN or
-                  py + ph > vy + vh + MARGIN or py < vy - MARGIN)
-    if not off_screen:
-        return
-
     cur_side = _panel_side(key, ww, wh, pw, ph) if key in _magnet_offset else None
     if cur_side:
+        # Check off-screen only on the panel's own axis
+        if cur_side in ("left", "right"):
+            off_screen = (px < vx - MARGIN or px + pw > vx + vw + MARGIN)
+        else:
+            off_screen = (py < vy - MARGIN or py + ph > vy + vh + MARGIN)
+        if not off_screen:
+            return
         target = _OPP[cur_side]
         dx, dy = _magnet_offset.get(key, (px - wx, py - wy))
         perp = dy if cur_side in ("left", "right") else dx
     else:
-        # panel not magneted — use screen-edge heuristic
+        off_screen = (px + pw > vx + vw + MARGIN or px < vx - MARGIN or
+                      py + ph > vy + vh + MARGIN or py < vy - MARGIN)
+        if not off_screen:
+            return
         off_right = px + pw > vx + vw + MARGIN
         off_left  = px < vx - MARGIN
         target    = "left" if off_right else ("right" if off_left else
@@ -795,8 +803,11 @@ def _smart_snap_panel(key, panel):
         perp = 0
 
     nx, ny = _first_free_slot_on_side(target, key, wx, wy, ww, wh, pw, ph, perp)
-    nx = max(vx, min(nx, vx + vw - pw))
-    ny = max(vy, min(ny, vy + vh - ph))
+    # Clamp only on the snap axis — perpendicular axis follows the main window
+    if target in ("left", "right"):
+        nx = max(vx, min(nx, vx + vw - pw))
+    else:
+        ny = max(vy, min(ny, vy + vh - ph))
 
     panel.setFrameOrigin_(AppKit.NSMakePoint(nx, ny))
     if _magnet_on.get(key, False):
