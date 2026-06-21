@@ -810,19 +810,20 @@ def _assign_cell(key, wx, wy, ww, wh, pw, ph, vx, vy, vx2, vy2):
 
     def _score(c):
         col, row = c
-        # Axis group: 0 = same axis as pref, 1 = cross-axis
-        if pr == 0 and pc != 0:       # pref is horizontal (left/right)
-            axis_group = 0 if row == 0 else 1
-        elif pc == 0 and pr != 0:     # pref is vertical (above/below)
-            axis_group = 0 if col == 0 else 1
-        else:
-            axis_group = 0
-        # How many pixels would the panel extend outside screen
         nx, ny = _cell_to_pos(col, row, wx, wy, ww, wh, pw, ph)
+        # Pixels outside screen bounds
         off = (max(0, vx - nx) + max(0, nx + pw - vx2) +
                max(0, vy - ny) + max(0, ny + ph - vy2))
+        # Axis penalty: cross-axis cells cost ~1/4 panel size.
+        # If the on-axis cell overflows by more than this, cross-axis wins.
+        if pr == 0 and pc != 0:           # pref is horizontal (left/right row)
+            axis_pen = 0 if row == 0 else pw // 4
+        elif pc == 0 and pr != 0:         # pref is vertical (above/below col)
+            axis_pen = 0 if col == 0 else ph // 4
+        else:
+            axis_pen = 0
         dist = (col - pc) ** 2 + (row - pr) ** 2
-        return (axis_group, off, dist)
+        return (off + axis_pen, dist)
 
     best = min(free, key=_score)
     nx, ny = _cell_to_pos(best[0], best[1], wx, wy, ww, wh, pw, ph)
@@ -4782,14 +4783,6 @@ def _reposition_attached_panels():
             dx, dy = _default_offset.get(key, (0, 0))
             _magnet_offset[key] = (dx, dy)
         nx, ny = int(wo.x + dx), int(wo.y + dy)
-        # Safety only for vertical panels — check side before applying
-        side = _panel_side(key, ww, wh, ww, ph)
-        if side == "top" and ny < int(wo.y) + wh + 2:
-            ny = int(wo.y) + wh + GAP
-            _magnet_offset[key] = (dx, wh + GAP)
-        elif side == "bottom" and ny + ph > int(wo.y) - 2:
-            ny = int(wo.y) - ph - GAP
-            _magnet_offset[key] = (dx, -(ph + GAP))
         try:
             panel.setFrameOrigin_(AppKit.NSMakePoint(nx, ny))
         except Exception:
