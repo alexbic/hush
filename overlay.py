@@ -629,7 +629,8 @@ def _update_magnet_btn(key):
         pass
 
 def _smart_snap_panel(key, panel):
-    """If panel is off-screen after drag, jump it to the opposite side of main window."""
+    """Checkers-style jump: if panel exits screen, flip it to the opposite side
+    of the main window while preserving the perpendicular coordinate (same line)."""
     win = globals().get("_win")
     if not win or not panel:
         return
@@ -644,7 +645,7 @@ def _smart_snap_panel(key, panel):
     pw, ph = pf.size.width, pf.size.height
     vx, vy = vis.origin.x, vis.origin.y
     vw, vh = vis.size.width, vis.size.height
-    MARGIN = 30  # pixels — how far off-screen before snapping
+    MARGIN = 20
 
     off_right  = px + pw > vx + vw + MARGIN
     off_left   = px < vx - MARGIN
@@ -652,72 +653,26 @@ def _smart_snap_panel(key, panel):
     off_bottom = py < vy - MARGIN
 
     if not (off_right or off_left or off_top or off_bottom):
-        return  # panel is safely on-screen
+        return
 
     wx, wy = mf.origin.x, mf.origin.y
     ww, wh = mf.size.width, mf.size.height
 
-    # Candidate positions for each side around main window
-    candidates = {
-        "right":  (wx + ww + GAP, wy),
-        "left":   (wx - pw - GAP, wy),
-        "top":    (wx, wy + wh + GAP),
-        "bottom": (wx, wy - ph - GAP),
-    }
+    if off_left or off_right:
+        # Horizontal jump: flip X side, keep same Y (same line)
+        nx = (wx + ww + GAP) if off_left else (wx - pw - GAP)
+        ny = py  # preserve vertical position
+        ny = max(vy, min(ny, vy + vh - ph))
+    else:
+        # Vertical jump: flip Y side, keep same X (same line)
+        nx = px  # preserve horizontal position
+        ny = (wy + wh + GAP) if off_bottom else (wy - ph - GAP)
+        nx = max(vx, min(nx, vx + vw - pw))
 
-    # Build preference order: opposite of where it went, then others
-    order = []
-    if off_right:   order.append("left")
-    if off_left:    order.append("right")
-    if off_top:     order.append("bottom")
-    if off_bottom:  order.append("top")
-    for s in ("right", "left", "bottom", "top"):
-        if s not in order:
-            order.append(s)
-
-    _other_panels = [("cfg","_cfg_panel"),("hist","_hist_panel"),
-                     ("editor","_sc_editor_panel"),("providers","_prov_panel")]
-
-    def _resolve_overlap(nx, ny):
-        """If (nx,ny) overlaps another visible panel, stack below it."""
-        for _ok, _op in _other_panels:
-            if _ok == key:
-                continue
-            _op_ref = globals().get(_op)
-            if not _op_ref:
-                continue
-            try:
-                if not _op_ref.isVisible():
-                    continue
-                of = _op_ref.frame()
-                if (nx < of.origin.x + of.size.width + 2 and nx + pw > of.origin.x - 2 and
-                        ny < of.origin.y + of.size.height + 2 and ny + ph > of.origin.y - 2):
-                    ny = of.origin.y - ph - GAP
-            except Exception:
-                pass
-        return nx, ny
-
-    # Pick first candidate that fits fully on-screen
-    for side in order:
-        nx, ny = candidates[side]
-        if nx >= vx and ny >= vy and nx + pw <= vx + vw and ny + ph <= vy + vh:
-            nx, ny = _resolve_overlap(nx, ny)
-            nx = max(vx, min(nx, vx + vw - pw))
-            ny = max(vy, min(ny, vy + vh - ph))
-            panel.setFrameOrigin_(AppKit.NSMakePoint(nx, ny))
-            if _magnet_on.get(key, False):
-                _magnet_offset[key] = (nx - wx, ny - wy)
-            else:
-                _magnet_free_pos[key] = (nx, ny)
-            _magnet_save()
-            return
-
-    # Fallback: clamp to visible screen area
-    nx = max(vx, min(px, vx + vw - pw))
-    ny = max(vy, min(py, vy + vh - ph))
-    nx, ny = _resolve_overlap(nx, ny)
+    # Final clamp to ensure fully on-screen
     nx = max(vx, min(nx, vx + vw - pw))
     ny = max(vy, min(ny, vy + vh - ph))
+
     panel.setFrameOrigin_(AppKit.NSMakePoint(nx, ny))
     if _magnet_on.get(key, False):
         _magnet_offset[key] = (nx - wx, ny - wy)
