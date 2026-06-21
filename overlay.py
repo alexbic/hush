@@ -2870,16 +2870,22 @@ class BtnTarget(AppKit.NSObject):
             if sc_idx < len(scenarios):
                 lbl = _sc_label_for(scenarios[sc_idx], _st.get("lang", "ru"))
                 sc  = scenarios[sc_idx]
-                if sc.get("silent") or sc.get("full_default"):
-                    marker = "·" if sc.get("silent") else "★"
-                    color  = C_CYAN if sc.get("silent") else C_AMBER_BR
+                is_fd  = bool(sc.get("full_default"))
+                is_sil = bool(sc.get("silent"))
+                if is_fd or is_sil:
                     ps = AppKit.NSMutableParagraphStyle.alloc().init()
                     ps.setAlignment_(AppKit.NSTextAlignmentCenter)
                     mstr = AppKit.NSMutableAttributedString.alloc().init()
                     a = {AppKit.NSFontAttributeName: _mono(9),
-                         AppKit.NSForegroundColorAttributeName: color,
+                         AppKit.NSForegroundColorAttributeName: C_CYAN,
                          AppKit.NSParagraphStyleAttributeName: ps}
-                    for part in (marker, lbl, marker):
+                    parts = []
+                    if is_fd:  parts.append("[")
+                    if is_sil: parts.append("·")
+                    parts.append(lbl)
+                    if is_sil: parts.append("·")
+                    if is_fd:  parts.append("]")
+                    for part in parts:
                         mstr.appendAttributedString_(
                             AppKit.NSAttributedString.alloc().initWithString_attributes_(part, a))
                     sender.setAttributedTitle_(mstr)
@@ -3820,17 +3826,18 @@ def _refresh_scenario_colors():
         sc     = scs[sc_idx] if 0 <= sc_idx < len(scs) else {}
         label  = _sc_label(sc)
         is_fd  = bool(sc.get("full_default"))
-        if is_fd:
-            label = "★ " + label
-        avail  = _sc_avail.get(sc_idx, True)   # True until checked
+        is_sil = bool(sc.get("silent"))
+        if is_fd and is_sil: label = "[·" + label + "·]"
+        elif is_fd:           label = "[" + label + "]"
+        avail  = _sc_avail.get(sc_idx, True)
         if sc_idx == _proc_sc_idx:
-            color = C_YEL                       # currently processing → yellow
+            color = C_YEL
         elif not avail:
-            color = C_REC                       # model unreachable → red
+            color = C_REC
         elif sc_idx == active_sc:
-            color = C_AMBER_BR if is_fd else C_GREEN_BR   # result shown
+            color = C_GREEN_BR
         else:
-            color = C_AMBER_DIM if is_fd else C_GREEN_DIM # normal
+            color = C_GREEN_DIM
         btn.setAttributedTitle_(_atitle(label, size=11, color=color))
 
 
@@ -5374,46 +5381,29 @@ def _toggle_cfg_panel():
     sc_buttons = []
     for i, sc in enumerate(scenarios):
         label = _sc_label_for(sc, cur_lang)
-        if sc.get("full_default"):
-            # full_default takes priority — amber ★ markers
+        is_fd  = bool(sc.get("full_default"))
+        is_sil = bool(sc.get("silent"))
+        if is_fd or is_sil:
+            # Build title: [·LABEL·] both, [LABEL] fd only, ·LABEL· sil only
             ps = AppKit.NSMutableParagraphStyle.alloc().init()
             ps.setAlignment_(AppKit.NSTextAlignmentCenter)
             title = AppKit.NSMutableAttributedString.alloc().init()
-            star_attrs = {
-                AppKit.NSFontAttributeName:            _mono(9),
-                AppKit.NSForegroundColorAttributeName: C_AMBER_DIM,
-                AppKit.NSParagraphStyleAttributeName:  ps,
-            }
-            title.appendAttributedString_(
-                AppKit.NSAttributedString.alloc().initWithString_attributes_("★", star_attrs))
-            title.appendAttributedString_(
-                AppKit.NSAttributedString.alloc().initWithString_attributes_(label, star_attrs))
-            title.appendAttributedString_(
-                AppKit.NSAttributedString.alloc().initWithString_attributes_("★", star_attrs))
-            btn = _mkbtn("", color=C_AMBER_DIM, size=9)
-            btn.setAttributedTitle_(title)
-        elif sc.get("silent"):
-            # silent-only scenario — cyan · markers
-            ps = AppKit.NSMutableParagraphStyle.alloc().init()
-            ps.setAlignment_(AppKit.NSTextAlignmentCenter)
-            title = AppKit.NSMutableAttributedString.alloc().init()
-            dot_attrs = {
-                AppKit.NSFontAttributeName:            _mono(9),
-                AppKit.NSForegroundColorAttributeName: C_CYAN,
-                AppKit.NSParagraphStyleAttributeName:  ps,
-            }
-            txt_attrs = {
-                AppKit.NSFontAttributeName:            _mono(9),
-                AppKit.NSForegroundColorAttributeName: C_GREEN,
-                AppKit.NSParagraphStyleAttributeName:  ps,
-            }
-            title.appendAttributedString_(
-                AppKit.NSAttributedString.alloc().initWithString_attributes_("·", dot_attrs))
-            title.appendAttributedString_(
-                AppKit.NSAttributedString.alloc().initWithString_attributes_(label, txt_attrs))
-            title.appendAttributedString_(
-                AppKit.NSAttributedString.alloc().initWithString_attributes_("·", dot_attrs))
-            btn = _mkbtn("", color=C_GREEN, size=9)
+            mk = {AppKit.NSFontAttributeName:            _mono(9),
+                  AppKit.NSForegroundColorAttributeName: C_CYAN,
+                  AppKit.NSParagraphStyleAttributeName:  ps}
+            tx = {AppKit.NSFontAttributeName:            _mono(9),
+                  AppKit.NSForegroundColorAttributeName: C_GREEN if is_sil else C_CYAN,
+                  AppKit.NSParagraphStyleAttributeName:  ps}
+            parts = []
+            if is_fd:  parts.append(("[", mk))
+            if is_sil: parts.append(("·", mk))
+            parts.append((label, tx))
+            if is_sil: parts.append(("·", mk))
+            if is_fd:  parts.append(("]", mk))
+            for s, a in parts:
+                title.appendAttributedString_(
+                    AppKit.NSAttributedString.alloc().initWithString_attributes_(s, a))
+            btn = _mkbtn("", color=C_CYAN, size=9)
             btn.setAttributedTitle_(title)
         else:
             btn = _mkbtn(label, color=C_GREEN, size=9)
@@ -5431,29 +5421,28 @@ def _toggle_cfg_panel():
         C_ERR = _rgba(0.9, 0.2, 0.2, 1.0)
         for btn, model_str, lbl, is_silent, is_fd in buttons:
             if model_str and not _model_available(model_str):
-                def _paint(b=btn, label=lbl, silent=is_silent, fd=is_fd):
+                def _paint(b=btn, label=lbl, sil=is_silent, fd=is_fd):
                     ps = AppKit.NSMutableParagraphStyle.alloc().init()
                     ps.setAlignment_(AppKit.NSTextAlignmentCenter)
-                    if silent or fd:
-                        marker = "·" if silent else "★"
+                    a = {AppKit.NSFontAttributeName: _mono(9),
+                         AppKit.NSForegroundColorAttributeName: C_ERR,
+                         AppKit.NSParagraphStyleAttributeName: ps}
+                    if sil or fd:
                         mstr = AppKit.NSMutableAttributedString.alloc().init()
-                        a = {AppKit.NSFontAttributeName: _mono(9),
-                             AppKit.NSForegroundColorAttributeName: C_ERR,
-                             AppKit.NSParagraphStyleAttributeName: ps}
-                        mstr.appendAttributedString_(
-                            AppKit.NSAttributedString.alloc().initWithString_attributes_(marker, a))
-                        mstr.appendAttributedString_(
-                            AppKit.NSAttributedString.alloc().initWithString_attributes_(label, a))
-                        mstr.appendAttributedString_(
-                            AppKit.NSAttributedString.alloc().initWithString_attributes_(marker, a))
+                        parts = []
+                        if fd:  parts.append("[")
+                        if sil: parts.append("·")
+                        parts.append(label)
+                        if sil: parts.append("·")
+                        if fd:  parts.append("]")
+                        for p in parts:
+                            mstr.appendAttributedString_(
+                                AppKit.NSAttributedString.alloc().initWithString_attributes_(p, a))
                         b.setAttributedTitle_(mstr)
                     else:
-                        attrs = {AppKit.NSFontAttributeName: _mono(9),
-                                 AppKit.NSForegroundColorAttributeName: C_ERR,
-                                 AppKit.NSParagraphStyleAttributeName: ps}
                         b.setAttributedTitle_(
                             AppKit.NSAttributedString.alloc()
-                                .initWithString_attributes_(label, attrs))
+                                .initWithString_attributes_(label, a))
                 AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(_paint)
     threading.Thread(target=_check_models, args=(sc_buttons,), daemon=True).start()
 
@@ -6811,31 +6800,35 @@ def show_transcribing():
 
 
 def show_result(text: str):
-    """Transcription done — append+animate new text into the text area."""
+    """Transcription done — append new text as a block immediately."""
     def _():
         _st["mode"] = "ready"
-        _st["active_sc"] = None   # new transcription clears any active filter
+        _st["active_sc"] = None
         _end_processing()
-        _show_target_app_header()   # icon + app name replace status label
-        # Set text in _st BEFORE _show_buttons so content-check finds it
+        _show_target_app_header()
         old = _st["text"]
         new_full = (old.rstrip() + "\n" + text).strip() if old else text
         _st["text"]    = new_full
         _st["is_md"]   = _is_markdown(new_full)
         _show_buttons(True)
         _refresh_scenario_colors()
-        # Activate app so keyboard events (Shift+Enter, Cmd+Enter) go to overlay
         AppKit.NSApp.activateIgnoringOtherApps_(True)
         _win.makeKeyAndOrderFront_(None)
         if _tv:
             _win.makeFirstResponder_(_tv)
         _st["md_mode"] = False
         _update_format_indicator()
-
-        threading.Thread(
-            target=_animate_text, args=(old, text), daemon=True
-        ).start()
-
+        # Show text immediately — no typewriter animation
+        prefix = (old.rstrip() + "\n") if old else ""
+        if _tv:
+            display = prefix + text + '\n'
+            _tv.setString_(display)
+            ln = len(display)
+            _tv.setSelectedRange_(AppKit.NSMakeRange(ln, 0))
+            _tv.scrollRangeToVisible_(AppKit.NSMakeRange(ln, 0))
+        _relayout_doc_view()
+        _finalize_tv_to_block()
+        _main(_update_cursor_pos)
     _main(_)
 
 
