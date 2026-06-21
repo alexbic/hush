@@ -264,7 +264,10 @@ FINALIZE_GRACE_S = 4.0
 # Activation:
 #   Right ⌥ alone    → silent mode (record while held, transcribe on release)
 #   Shift + Right ⌥  → open full-mode window (standby); then ⌥ alone records there
+#   Double-tap ⌥     → cancel current session and close all overlays
 _full_mode_standby = False   # True after Shift+⌥ opened the full-mode window
+_last_release_time = 0.0
+DOUBLE_TAP_WINDOW  = 0.40    # seconds between release and next press to count as double-tap
 
 _kbd = kb.Controller()
 
@@ -497,16 +500,47 @@ def _force_finalize_now():
     _session_finalize()
 
 
+def _force_paste_raw_now():
+    """Enter during countdown: paste accumulated raw text immediately, skip scenario."""
+    global _in_countdown
+    if not _in_countdown:
+        return
+    _in_countdown = False
+    AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(overlay.cancel_countdown_silent)
+    with _accum_lock:
+        texts = list(_accum_texts)
+        _accum_texts.clear()
+    if not texts:
+        AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(overlay.hide_silent)
+        return
+    full_text = "\n\n".join(texts)
+    raw = _strip_markdown(full_text)
+    _add_to_history(full_text)
+    _session_dir_cleanup()
+    threading.Thread(
+        target=lambda: _commit_and_paste(raw),
+        daemon=True, name="hush-enter-raw"
+    ).start()
+
+
 def _on_hotkey_press(full_mode: bool = False):
     """Called when Right ⌥ is pressed.
     full_mode=True  (Shift held) → open full-mode window without starting recording.
     full_mode=False → silent or continue current session mode.
+    Double-tap ⌥    → cancel everything and close overlays.
     """
     global _prev_app, _active_scenario_idx, _full_mode_standby
     if _state["hotkey_held"]:
         return
     if overlay.is_editing_scenario():
         return
+
+    # Double-tap: cancel current session (works in any mode)
+    if not full_mode and time.time() - _last_release_time < DOUBLE_TAP_WINDOW:
+        _state["hotkey_held"] = True   # set so release handler clears it
+        _cancel_all()
+        return
+
     _state["hotkey_held"] = True
 
     front = AppKit.NSWorkspace.sharedWorkspace().frontmostApplication()
@@ -568,9 +602,11 @@ def _on_hotkey_press(full_mode: bool = False):
 
 
 def _on_hotkey_release():
+    global _last_release_time
     if not _state["hotkey_held"]:
         return
     _state["hotkey_held"] = False
+    _last_release_time = time.time()
 
     stream = _state.get("stream")
     if not stream:
@@ -914,6 +950,38 @@ def _on_paste(mode: str = "raw"):
         if not (current and current["full"] == text):
             _add_to_history(text, parent_id=_current_hist_id)
 
+    # In full mode with a default scenario and unprocessed text: apply LLM before paste
+    full_sc = overlay.get_full_default_scenario()
+    if (not _state.get("silent") and full_sc and full_sc.get("prompt")
+            and overlay.get_active_sc() is None):
+        def _apply_and_paste(sc=full_sc, raw=text, m=mode):
+            cancel_ev = threading.Event()
+            def _interrupt():
+                cancel_ev.set()
+                AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(
+                    lambda: overlay.show_result(raw))
+            AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(
+                lambda: overlay.show_processing(sc.get("name", ""), interrupt_fn=_interrupt))
+            result = processor.process_with_prompt(raw, sc["prompt"], model=sc.get("model"))
+            if cancel_ev.is_set():
+                return
+            result = result.strip()
+            _add_to_history(result)
+            AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(
+                lambda r=result: overlay.show_scenario_result(r))
+            time.sleep(0.6)
+            # After paste from full mode: reset to silent mode for next session
+            if not _state.get("silent"):
+                _state["silent"] = True
+                _full_mode_standby = False
+                with _accum_lock:
+                    _accum_texts.clear()
+            final = result if m == "md" else _strip_markdown(result)
+            subprocess.run(["pbcopy"], input=final.encode("utf-8"), check=False)
+            _commit_and_paste(final)
+        threading.Thread(target=_apply_and_paste, daemon=True, name="hush-fd-paste").start()
+        return
+
     # After paste from full mode: reset to silent mode for next session
     if not _state.get("silent"):
         _state["silent"] = True
@@ -940,6 +1008,9 @@ def _setup_hotkey():
     def on_press(key):
         if key in shift_keys:
             pressed.add(key)
+        elif key == kb.Key.enter and _in_countdown:
+            threading.Thread(target=_force_paste_raw_now, daemon=True,
+                             name="hush-enter-raw").start()
         elif key == kb.Key.alt_r and kb.Key.alt_r not in pressed:
             pressed.add(kb.Key.alt_r)
             shift_held = bool(pressed & shift_keys)

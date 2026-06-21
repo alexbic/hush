@@ -271,6 +271,7 @@ STRINGS = {
         "btn_sc_delete":  "[УДАЛИТЬ]",
         "delete_confirm": "удалить сценарий?",
         "sc_silent":      "тихий режим",
+        "sc_full_default": "full mode по умолч.",
         "hotkey":         "> буфер ↩",
         "btn_sc_accept":  "[ОТПРАВИТЬ]",
         "btn_sc_undo":    "[ОТМЕНИТЬ]",
@@ -323,6 +324,7 @@ STRINGS = {
         "btn_sc_delete":  "[DELETE]",
         "delete_confirm": "delete scenario?",
         "sc_silent":      "silent mode",
+        "sc_full_default": "full mode default",
         "hotkey":         "> copy ↩",
         "btn_sc_accept":  "[SEND]",
         "btn_sc_undo":    "[CANCEL]",
@@ -374,6 +376,7 @@ STRINGS = {
         "btn_sc_delete":  "[BORRAR]",
         "delete_confirm": "¿borrar escenario?",
         "sc_silent":      "modo silencioso",
+        "sc_full_default": "full mode defecto",
         "hotkey":         "> copia ↩",
         "btn_sc_accept":  "[ENVIAR]",
         "btn_sc_undo":    "[CANCELAR]",
@@ -2967,6 +2970,16 @@ class BtnTarget(AppKit.NSObject):
             chk_prefix + _T("sc_silent"), size=10, color=color,
             align=AppKit.NSTextAlignmentLeft))
 
+    def cfgScToggleFullDefault_(self, sender):
+        """Toggle 'default full mode scenario' (radio — only one allowed)."""
+        new_val = not _sc_edit_refs.get("full_default", False)
+        _sc_edit_refs["full_default"] = new_val
+        chk_prefix = "[✓] " if new_val else "[ ] "
+        color = C_GREEN_BR if new_val else C_GREEN_DIM
+        sender.setAttributedTitle_(_atitle(
+            chk_prefix + _T("sc_full_default"), size=10, color=color,
+            align=AppKit.NSTextAlignmentLeft))
+
     def silentInterrupt_(self, sender):
         fn = _silent_interrupt_fn
         if fn:
@@ -3802,6 +3815,8 @@ def _refresh_scenario_colors():
         sc_idx = int(btn.tag())
         sc     = scs[sc_idx] if 0 <= sc_idx < len(scs) else {}
         label  = _sc_label(sc)
+        if sc.get("full_default"):
+            label = "★ " + label
         avail  = _sc_avail.get(sc_idx, True)   # True until checked
         if sc_idx == _proc_sc_idx:
             color = C_YEL                       # currently processing → yellow
@@ -4303,11 +4318,10 @@ def _setup_status_bar():
     open_item = AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
         "Открыть HUSH", "openHush:", "")
     open_item.setTarget_(_btn_t)
-    # Subtitle hint (macOS 14+); fallback gracefully on older versions
-    try:
-        open_item.setSubtitle_("Двойное нажатие ⌥ Option")
-    except Exception:
-        pass
+    # Show ⇧⌥ right-aligned on same line (native macOS shortcut display)
+    # U+2325 = ⌥ option symbol as the "key"; Shift modifier adds ⇧ prefix → displays "⇧⌥"
+    open_item.setKeyEquivalent_("⌥")
+    open_item.setKeyEquivalentModifierMask_(AppKit.NSEventModifierFlagShift)
     menu.addItem_(open_item)
     menu.addItem_(AppKit.NSMenuItem.separatorItem())
     about_item = AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
@@ -4632,7 +4646,9 @@ def _sc_edit_dirty() -> bool:
         _sc_edit_refs["tf_en"].stringValue().strip() != o["en"] or
         _sc_edit_refs["tf_es"].stringValue().strip() != o["es"] or
         _sc_edit_refs["tf_model"].stringValue().strip() != o["model"] or
-        _sc_edit_refs["tv_prompt"].string().strip() != o["prompt"]
+        _sc_edit_refs["tv_prompt"].string().strip() != o["prompt"] or
+        _sc_edit_refs.get("silent", False) != o.get("silent", False) or
+        _sc_edit_refs.get("full_default", False) != o.get("full_default", False)
     )
 
 
@@ -4944,6 +4960,17 @@ def _show_sc_editor(sc_idx):
     sil_btn.setAction_(BtnTarget.cfgScToggleSilent_)
     cv.addSubview_(sil_btn)
     y -= SIL_H
+    # Full mode default checkbox row
+    is_full_default  = bool(sc.get("full_default", False))
+    fd_prefix = "[✓] " if is_full_default else "[ ] "
+    fd_color  = C_GREEN_BR if is_full_default else C_GREEN_DIM
+    fd_btn    = _mkbtn(fd_prefix + _T("sc_full_default"), color=fd_color,
+                       size=10, align=AppKit.NSTextAlignmentLeft)
+    fd_btn.setFrame_(AppKit.NSMakeRect(MARGIN, y - SIL_H, FW, SIL_H))
+    fd_btn.setTarget_(_btn_t)
+    fd_btn.setAction_(BtnTarget.cfgScToggleFullDefault_)
+    cv.addSubview_(fd_btn)
+    y -= SIL_H
     cv.addSubview_(_sep_line(MARGIN, y, FW, pin="top"))
     y -= 1 + SIL_SEP
 
@@ -4996,21 +5023,24 @@ def _show_sc_editor(sc_idx):
     scroll.setDocumentView_(tv_prompt)
 
     _sc_edit_refs = {
-        "tf_ru":     tf_ru,
-        "tf_en":     tf_en,
-        "tf_es":     tf_es,
-        "tf_model":  tf_model,
-        "sil_btn":   sil_btn,
-        "silent":    is_silent,   # current toggle state (Python bool, toggled in action)
-        "tv_prompt": tv_prompt,
-        "sc_idx":    sc_idx,
-        "original":  {
-            "ru":     label_val.get("ru", ""),
-            "en":     label_val.get("en", ""),
-            "es":     label_val.get("es", ""),
-            "model":  sc.get("model", "") or "",
-            "prompt": sc.get("prompt", ""),
-            "silent": is_silent,
+        "tf_ru":        tf_ru,
+        "tf_en":        tf_en,
+        "tf_es":        tf_es,
+        "tf_model":     tf_model,
+        "sil_btn":      sil_btn,
+        "silent":       is_silent,   # current toggle state (Python bool, toggled in action)
+        "fd_btn":       fd_btn,
+        "full_default": is_full_default,
+        "tv_prompt":    tv_prompt,
+        "sc_idx":       sc_idx,
+        "original":     {
+            "ru":           label_val.get("ru", ""),
+            "en":           label_val.get("en", ""),
+            "es":           label_val.get("es", ""),
+            "model":        sc.get("model", "") or "",
+            "prompt":       sc.get("prompt", ""),
+            "silent":       is_silent,
+            "full_default": is_full_default,
         },
     }
     _sc_editor_panel = panel
@@ -5041,6 +5071,7 @@ def _sc_editor_save():
         return   # EN is required
 
     is_silent = refs.get("silent", False)
+    is_full_default = refs.get("full_default", False)
 
     label = {
         "en": lbl_en,
@@ -5050,12 +5081,17 @@ def _sc_editor_save():
     sc = {"name": label.get("ru", lbl_en), "label": label, "model": model, "prompt": prompt}
     if is_silent:
         sc["silent"] = True
+    if is_full_default:
+        sc["full_default"] = True
     scenarios = list(_st.get("scenarios", []))
     if sc_idx is None:
-        # New scenario: clear silent flag from all existing ones first
+        # New scenario: clear silent/full_default flags from all existing ones first
         if is_silent:
             for s in scenarios:
                 s.pop("silent", None)
+        if is_full_default:
+            for s in scenarios:
+                s.pop("full_default", None)
         scenarios.append(sc)
         new_idx = len(scenarios) - 1
     else:
@@ -5065,6 +5101,10 @@ def _sc_editor_save():
                 for i, s in enumerate(scenarios):
                     if i != sc_idx:
                         s.pop("silent", None)
+            if is_full_default:
+                for i, s in enumerate(scenarios):
+                    if i != sc_idx:
+                        s.pop("full_default", None)
             scenarios[sc_idx] = sc
     _st["scenarios"] = scenarios
     save_scenarios(scenarios)
@@ -6151,6 +6191,19 @@ def get_silent_scenario():
         if sc.get("silent"):
             return sc
     return None
+
+
+def get_full_default_scenario():
+    """Return the scenario dict marked as full mode default, or None."""
+    for sc in _st.get("scenarios", []):
+        if sc.get("full_default"):
+            return sc
+    return None
+
+
+def get_active_sc():
+    """Return the index of the currently active scenario, or None."""
+    return _st.get("active_sc")
 
 
 def get_silent_interrupt_fn():
