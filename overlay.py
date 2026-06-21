@@ -681,46 +681,90 @@ _MAGNET_PANEL_GLOBALS = {
     "providers": "_prov_panel",
 }
 
-def _first_free_slot_on_side(side, excl_key, wx, wy, ww, wh, pw, ph, perp=0):
-    """Return (nx, ny) for slot 0 on `side` if it is free, else None.
-    3×2 grid constraint: max 1 panel per cardinal side.  Closed/hidden panels
-    never block a slot."""
+# ── Grid-based panel placement ────────────────────────────────────────────────
+#
+# Each cell is identified by (col, row) relative to the main window:
+#   col=0, row=0  — main window's own position (always reserved)
+#   col < 0  → left columns;   col > 0  → right columns
+#   row > 0  → above rows;     row < 0  → below rows
+#
+# Default preferred cells:
+#   cfg       → (0, +1)  above-center
+#   hist      → (0, -1)  below-center
+#   providers → (-1, 0)  left
+#   editor    → (+1, 0)  right
+#
+# When the preferred cell is occupied or off-screen, we assign the nearest
+# free cell by Euclidean distance from (pref_col, pref_row).  No overlaps,
+# no exceeding screen bounds, fully adaptive to any resolution / orientation.
+
+_PANEL_PREF_CELL = {
+    "cfg":       (0,  1),
+    "hist":      (0, -1),
+    "providers": (-1, 0),
+    "editor":    ( 1, 0),
+}
+
+
+def _cell_to_pos(col, row, wx, wy, ww, wh, pw, ph):
+    """Absolute (nx, ny) of grid cell (col, row) relative to main window."""
     G = _SNAP_GAP
-    occupied = []
-    for k in _MAGNET_KEYS:
-        if k == excl_key or not _magnet_on.get(k, False) or k not in _magnet_offset:
-            continue
-        p = globals().get(_MAGNET_PANEL_GLOBALS.get(k, ""))
-        if p is None or not p.isVisible():
-            continue
-        if _panel_side(k, ww, wh, pw, ph) == side:
-            occupied.append(_magnet_offset[k])
-
-    if side == "top":
-        slot = wh + G
-        same_lane = [d for d in occupied if abs(d[0] - perp) < pw]
-        if not any(abs(d[1] - slot) < ph for d in same_lane):
-            return int(wx + perp), int(wy + slot)
-    elif side == "bottom":
-        slot = -(ph + G)
-        same_lane = [d for d in occupied if abs(d[0] - perp) < pw]
-        if not any(abs(d[1] - slot) < ph for d in same_lane):
-            return int(wx + perp), int(wy + slot)
-    elif side == "right":
-        slot = ww + G
-        same_lane = [d for d in occupied if abs(d[1] - perp) < ph]
-        if not any(abs(d[0] - slot) < pw for d in same_lane):
-            return int(wx + slot), int(wy + perp)
-    else:  # left
-        slot = -(pw + G)
-        same_lane = [d for d in occupied if abs(d[1] - perp) < ph]
-        if not any(abs(d[0] - slot) < pw for d in same_lane):
-            return int(wx + slot), int(wy + perp)
-    return None  # slot 0 occupied on this side
+    if col == 0:
+        nx = wx
+    elif col < 0:
+        nx = wx + col * (pw + G)           # col=-1 → wx-(pw+G)
+    else:
+        nx = wx + ww + G + (col - 1) * (pw + G)  # col=+1 → wx+ww+G
+    if row == 0:
+        ny = wy
+    elif row < 0:
+        ny = wy + row * (ph + G)           # row=-1 → wy-(ph+G)
+    else:
+        ny = wy + wh + G + (row - 1) * (ph + G)  # row=+1 → wy+wh+G
+    return int(nx), int(ny)
 
 
-def _diag_pos_free(excl_key, wx, wy, nx, ny, pw, ph):
-    """True if no other visible magnetic panel's stored offset places it at (nx, ny)."""
+def _pos_to_cell(nx, ny, wx, wy, ww, wh, pw, ph):
+    """Nearest grid cell (col, row) for absolute position (nx, ny)."""
+    G = _SNAP_GAP
+    half_cw = (pw + G) / 2
+    half_ch = (ph + G) / 2
+    # Horizontal
+    if abs(nx - wx) < half_cw:
+        col = 0
+    elif nx < wx:
+        col = -max(1, round((wx - nx) / (pw + G)))
+    else:
+        col = max(1, round((nx - wx - ww - G) / (pw + G)) + 1)
+    # Vertical
+    if abs(ny - wy) < half_ch:
+        row = 0
+    elif ny < wy:
+        row = -max(1, round((wy - ny) / (ph + G)))
+    else:
+        row = max(1, round((ny - wy - wh - G) / (ph + G)) + 1)
+    return col, row
+
+
+def _valid_grid_cells(wx, wy, ww, wh, pw, ph, vx, vy, vx2, vy2):
+    """All (col, row) cells that physically fit on screen around the main window."""
+    G = _SNAP_GAP
+    max_left  = max(0, int((wx - vx        - G) // (pw + G)))
+    max_right = max(0, int((vx2 - wx - ww  - G) // (pw + G)))
+    max_above = max(0, int((vy2 - wy - wh  - G) // (ph + G)))
+    max_below = max(0, int((wy - vy        - G) // (ph + G)))
+    cells = []
+    for col in range(-max_left, max_right + 1):
+        for row in range(-max_below, max_above + 1):
+            if col == 0 and row == 0:
+                continue  # reserved for main
+            cells.append((col, row))
+    return cells
+
+
+def _occupied_cells(excl_key, wx, wy, ww, wh, pw, ph):
+    """Set of (col, row) occupied by visible magnetic panels (excl_key excluded)."""
+    occ = set()
     for k in _MAGNET_KEYS:
         if k == excl_key or not _magnet_on.get(k, False) or k not in _magnet_offset:
             continue
@@ -728,79 +772,73 @@ def _diag_pos_free(excl_key, wx, wy, nx, ny, pw, ph):
         if p is None or not p.isVisible():
             continue
         dx, dy = _magnet_offset[k]
-        if abs((wx + dx) - nx) < pw and abs((wy + dy) - ny) < ph:
-            return False
-    return True
+        occ.add(_pos_to_cell(wx + dx, wy + dy, wx, wy, ww, wh, pw, ph))
+    return occ
 
 
-def _best_slot(key, prefer_side, avoid_side, wx, wy, ww, wh, pw, ph,
-               vx, vy, vx2, vy2, GRAB=40):
-    """Find the best free grid cell for `key` and return (label, nx, ny).
-    Tries 4 cardinal sides first (1 slot each — 3×2 constraint), then 4 diagonal
-    corners as overflow.  Returns (None, None, None) if no position gives ≥GRAB px."""
-    G = _SNAP_GAP
-    best_label, best_nx, best_ny, best_vis = None, None, None, -1
+def _assign_cell(key, wx, wy, ww, wh, pw, ph, vx, vy, vx2, vy2):
+    """Find the best free cell for `key`.  Returns (col, row, nx, ny) or None.
 
-    # ── Cardinal slots (max 1 per side) ──────────────────────────────────────
-    cardinal = [prefer_side] + [s for s in ("left", "right", "top", "bottom")
-                                 if s != prefer_side and s != avoid_side]
-    for side in cardinal:
-        pos = _first_free_slot_on_side(side, key, wx, wy, ww, wh, pw, ph, 0)
-        if pos is None:
-            continue  # slot 0 already taken by another panel
-        nx, ny = pos
-        vis = (max(0, min(nx + pw, vx2) - max(nx, vx)) if side in ("left", "right")
-               else max(0, min(ny + ph, vy2) - max(ny, vy)))
-        if vis > best_vis:
-            best_vis, best_label, best_nx, best_ny = vis, side, nx, ny
-
-    # ── Diagonal fallback — "second row" in the 3×2 grid ─────────────────────
-    diagonals = [
-        ("top-left",     wx - pw - G, wy + wh + G),
-        ("top-right",    wx + ww + G, wy + wh + G),
-        ("bottom-left",  wx - pw - G, wy - ph - G),
-        ("bottom-right", wx + ww + G, wy - ph - G),
-    ]
-    # Prefer diagonals on the same row as prefer_side
-    if prefer_side in ("top", "bottom"):
-        row = "top" if prefer_side == "top" else "bottom"
-        diagonals.sort(key=lambda d: (0 if row in d[0] else 1))
+    Priority:
+      1. Preferred cell (from _PANEL_PREF_CELL or current stored offset),
+         if it fits on screen and is free.
+      2. Otherwise: nearest free cell sorted by distance from preferred.
+    """
+    # Determine preferred cell
+    if key in _magnet_offset:
+        dx, dy = _magnet_offset[key]
+        pref = _pos_to_cell(wx + dx, wy + dy, wx, wy, ww, wh, pw, ph)
     else:
-        col = "left" if prefer_side == "left" else "right"
-        diagonals.sort(key=lambda d: (0 if col in d[0] else 1))
+        pref = _PANEL_PREF_CELL.get(key, (0, -1))
 
-    for label, nx, ny in diagonals:
-        if not _diag_pos_free(key, wx, wy, nx, ny, pw, ph):
-            continue
-        x_vis = max(0, min(nx + pw, vx2) - max(nx, vx))
-        y_vis = max(0, min(ny + ph, vy2) - max(ny, vy))
-        vis = min(x_vis, y_vis)
-        if vis > best_vis:
-            best_vis, best_label, best_nx, best_ny = vis, label, nx, ny
+    valid    = _valid_grid_cells(wx, wy, ww, wh, pw, ph, vx, vy, vx2, vy2)
+    occupied = _occupied_cells(key, wx, wy, ww, wh, pw, ph)
+    free     = [c for c in valid if c not in occupied]
 
-    if best_vis < GRAB:
-        return None, None, None
-    return best_label, best_nx, best_ny
+    if not free:
+        return None
+
+    def _dist(c):
+        return (c[0] - pref[0]) ** 2 + (c[1] - pref[1]) ** 2
+
+    best = min(free, key=_dist)
+    nx, ny = _cell_to_pos(best[0], best[1], wx, wy, ww, wh, pw, ph)
+    return best[0], best[1], nx, ny
+
+
+# Keep for callers that still pass perp (ignored now — all panels same height)
+def _first_free_slot_on_side(side, excl_key, wx, wy, ww, wh, pw, ph, perp=0):
+    """Legacy shim: returns first free slot on `side` using grid system."""
+    G = _SNAP_GAP
+    vx, vy, vx2, vy2 = _screen_bounds_at(wx + ww / 2, wy + wh / 2)
+    result = _assign_cell(excl_key, wx, wy, ww, wh, pw, ph, vx, vy, vx2, vy2)
+    if result is None:
+        # Absolute fallback: adjacent to preferred side, clamped
+        if side == "top":    return wx, wy + wh + G
+        if side == "bottom": return wx, wy - ph - G
+        if side == "right":  return wx + ww + G, wy
+        return wx - pw - G, wy
+    _, _, nx, ny = result
+    return nx, ny
 
 
 def _snap_attached_panels_live(new_wx, new_wy):
-    """During main-window drag: panels that go off-screen jump to the opposite
-    side of their CURRENT AXIS (left↔right or top↔bottom), preserving their
-    perpendicular lane.  Multiple panels snapping at once are processed in
-    slot order (closest-to-main first) to preserve their relative sequence."""
+    """During main-window drag: reassign each visible magnetic panel to the
+    best free grid cell on the current screen.  Uses the cell-based grid so
+    panels never overlap and always fit within screen bounds."""
     win = globals().get("_win")
     if not win:
         return
-    mf  = win.frame()
+    mf = win.frame()
     ww, wh = mf.size.width, mf.size.height
-    # Panels live in the CURRENT SCREEN's space — not the union of all screens.
-    # Use the screen that the main window centre will be on after this move.
     vx, vy, vx2, vy2 = _screen_bounds_at(new_wx + ww / 2, new_wy + wh / 2)
-    vw, vh = vx2 - vx, vy2 - vy
     MARGIN = 20
+    import time as _time
+    now = _time.monotonic()
+    _SNAP_COOLDOWN_S = 0.4
 
-    # ── Phase 1: collect all panels that need snapping ───────────────────────
-    candidates = []   # (slot_dist, key, cur_side, target, dx, dy, pw, ph)
+    # Collect panels that are off-screen at new_wx/new_wy
+    candidates = []
     for key, pname in [("cfg","_cfg_panel"), ("hist","_hist_panel"),
                         ("editor","_sc_editor_panel"), ("providers","_prov_panel")]:
         if not _magnet_on.get(key, False) or key not in _magnet_offset:
@@ -817,113 +855,58 @@ def _snap_attached_panels_live(new_wx, new_wy):
             continue
         dx, dy = _magnet_offset[key]
         px, py = new_wx + dx, new_wy + dy
-        cur_side = _panel_side(key, ww, wh, pw, ph)
-        if cur_side is None:
+        # Off-screen on either axis
+        off = (px < vx - MARGIN or px + pw > vx2 + MARGIN or
+               py < vy - MARGIN or py + ph > vy2 + MARGIN)
+        if not off:
             continue
-        # Only check off-screen on the panel's own axis — side panels never
-        # snap because they extend above/below the screen, and vice versa.
-        if cur_side in ("left", "right"):
-            off_screen = (px < vx - MARGIN or px + pw > vx + vw + MARGIN)
-        else:
-            off_screen = (py < vy - MARGIN or py + ph > vy + vh + MARGIN)
-        if not off_screen:
-            continue
-        # Slot distance = how far along its own axis the panel is from main window
-        slot_dist = abs(dx) if cur_side in ("left", "right") else abs(dy)
-        candidates.append((slot_dist, key, cur_side, _OPP[cur_side], dx, dy, pw, ph))
+        dist = abs(dx) + abs(dy)
+        candidates.append((dist, key, pw, ph))
 
-    # ── Phase 2: snap in slot order (closest first) to preserve sequence ─────
-    import time as _time
-    now = _time.monotonic()
-    _SNAP_COOLDOWN_S = 0.4   # seconds before the same panel can snap again
-    candidates.sort(key=lambda c: c[0])
-    for _, key, cur_side, target0, dx, dy, pw, ph in candidates:
-        # Cooldown: prevent oscillation — a panel that just snapped can't snap again
-        # within _SNAP_COOLDOWN_S seconds (main window must move away first).
+    # Reassign closest-first so earlier panels claim preferred cells first
+    candidates.sort()
+    for _, key, pw, ph in candidates:
         if now - _snap_ts.get(key, 0.0) < _SNAP_COOLDOWN_S:
             continue
-        # Find best available slot: prefer opposite side, then try all 4 directions.
-        # This gives "3×2 grid" behaviour — if top/bottom are full, wrap to side.
-        best_side, nx, ny = _best_slot(
-            key, target0, cur_side,
-            new_wx, new_wy, ww, wh, pw, ph,
-            vx, vy, vx2, vy2)
-        if best_side is None:
-            continue  # no room on any side — skip (oscillation guard)
+        result = _assign_cell(key, new_wx, new_wy, ww, wh, pw, ph, vx, vy, vx2, vy2)
+        if result is None:
+            continue
+        _col, _row, nx, ny = result
         _snap_ts[key] = now
-        # Store IDEAL (unclamped) offset so panels never overlap after clamping
-        _magnet_offset[key] = (nx - new_wx, ny - new_wy)  # updated immediately
+        _magnet_offset[key] = (nx - new_wx, ny - new_wy)
 
 
 def _smart_snap_panel(key, panel):
-    """On mouseUp: if panel is off current screen, jump to opposite side (axis-aligned)."""
+    """On mouseUp: if a magnetic panel is off the current screen, reassign it
+    to the nearest free grid cell.  No overlaps, fits within screen bounds."""
     win = globals().get("_win")
     if not win or not panel:
         return
-    pf  = panel.frame()
-    mf  = win.frame()
-    px, py = pf.origin.x, pf.origin.y
-    pw, ph = pf.size.width, pf.size.height
-    wx, wy = mf.origin.x, mf.origin.y
-    ww, wh = mf.size.width, mf.size.height
-    # Panels snap relative to the screen the main window currently lives on
+    pf = panel.frame()
+    mf = win.frame()
+    px, py = int(pf.origin.x), int(pf.origin.y)
+    pw, ph = int(pf.size.width), int(pf.size.height)
+    wx, wy = int(mf.origin.x), int(mf.origin.y)
+    ww, wh = int(mf.size.width), int(mf.size.height)
     vx, vy, vx2, vy2 = _screen_bounds_at(wx + ww / 2, wy + wh / 2)
-    vw, vh = vx2 - vx, vy2 - vy
     MARGIN = 20
 
-    cur_side = _panel_side(key, ww, wh, pw, ph) if key in _magnet_offset else None
-    if cur_side:
-        if cur_side in ("left", "right"):
-            off_screen = (px < vx - MARGIN or px + pw > vx + vw + MARGIN)
-        else:
-            off_screen = (py < vy - MARGIN or py + ph > vy + vh + MARGIN)
-        if not off_screen:
-            return
-        avoid = cur_side
-        prefer = _OPP[cur_side]
-    else:
-        off_screen = (px + pw > vx + vw + MARGIN or px < vx - MARGIN or
-                      py + ph > vy + vh + MARGIN or py < vy - MARGIN)
-        if not off_screen:
-            return
-        off_right = px + pw > vx + vw + MARGIN
-        off_left  = px < vx - MARGIN
-        avoid   = "right" if off_right else ("left" if off_left else
-                  ("top" if py + ph > vy + vh + MARGIN else "bottom"))
-        prefer  = _OPP[avoid]
+    off = (px < vx - MARGIN or px + pw > vx2 + MARGIN or
+           py < vy - MARGIN or py + ph > vy2 + MARGIN)
+    if not off:
+        return
 
-    # Find best slot across all 4 directions — enables "3×2 grid" wrapping:
-    # if opposite side is also off-screen, try perpendicular sides.
-    best_side, nx, ny = _best_slot(key, prefer, avoid, wx, wy, ww, wh, pw, ph, vx, vy, vx2, vy2)
-
-    if best_side is None:
-        # ── Last resort: nudge main window toward the edge to free up space ──
-        # e.g. panel can't go left/right → pin main to one edge → other side opens up
-        win2 = globals().get("_win")
-        if win2:
-            if avoid in ("left", "right"):
-                # Horizontal — push main to the edge that maximises the free side
-                nudge_x = vx if avoid == "right" else vx2 - ww
-                win2.setFrameOrigin_(AppKit.NSMakePoint(nudge_x, wy))
-                wx = int(nudge_x)
-            else:
-                nudge_y = vy if avoid == "top" else vy2 - wh
-                win2.setFrameOrigin_(AppKit.NSMakePoint(wx, nudge_y))
-                wy = int(nudge_y)
-            _reposition_attached_panels()
-            best_side, nx, ny = _best_slot(key, prefer, avoid, wx, wy, ww, wh, pw, ph, vx, vy, vx2, vy2)
-        if best_side is None:
-            return  # screen too small even after nudge
-
+    result = _assign_cell(key, wx, wy, ww, wh, pw, ph, vx, vy, vx2, vy2)
+    if result is None:
+        return
+    _col, _row, nx, ny = result
+    # Clamp to screen bounds (safety)
+    nx = max(vx, min(nx, vx2 - pw))
+    ny = max(vy, min(ny, vy2 - ph))
     if _magnet_on.get(key, False):
         _magnet_offset[key] = (nx - wx, ny - wy)
     else:
         _magnet_free_pos[key] = (nx, ny)
-    # Display: clamp only on snap axis so panel stays reachable
-    if best_side in ("left", "right"):
-        nx = max(vx, min(nx, vx + vw - pw))
-    else:
-        ny = max(vy, min(ny, vy + vh - ph))
     panel.setFrameOrigin_(AppKit.NSMakePoint(nx, ny))
     _magnet_save()
 
@@ -5186,24 +5169,12 @@ def _show_hist_panel(history):
     wx, wy = int(mf.origin.x), int(mf.origin.y)
     ww, wh = int(mf.size.width), int(mf.size.height)
     if _magnet_on.get("hist", True):
-        # Repack into first free visible slot; ignore stored offset to avoid gaps.
-        if "hist" in _magnet_offset:
-            side = _panel_side("hist", ww, wh, pw, ph) or "bottom"
-        else:
-            side = "bottom"
         vx, vy, vx2, vy2 = _screen_bounds_at(wx + ww / 2, wy + wh / 2)
-        if side == "bottom":
-            default_bot_y = wy - ph - _SNAP_GAP
-            if default_bot_y < vy:
-                side = "top"
-        pos = _first_free_slot_on_side(side, "hist", wx, wy, ww, wh, pw, ph, 0)
-        if pos is None:  # cardinal slot taken — find best grid cell
-            _, px, py = _best_slot("hist", side, _OPP[side], wx, wy, ww, wh, pw, ph,
-                                   vx, vy, vx2, vy2)
-            if px is None:
-                px, py = wx + ww // 2 - pw // 2, wy - ph - _SNAP_GAP  # last resort
+        result = _assign_cell("hist", wx, wy, ww, wh, pw, ph, vx, vy, vx2, vy2)
+        if result:
+            _, _, px, py = result
         else:
-            px, py = pos
+            px, py = wx, max(vy, wy - ph - _SNAP_GAP)
         _magnet_offset["hist"] = (px - wx, py - wy)
     else:
         if "hist" in _magnet_free_pos:
@@ -6321,25 +6292,12 @@ def _toggle_cfg_panel():
     wx, wy = int(mf.origin.x), int(mf.origin.y)
     ww, wh = int(mf.size.width), int(mf.size.height)
     if _magnet_on.get("cfg", True):
-        # Determine which side cfg should be on (use stored offset if available,
-        # else default to top; if top is off-screen on current screen, use bottom).
-        if "cfg" in _magnet_offset:
-            side = _panel_side("cfg", ww, wh, pw, ph) or "top"
-        else:
-            side = "top"
         vx, vy, vx2, vy2 = _screen_bounds_at(wx + ww / 2, wy + wh / 2)
-        if side == "top":
-            default_top_y = wy + wh + _SNAP_GAP
-            if default_top_y + ph > vy2:
-                side = "bottom"
-        pos = _first_free_slot_on_side(side, "cfg", wx, wy, ww, wh, pw, ph, 0)
-        if pos is None:  # cardinal slot taken — find best grid cell
-            _, px, py = _best_slot("cfg", side, _OPP[side], wx, wy, ww, wh, pw, ph,
-                                   vx, vy, vx2, vy2)
-            if px is None:
-                px, py = wx + ww // 2 - pw // 2, wy + wh + _SNAP_GAP  # last resort
+        result = _assign_cell("cfg", wx, wy, ww, wh, pw, ph, vx, vy, vx2, vy2)
+        if result:
+            _, _, px, py = result
         else:
-            px, py = pos
+            px, py = wx, min(vy2 - ph, wy + wh + _SNAP_GAP)
         _magnet_offset["cfg"] = (px - wx, py - wy)
     else:
         if "cfg" in _magnet_free_pos:
