@@ -655,10 +655,10 @@ def _all_screens_bounds():
 
 
 _MAGNET_PANEL_GLOBALS = {
-    "cfg":       "_cfg",
-    "hist":      "_hist",
-    "editor":    "_editor_panel",
-    "providers": "_providers",
+    "cfg":       "_cfg_panel",
+    "hist":      "_hist_panel",
+    "editor":    "_sc_editor_panel",
+    "providers": "_prov_panel",
 }
 
 def _first_free_slot_on_side(side, excl_key, wx, wy, ww, wh, pw, ph, perp=0):
@@ -5085,32 +5085,28 @@ def _show_hist_panel(history):
     screen  = AppKit.NSScreen.mainScreen()
     vis     = screen.visibleFrame() if screen else None
 
-    # Fixed height same as providers; open to the LEFT of main window
-    ph        = H_PANEL
-    GAP_H     = 6
-    if _magnet_on.get("hist", False) and "hist" in _magnet_offset:
-        dx, dy = _magnet_offset["hist"]
-        px = int(mf.origin.x + dx)
-        py = int(mf.origin.y + dy)
-    elif "hist" in _magnet_free_pos and not _magnet_on.get("hist", False):
-        px, py = int(_magnet_free_pos["hist"][0]), int(_magnet_free_pos["hist"][1])
+    ph = H_PANEL
+    wx, wy = int(mf.origin.x), int(mf.origin.y)
+    ww, wh = int(mf.size.width), int(mf.size.height)
+    if _magnet_on.get("hist", True):
+        # Repack into first free visible slot; ignore stored offset to avoid gaps.
+        if "hist" in _magnet_offset:
+            side = _panel_side("hist", ww, wh, pw, ph) or "bottom"
+        else:
+            side = "bottom"
+        vx, vy, vx2, vy2 = _all_screens_bounds()
+        if side == "bottom":
+            default_bot_y = wy - ph - _SNAP_GAP
+            if default_bot_y < vy:
+                side = "top"
+        px, py = _first_free_slot_on_side(side, "hist", wx, wy, ww, wh, pw, ph, 0)
+        _magnet_offset["hist"] = (px - wx, py - wy)
     else:
-        px_left  = int(mf.origin.x - pw - GAP_H)
-        px_right = int(mf.origin.x + mf.size.width + GAP_H)
-        fits_left  = (vis is None or px_left >= vis.origin.x)
-        if fits_left:
-            px = px_left
+        if "hist" in _magnet_free_pos:
+            px, py = int(_magnet_free_pos["hist"][0]), int(_magnet_free_pos["hist"][1])
         else:
-            px = px_right
-        py = int(mf.origin.y)
-        if _magnet_on.get("hist", True):
-            _magnet_offset["hist"] = (px - int(mf.origin.x), 0)
-        else:
-            _magnet_free_pos["hist"] = (px, py)
-    if vis:
-        py = min(py, int(vis.origin.y + vis.size.height) - ph)
-        py = max(py, int(vis.origin.y))
-    panel_origin  = AppKit.NSMakePoint(px, py)
+            px, py = wx - pw - _SNAP_GAP, wy
+    panel_origin  = AppKit.NSMakePoint(int(px), int(py))
     _hist_panel_side = "left"
 
     if _hist_panel:
@@ -6215,27 +6211,30 @@ def _toggle_cfg_panel():
 
     _cfg_panel.setAlphaValue_(_st.get("opacity", 0.88))
 
-    # Position cfg panel: magnet-aware.
-    CFG_GAP = 4
-    mf = _win.frame()
+    # Position cfg panel: always repack into the first free visible slot so
+    # there are no phantom gaps from previously-closed neighbour panels.
+    mf  = _win.frame()
+    wx, wy = int(mf.origin.x), int(mf.origin.y)
+    ww, wh = int(mf.size.width), int(mf.size.height)
     if _magnet_on.get("cfg", True):
-        if "cfg" not in _magnet_offset:
-            _magnet_offset["cfg"] = (0, int(mf.size.height) + CFG_GAP)
-        dx, dy = _magnet_offset["cfg"]
-        px = mf.origin.x + dx
-        py = mf.origin.y + dy
-        # If panel would go off-screen above, snap it below main window instead
-        vis = AppKit.NSScreen.mainScreen().visibleFrame()
-        top = py + ph
-        if top > vis.origin.y + vis.size.height:
-            py = int(mf.origin.y - ph - CFG_GAP)
-            _magnet_offset["cfg"] = (dx, -(ph + CFG_GAP))
+        # Determine which side cfg should be on (use stored offset if available,
+        # else default to top; if top is off-screen use bottom).
+        if "cfg" in _magnet_offset:
+            side = _panel_side("cfg", ww, wh, pw, ph) or "top"
+        else:
+            side = "top"
+        vx, vy, vx2, vy2 = _all_screens_bounds()
+        if side == "top":
+            default_top_y = wy + wh + _SNAP_GAP
+            if default_top_y + ph > vy2:
+                side = "bottom"
+        px, py = _first_free_slot_on_side(side, "cfg", wx, wy, ww, wh, pw, ph, 0)
+        _magnet_offset["cfg"] = (px - wx, py - wy)
     else:
         if "cfg" in _magnet_free_pos:
             px, py = _magnet_free_pos["cfg"]
         else:
-            px = int(mf.origin.x + mf.size.width - pw)
-            py = int(mf.origin.y + mf.size.height + CFG_GAP)
+            px, py = wx + ww - pw, wy + wh + _SNAP_GAP
 
     _cfg_panel.setFrameOrigin_(AppKit.NSMakePoint(px, py))
     AppKit.NSApp.activateIgnoringOtherApps_(True)
