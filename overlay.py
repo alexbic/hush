@@ -604,6 +604,8 @@ C_TEXT       = _rgba(0.33, 1.00, 0.33)
 C_IDLE       = _rgba(0.00, 0.72, 0.00)       # idle = bright enough to read on dark bg
 C_REC        = _rgba(1.00, 0.33, 0.33)
 C_YEL        = _rgba(1.00, 0.85, 0.00)
+C_AMBER_DIM  = _rgba(0.90, 0.60, 0.10)   # full_default scenario normal state
+C_AMBER_BR   = _rgba(1.00, 0.80, 0.30)   # full_default scenario active state
 C_PINK       = _rgba(1.00, 0.25, 0.60)   # recognition EQ — same in window and silent
 C_CYAN       = _rgba(0.33, 1.00, 1.00)
 C_BAR_ON     = _rgba(0.33, 1.00, 0.33)
@@ -3815,7 +3817,8 @@ def _refresh_scenario_colors():
         sc_idx = int(btn.tag())
         sc     = scs[sc_idx] if 0 <= sc_idx < len(scs) else {}
         label  = _sc_label(sc)
-        if sc.get("full_default"):
+        is_fd  = bool(sc.get("full_default"))
+        if is_fd:
             label = "★ " + label
         avail  = _sc_avail.get(sc_idx, True)   # True until checked
         if sc_idx == _proc_sc_idx:
@@ -3823,9 +3826,9 @@ def _refresh_scenario_colors():
         elif not avail:
             color = C_REC                       # model unreachable → red
         elif sc_idx == active_sc:
-            color = C_GREEN_BR                  # result shown → bright green
+            color = C_AMBER_BR if is_fd else C_GREEN_BR   # result shown
         else:
-            color = C_GREEN_DIM                 # normal
+            color = C_AMBER_DIM if is_fd else C_GREEN_DIM # normal
         btn.setAttributedTitle_(_atitle(label, size=11, color=color))
 
 

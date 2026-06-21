@@ -308,6 +308,7 @@ def _cancel_all():
     """Abort everything: recording, transcription queue, accumulated text."""
     global _full_mode_standby
     _full_mode_standby = False
+    _state["silent"]    = True   # reset to default silent mode after any cancel
     _dbg("_cancel_all()")
     _state["cancelled"] = True
     _state["stream"]    = None
@@ -569,6 +570,7 @@ def _on_hotkey_press(full_mode: bool = False):
         _full_mode_standby = True
         _state["silent"] = False
         overlay._silent_mode = False
+        AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(overlay.hide_silent)
         overlay.show_recording()
         return  # no recorder.start()
 
@@ -578,24 +580,27 @@ def _on_hotkey_press(full_mode: bool = False):
         _session_reset()
         _state["silent"] = False
         overlay._silent_mode = False
+        AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(overlay.hide_silent)
         overlay.show_recording()
     elif not active and _state.get("silent", True):
-        # Truly fresh with no prior mode → silent mode
+        # Truly fresh → silent mode
         _session_reset()
         _state["silent"] = True
         overlay._silent_mode = True
         overlay.show_recording_silent(_prev_app)
     elif not active and not _state.get("silent", True):
-        # Full-mode: recording next chunk — keep existing _accum_texts (soft reset only)
+        # Full mode between chunks — keep existing _accum_texts
         _session_reset(clear_accum=False)
         _state["silent"] = False
         overlay._silent_mode = False
+        AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(overlay.hide_silent)
         overlay.show_recording()
     else:
         # Resume recording in current active session (preserve mode)
         if _state.get("silent"):
             overlay.show_recording_silent(_prev_app)
         else:
+            AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(overlay.hide_silent)
             overlay.show_recording()
 
     _state["stream"] = recorder.start(on_chunk=overlay.update_waveform)
