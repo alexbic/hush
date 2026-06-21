@@ -2996,7 +2996,7 @@ class BtnTarget(AppKit.NSObject):
     def send_(self, sender):
         if self._editor_active(): return
         if _on_paste_cb:
-            _on_paste_cb()   # [↵] always pastes as raw (strip MD)
+            _on_paste_cb()   # [Отправить] — raw paste, no full_default scenario
 
     def scPrev_(self, sender):
         global _sc_page
