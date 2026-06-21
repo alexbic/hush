@@ -39,6 +39,8 @@ CLOUD_MODELS = [
     "openai:gpt-4o",
     "glm:glm-5-turbo",
     "glm:glm-5",
+    "glm:glm-4.7",
+    "glm:glm-4.7-flash",
     "glm:glm-4.5",
     "glm:glm-4.5-air",
 ]
