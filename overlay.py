@@ -564,6 +564,7 @@ _MAGNET_DEFAULT = {"cfg": True, "hist": True, "editor": True, "providers": True}
 _magnet_on      = dict(_MAGNET_DEFAULT)
 _magnet_offset  = {}   # {key: (dx, dy)} from _win origin when ON
 _magnet_free_pos = {}  # {key: (x, y)} saved free position when OFF
+_snap_ts        = {}   # {key: monotonic()} — timestamp of last snap (oscillation guard)
 _magnet_btns    = {}   # {key: NSButton} for UI updates
 
 
@@ -788,13 +789,30 @@ def _snap_attached_panels_live(new_wx, new_wy):
         candidates.append((slot_dist, key, cur_side, _OPP[cur_side], dx, dy, pw, ph))
 
     # ── Phase 2: snap in slot order (closest first) to preserve sequence ─────
+    import time as _time
+    now = _time.monotonic()
+    _SNAP_COOLDOWN_S = 0.4   # seconds before the same panel can snap again
     candidates.sort(key=lambda c: c[0])
     for _, key, cur_side, target, dx, dy, pw, ph in candidates:
+        # Cooldown: prevent oscillation — a panel that just snapped can't snap again
+        # within _SNAP_COOLDOWN_S seconds (main window must move away first).
+        last = _snap_ts.get(key, 0.0)
+        if now - last < _SNAP_COOLDOWN_S:
+            continue
         # perp=0: all panels same height → always align flush with main window edges
         nx, ny = _first_free_slot_on_side(target, key, new_wx, new_wy, ww, wh, pw, ph, 0)
+        # Feasibility: don't snap if the TARGET position is also off-screen — that
+        # would just trigger an immediate oscillation snap back.
+        GRAB = 40
+        if target in ("left", "right"):
+            fits = (min(nx + pw, vx2) - max(nx, vx)) >= GRAB
+        else:
+            fits = (min(ny + ph, vy2) - max(ny, vy)) >= GRAB
+        if not fits:
+            continue
+        _snap_ts[key] = now  # record snap time
         # Store IDEAL (unclamped) offset — prevents overlap when two panels land on
         # the same side and clamping would force both to the same Y/X position.
-        # Panels may temporarily go off-screen; _reposition_attached_panels places them.
         _magnet_offset[key] = (nx - new_wx, ny - new_wy)  # updated immediately so next panel sees it
 
 
