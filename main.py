@@ -539,8 +539,6 @@ def _on_hotkey_press(full_mode: bool = False):
     global _prev_app, _active_scenario_idx, _full_mode_standby
     if _state["hotkey_held"]:
         return
-    if overlay.is_editing_scenario():
-        return
 
     # Double-tap: cancel current session (works in any mode)
     if not full_mode and time.time() - _last_release_time < DOUBLE_TAP_WINDOW:

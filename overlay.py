@@ -4410,7 +4410,7 @@ def _reposition_attached_panels():
 
 
 def _reset_panels_layout():
-    """Reset: all magnets ON, all panels open at default positions around main window."""
+    """Reset: all magnets ON, open all panels at default positions around main window."""
     global _magnet_on, _magnet_offset, _magnet_free_pos
     _magnet_on       = dict(_MAGNET_DEFAULT)   # all True
     _magnet_offset   = {}
@@ -4422,7 +4422,9 @@ def _reset_panels_layout():
         _magnet_save()
         return
     _magnet_save()
-    # Ensure all panels are open (open if not already visible)
+    # Open panels that aren't visible yet
+    if not (_cfg_panel and _cfg_panel.isVisible()):
+        _toggle_cfg_panel()
     if not (_hist_panel and _hist_panel.isVisible()):
         history = _on_history_cb() if _on_history_cb else []
         _show_hist_panel(history)
@@ -4432,9 +4434,8 @@ def _reset_panels_layout():
         sc_list = _st.get("scenarios", [])
         if sc_list:
             _show_sc_editor_impl(0)
-    # Reopen cfg panel so it snaps to default position (visible effect)
-    _close_cfg_panel()
-    _toggle_cfg_panel()
+    # Reposition ALL attached panels to fresh default offsets
+    _reposition_attached_panels()
 
 
 def _restore_overlay_after_panel():
