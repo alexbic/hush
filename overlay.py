@@ -942,6 +942,45 @@ def _update_panel_drag_end(key, panel):
     except Exception:
         pass
 
+def _calc_panel_pos(key, wx, wy, ww, wh, pw, ph):
+    """Return (px, py) for placing a panel. Uses grid cell when magnet is ON,
+    saved free position when magnet is OFF.  Guarantees no cell conflicts."""
+    vx, vy, vx2, vy2 = _screen_bounds_at(wx + ww / 2, wy + wh / 2)
+    if _magnet_on.get(key, True):
+        result = _assign_cell(key, wx, wy, ww, wh, pw, ph, vx, vy, vx2, vy2)
+        if result:
+            _, _, nx, ny = result
+        else:
+            # No cell fits — fallback to default pref offset, clamped to screen
+            dx, dy = {
+                "cfg":       (0, wh + _SNAP_GAP),
+                "hist":      (0, -(ph + _SNAP_GAP)),
+                "editor":    (ww + _SNAP_GAP, 0),
+                "providers": (-(pw + _SNAP_GAP), 0),
+            }.get(key, (0, 0))
+            nx = max(vx, min(wx + dx, vx2 - pw))
+            ny = max(vy, min(wy + dy, vy2 - ph))
+        _magnet_offset[key] = (nx - wx, ny - wy)
+        return int(nx), int(ny)
+    else:
+        if key in _magnet_free_pos:
+            px, py = _magnet_free_pos[key]
+            px = max(vx, min(int(px), vx2 - pw))
+            py = max(vy, min(int(py), vy2 - ph))
+        else:
+            # First time free: place at default position
+            dx, dy = {
+                "cfg":       (0, wh + _SNAP_GAP),
+                "hist":      (0, -(ph + _SNAP_GAP)),
+                "editor":    (ww + _SNAP_GAP, 0),
+                "providers": (-(pw + _SNAP_GAP), 0),
+            }.get(key, (0, 0))
+            px = max(vx, min(wx + dx, vx2 - pw))
+            py = max(vy, min(wy + dy, vy2 - ph))
+            _magnet_free_pos[key] = (px, py)
+        return int(px), int(py)
+
+
 def _mkmagnet_btn(key, cv, x, y, w=22, h=22):
     is_on = _magnet_on.get(key, False)
     btn   = _mkbtn("🧲", color=AppKit.NSColor.whiteColor(), size=13)
@@ -2140,7 +2179,7 @@ class _DropPanel(AppKit.NSPanel):
             _main(lambda: hide(force=True))
 
     def sendEvent_(self, event):
-        _LD = 1; _LU = 2; _LDRAG = 6; _THRESH2 = 25.0
+        _LD = 1; _LU = 2; _LDRAG = 6; _THRESH2 = 100.0
         t = event.type()
         w   = globals().get("_win")
         key = getattr(self, '_panel_key', None)
@@ -2152,7 +2191,11 @@ class _DropPanel(AppKit.NSPanel):
             else:
                 self._wd_o = self.frame().origin
             self._wd_a = False
-        elif t == _LDRAG and getattr(self, '_wd_s', None) is not None and self._wd_o is not None:
+            # Don't enter drag mode if click landed on a button
+            cv = self.contentView()
+            hit = cv.hitTest_(event.locationInWindow()) if cv else None
+            self._wd_on_btn = isinstance(hit, AppKit.NSButton)
+        elif t == _LDRAG and not getattr(self, '_wd_on_btn', False) and getattr(self, '_wd_s', None) is not None and self._wd_o is not None:
             cur = AppKit.NSEvent.mouseLocation()
             dx  = cur.x - self._wd_s.x
             dy  = cur.y - self._wd_s.y
@@ -2169,7 +2212,7 @@ class _DropPanel(AppKit.NSPanel):
                     self.setFrameOrigin_(AppKit.NSMakePoint(self._wd_o.x + dx, self._wd_o.y + dy))
         elif t == _LU:
             did_drag = getattr(self, '_wd_a', False)
-            self._wd_s = None; self._wd_a = False
+            self._wd_s = None; self._wd_a = False; self._wd_on_btn = False
             if did_drag:
                 if is_attached:
                     try: _magnet_save()
@@ -2223,7 +2266,7 @@ class _EditorPanel(AppKit.NSPanel):
         _main(lambda: _maybe_close_editor(pending_fn=None))
 
     def sendEvent_(self, event):
-        _LD = 1; _LU = 2; _LDRAG = 6; _THRESH2 = 25.0
+        _LD = 1; _LU = 2; _LDRAG = 6; _THRESH2 = 100.0
         t = event.type()
         w   = globals().get("_win")
         key = getattr(self, '_panel_key', None)
@@ -2232,7 +2275,10 @@ class _EditorPanel(AppKit.NSPanel):
             self._wd_s = AppKit.NSEvent.mouseLocation()
             self._wd_o = w.frame().origin if (is_attached and w) else self.frame().origin
             self._wd_a = False
-        elif t == _LDRAG and getattr(self, '_wd_s', None) is not None and self._wd_o is not None:
+            cv = self.contentView()
+            hit = cv.hitTest_(event.locationInWindow()) if cv else None
+            self._wd_on_btn = isinstance(hit, AppKit.NSButton)
+        elif t == _LDRAG and not getattr(self, '_wd_on_btn', False) and getattr(self, '_wd_s', None) is not None and self._wd_o is not None:
             cur = AppKit.NSEvent.mouseLocation()
             dx  = cur.x - self._wd_s.x
             dy  = cur.y - self._wd_s.y
@@ -2249,7 +2295,7 @@ class _EditorPanel(AppKit.NSPanel):
                     self.setFrameOrigin_(AppKit.NSMakePoint(self._wd_o.x + dx, self._wd_o.y + dy))
         elif t == _LU:
             did_drag = getattr(self, '_wd_a', False)
-            self._wd_s = None; self._wd_a = False
+            self._wd_s = None; self._wd_a = False; self._wd_on_btn = False
             if did_drag:
                 if key:
                     try: _update_panel_drag_end(key, self)
@@ -5179,20 +5225,8 @@ def _show_hist_panel(history):
     ph = H_PANEL
     wx, wy = int(mf.origin.x), int(mf.origin.y)
     ww, wh = int(mf.size.width), int(mf.size.height)
-    if _magnet_on.get("hist", True):
-        vx, vy, vx2, vy2 = _screen_bounds_at(wx + ww / 2, wy + wh / 2)
-        result = _assign_cell("hist", wx, wy, ww, wh, pw, ph, vx, vy, vx2, vy2)
-        if result:
-            _, _, px, py = result
-        else:
-            px, py = wx, max(vy, wy - ph - _SNAP_GAP)
-        _magnet_offset["hist"] = (px - wx, py - wy)
-    else:
-        if "hist" in _magnet_free_pos:
-            px, py = int(_magnet_free_pos["hist"][0]), int(_magnet_free_pos["hist"][1])
-        else:
-            px, py = wx - pw - _SNAP_GAP, wy
-    panel_origin  = AppKit.NSMakePoint(int(px), int(py))
+    px, py = _calc_panel_pos("hist", wx, wy, ww, wh, pw, ph)
+    panel_origin  = AppKit.NSMakePoint(px, py)
     _hist_panel_side = "left"
 
     if _hist_panel:
@@ -5831,17 +5865,10 @@ def _show_sc_editor_impl(sc_idx):
     _sc_editor_panel._panel_key = "editor"
     _editing_scenario = True
 
-    # Position as floating auxiliary panel (magnet-aware), main window stays visible
-    if _magnet_on.get("editor", True) and "editor" in _magnet_offset:
-        dx, dy = _magnet_offset["editor"]
-        ex, ey = int(mf.origin.x + dx), int(mf.origin.y + dy)
-    elif "editor" in _magnet_free_pos and not _magnet_on.get("editor", True):
-        ex, ey = int(_magnet_free_pos["editor"][0]), int(_magnet_free_pos["editor"][1])
-    else:
-        ex = int(mf.origin.x + mf.size.width + 6)
-        ey = int(mf.origin.y)
-        if _magnet_on.get("editor", True):
-            _magnet_offset["editor"] = (mf.size.width + 6, 0)
+    # Position using grid cell assignment
+    _ewx, _ewy = int(mf.origin.x), int(mf.origin.y)
+    _eww, _ewh = int(mf.size.width), int(mf.size.height)
+    ex, ey = _calc_panel_pos("editor", _ewx, _ewy, _eww, _ewh, int(mf.size.width), H_PANEL)
     panel.setFrameOrigin_(AppKit.NSMakePoint(ex, ey))
     AppKit.NSApp.activateIgnoringOtherApps_(True)
     panel.makeKeyAndOrderFront_(None)
@@ -6297,25 +6324,10 @@ def _toggle_cfg_panel():
 
     _cfg_panel.setAlphaValue_(_st.get("opacity", 0.88))
 
-    # Position cfg panel: always repack into the first free visible slot so
-    # there are no phantom gaps from previously-closed neighbour panels.
     mf  = _win.frame()
     wx, wy = int(mf.origin.x), int(mf.origin.y)
     ww, wh = int(mf.size.width), int(mf.size.height)
-    if _magnet_on.get("cfg", True):
-        vx, vy, vx2, vy2 = _screen_bounds_at(wx + ww / 2, wy + wh / 2)
-        result = _assign_cell("cfg", wx, wy, ww, wh, pw, ph, vx, vy, vx2, vy2)
-        if result:
-            _, _, px, py = result
-        else:
-            px, py = wx, min(vy2 - ph, wy + wh + _SNAP_GAP)
-        _magnet_offset["cfg"] = (px - wx, py - wy)
-    else:
-        if "cfg" in _magnet_free_pos:
-            px, py = _magnet_free_pos["cfg"]
-        else:
-            px, py = wx + ww - pw, wy + wh + _SNAP_GAP
-
+    px, py = _calc_panel_pos("cfg", wx, wy, ww, wh, pw, ph)
     _cfg_panel.setFrameOrigin_(AppKit.NSMakePoint(px, py))
     AppKit.NSApp.activateIgnoringOtherApps_(True)
     _cfg_panel.makeKeyAndOrderFront_(None)
@@ -7809,24 +7821,10 @@ def _toggle_providers_panel():
     btn_save.setAction_(BtnTarget.provSave_)
     cv.addSubview_(btn_save)
 
-    # ── Position to the LEFT of main window ──────────────────────────────────
-    GAP_X = 6
-    if _magnet_on.get("providers", False) and "providers" in _magnet_offset:
-        dx, dy = _magnet_offset["providers"]
-        px = int(mf.origin.x + dx)
-        py = int(mf.origin.y + dy)
-    elif "providers" in _magnet_free_pos and not _magnet_on.get("providers", False):
-        px, py = _magnet_free_pos["providers"]
-        px, py = int(px), int(py)
-    else:
-        px = int(mf.origin.x - PW - GAP_X)
-        py = int(mf.origin.y)
-        if not _magnet_on.get("providers", False):
-            _magnet_free_pos["providers"] = (px, py)
-        else:
-            _magnet_offset["providers"] = (-PW - GAP_X, 0)
-    py = min(py, int(vis.origin.y + vis.size.height) - PH)
-    py = max(py, int(vis.origin.y))
+    # ── Position using grid cell assignment ───────────────────────────────────
+    wx2, wy2 = int(mf.origin.x), int(mf.origin.y)
+    ww2, wh2 = int(mf.size.width), int(mf.size.height)
+    px, py = _calc_panel_pos("providers", wx2, wy2, ww2, wh2, PW, PH)
     panel.setFrameOrigin_(AppKit.NSMakePoint(px, py))
     panel.makeKeyAndOrderFront_(None)
 
