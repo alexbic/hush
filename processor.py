@@ -29,34 +29,63 @@ def _parse(model_str):
 def process_with_prompt(text: str, prompt: str, model: str = None) -> str:
     """Run transcribed text through an LLM using the given scenario prompt."""
     if not prompt.strip():
+        _log(f"skip (empty prompt)")
         return text
 
     if prompt.startswith("n8n:"):
         return _n8n(text)
 
     provider, model_name = _parse(model)
+    _log(f"→ {provider}:{model_name or '(default)'} | text={text[:40]!r}")
 
     try:
         if provider == "ollama":
-            return _ollama(prompt, text, model_name or _pc.get("ollama", "default_model", "qwen3:8b"))
+            m = model_name or _pc.get("ollama", "default_model", "qwen3:8b")
+            result = _ollama(prompt, text, m)
+            _log(f"← ollama:{m} ok | result={result[:60]!r}")
+            return result
 
         if provider == "anthropic":
-            return _anthropic(prompt, text, model_name or LLM_MODEL)
+            m = model_name or LLM_MODEL
+            result = _anthropic(prompt, text, m)
+            _log(f"← anthropic:{m} ok | result={result[:60]!r}")
+            return result
 
         if provider in ("openai", "glm"):
-            return _openai_compat(prompt, text, model_name, provider)
+            result = _openai_compat(prompt, text, model_name, provider)
+            _log(f"← {provider}:{model_name} ok | result={result[:60]!r}")
+            return result
 
         # auto: Ollama first, Anthropic as fallback
         try:
-            return _ollama(prompt, text, _pc.get("ollama", "default_model", "qwen3:8b"))
-        except Exception:
+            m = _pc.get("ollama", "default_model", "qwen3:8b")
+            result = _ollama(prompt, text, m)
+            _log(f"← auto→ollama:{m} ok")
+            return result
+        except Exception as e1:
+            _log(f"  ollama failed: {e1}")
             if _pc.get("anthropic", "api_key"):
-                return _anthropic(prompt, text, LLM_MODEL)
+                result = _anthropic(prompt, text, LLM_MODEL)
+                _log(f"← auto→anthropic:{LLM_MODEL} ok")
+                return result
+            _log("  no fallback provider, returning raw text")
             return text
 
     except Exception as e:
-        print(f"[processor] {provider} error: {e}")
+        _log(f"✗ {provider} error: {e}")
         return text
+
+
+def _log(msg: str):
+    import time
+    ts = time.strftime("%H:%M:%S")
+    line = f"[{ts}] [processor] {msg}\n"
+    print(line, end="", flush=True)
+    try:
+        with open("/tmp/hush_processor.log", "a") as f:
+            f.write(line)
+    except Exception:
+        pass
 
 
 # ── Providers ─────────────────────────────────────────────────────────────────

@@ -2851,7 +2851,7 @@ class BtnTarget(AppKit.NSObject):
 
     def provSave_(self, sender):
         """Save all provider fields to providers.json and re-probe."""
-        refs = _prov_field_refs
+        refs = _prov_field_refs or {}
         changed_ollama = False
         if "ollama_url" in refs:
             new_url = refs["ollama_url"].stringValue().strip()
@@ -2868,13 +2868,13 @@ class BtnTarget(AppKit.NSObject):
         if "openai_base" in refs:
             _pc.set_field("openai", "base_url",
                           refs["openai_base"].stringValue().strip() or "https://api.openai.com/v1")
-        # Re-probe after save
+        _close_providers_panel()
+        # Re-probe after UI closes (refs are cleared)
         if changed_ollama:
             _pc.probe_ollama()
         else:
             import threading as _th
             _th.Thread(target=_pc._probe_cloud, daemon=True).start()
-        _close_providers_panel()
 
     def cfgScResetOne_(self, sender):
         """Restore default scenario fields to factory defaults (without saving)."""
@@ -6897,10 +6897,16 @@ def show_scenario_result(text: str, hist_id: str = None):
 # ── Providers panel ───────────────────────────────────────────────────────────
 
 def _close_providers_panel():
-    global _prov_panel
+    global _prov_panel, _prov_field_refs, _prov_dot_refs, _prov_model_combo
     if _prov_panel:
         _prov_panel.orderOut_(None)
+        _prov_panel.close()
         _prov_panel = None
+    _prov_field_refs = {}
+    _prov_dot_refs   = {}
+    _prov_model_combo = None
+    if _win:
+        _win.orderFrontRegardless()
 
 
 def _toggle_providers_panel():
@@ -6909,133 +6915,182 @@ def _toggle_providers_panel():
         _close_providers_panel()
         return
 
-    pw     = int(_win.frame().size.width)
-    MARGIN = 10
-    FW     = pw - 2 * MARGIN
-    ROW_H  = 22
-    GAP    = 6
-    SEC_H  = 72    # height of each provider section
-    HDR_H  = 32
-    BTN_H  = 28
-    ph     = HDR_H + 4 * (SEC_H + GAP) + BTN_H + MARGIN * 2
-
     _close_providers_panel()
-    _prov_panel    = _make_drop_panel(pw, ph)
-    _prov_field_refs = {}
-    _prov_dot_refs   = {}
-    cv = _prov_panel.contentView()
 
-    # ── Header ────────────────────────────────────────────────────────────────
-    hdr = _mklabel("ПРОВАЙДЕРЫ", size=10, bold=True, color=C_GREEN_DIM)
-    hdr.setFrame_(AppKit.NSMakeRect(MARGIN, ph - HDR_H + 4, FW - 40, HDR_H - 4))
-    cv.addSubview_(hdr)
+    # ── Same frame as main window (overlays it, like scenario editor) ─────────
+    mf     = _win.frame()
+    PW     = int(mf.size.width)
+    PH     = int(mf.size.height)
+    MARGIN = 12
+    FW     = PW - MARGIN * 2
+    LBL_H  = 13
+    TF_H   = 22
+    GAP    = 4
+    BTN_H  = 22
 
-    btn_x = _mkbtn("×", color=C_GREEN_DIM, size=13)
-    btn_x.setFrame_(AppKit.NSMakeRect(pw - 28, ph - HDR_H + 4, 22, HDR_H - 4))
-    btn_x.setTarget_(_btn_t)
-    btn_x.setAction_(BtnTarget.provClose_)
-    cv.addSubview_(btn_x)
+    panel = _EditorPanel.alloc().initWithContentRect_styleMask_backing_defer_(
+        AppKit.NSMakeRect(0, 0, PW, PH),
+        AppKit.NSWindowStyleMaskBorderless,
+        AppKit.NSBackingStoreBuffered, False,
+    )
+    panel.setOpaque_(False)
+    panel.setBackgroundColor_(AppKit.NSColor.clearColor())
+    panel.setLevel_(AppKit.NSFloatingWindowLevel + 2)
+    panel.setHasShadow_(True)
+    panel.setHidesOnDeactivate_(False)
+    panel.setAppearance_(AppKit.NSAppearance.appearanceNamed_(
+        AppKit.NSAppearanceNameDarkAqua))
+    _bg = TerminalView.alloc().initWithFrame_(AppKit.NSMakeRect(0, 0, PW, PH))
+    panel.setContentView_(_bg)
+    cv = _bg
+    _prov_panel = panel
 
-    cv.addSubview_(_sep_line(MARGIN, ph - HDR_H, FW, pin="top"))
-
-    # ── Provider sections ─────────────────────────────────────────────────────
-    PROVIDERS = [
-        ("ollama",    "Ollama"),
-        ("anthropic", "Anthropic"),
-        ("openai",    "OpenAI"),
-        ("glm",       "GLM"),
-    ]
-    y = ph - HDR_H - GAP
-
-    def _make_field(placeholder, value, y_pos, secure=False):
+    # shared text-field styler (reuses existing _style_tf)
+    def _tf(y_pos, placeholder, value, secure=False):
         cls = AppKit.NSSecureTextField if secure else AppKit.NSTextField
-        tf = cls.alloc().initWithFrame_(AppKit.NSMakeRect(MARGIN, y_pos, FW, ROW_H))
-        tf.setFont_(_mono(9))
-        tf.setTextColor_(C_TEXT)
-        tf.setBackgroundColor_(_rgba(*C_BG))
-        tf.setDrawsBackground_(True)
-        tf.setBezeled_(True)
-        tf.setBezelStyle_(AppKit.NSTextFieldSquareBezel)
+        tf  = cls.alloc().initWithFrame_(AppKit.NSMakeRect(MARGIN, y_pos, FW, TF_H))
+        _style_tf(tf, placeholder)
         tf.setStringValue_(value)
-        tf.cell().setPlaceholderString_(placeholder)
-        tf.cell().setPlaceholderAttributedString_(
-            AppKit.NSAttributedString.alloc().initWithString_attributes_(
-                placeholder, {
-                    AppKit.NSFontAttributeName: _mono(9),
-                    AppKit.NSForegroundColorAttributeName: C_GREEN_DIM,
-                }))
         cv.addSubview_(tf)
         return tf
 
-    for pid, label in PROVIDERS:
-        y -= SEC_H
-        # Provider name label + status dot
-        dot = _mklabel("●", size=9, color=C_GREEN_DIM)
-        dot.setFrame_(AppKit.NSMakeRect(MARGIN, y + SEC_H - ROW_H - 2, 14, ROW_H))
-        cv.addSubview_(dot)
-        _prov_dot_refs[pid] = dot
+    y = PH - 8
 
-        lbl = _mklabel(label, size=9, bold=True, color=C_GREEN_BR)
-        lbl.setFrame_(AppKit.NSMakeRect(MARGIN + 16, y + SEC_H - ROW_H - 2, FW - 16, ROW_H))
-        cv.addSubview_(lbl)
+    # ── Header ────────────────────────────────────────────────────────────────
+    hdr = _mklabel("ПРОВАЙДЕРЫ / API КЛЮЧИ", size=10, color=C_IDLE)
+    hdr.setFrame_(AppKit.NSMakeRect(MARGIN, y - LBL_H, FW - 30, LBL_H))
+    cv.addSubview_(hdr)
 
-        if pid == "ollama":
-            tf_url = _make_field(
-                "http://localhost:11434",
-                _pc.get("ollama", "base_url", "http://localhost:11434"),
-                y + SEC_H - ROW_H * 2 - GAP - 4,
-            )
-            _prov_field_refs["ollama_url"] = tf_url
+    btn_x = _mkbtn("[✕]", color=C_GREEN_DIM, size=9)
+    btn_x.setFrame_(AppKit.NSMakeRect(PW - MARGIN - 28, y - LBL_H, 28, LBL_H))
+    btn_x.setTarget_(_btn_t)
+    btn_x.setAction_(BtnTarget.provClose_)
+    cv.addSubview_(btn_x)
+    y -= LBL_H + 5
 
-            # Combobox for default model
-            combo_y = y + 4
-            combo = AppKit.NSComboBox.alloc().initWithFrame_(
-                AppKit.NSMakeRect(MARGIN, combo_y, FW, ROW_H))
-            combo.setFont_(_mono(9))
-            combo.setEditable_(True)
-            combo.setCompletes_(True)
-            combo.setNumberOfVisibleItems_(8)
-            combo.setDrawsBackground_(True)
-            models = _pc.get_ollama_models()
-            if models:
-                combo.addItemsWithObjectValues_(models)
-            combo.setStringValue_(_pc.get("ollama", "default_model", "qwen3:8b"))
-            cv.addSubview_(combo)
-            _prov_field_refs["ollama_model"] = combo
-            _prov_model_combo = combo
-        else:
-            key_val = _pc.get(pid, "api_key")
-            tf_key = _make_field(
-                f"API ключ {label}",
-                key_val,
-                y + SEC_H - ROW_H * 2 - GAP - 4,
-                secure=False,
-            )
-            _prov_field_refs[f"{pid}_key"] = tf_key
-            if pid == "openai":
-                tf_url2 = _make_field(
-                    "https://api.openai.com/v1",
-                    _pc.get("openai", "base_url", "https://api.openai.com/v1"),
-                    y + 4,
-                )
-                _prov_field_refs["openai_base"] = tf_url2
+    cv.addSubview_(_sep_line(MARGIN, y, FW, pin="top"))
+    y -= 8
 
-        cv.addSubview_(_sep_line(MARGIN, y - GAP // 2, FW, pin="top"))
-        y -= GAP
+    # ── OLLAMA ────────────────────────────────────────────────────────────────
+    dot_ol = _mklabel("●", size=9, color=C_GREEN_DIM)
+    dot_ol.setFrame_(AppKit.NSMakeRect(MARGIN, y - LBL_H, 12, LBL_H))
+    cv.addSubview_(dot_ol)
+    _prov_dot_refs["ollama"] = dot_ol
 
-    # ── Save button ───────────────────────────────────────────────────────────
-    btn_save = _mkbtn("[Сохранить]", color=C_GREEN_BR, size=11)
-    btn_save.setFrame_(AppKit.NSMakeRect(pw - 130 - MARGIN, MARGIN, 130, BTN_H))
+    lbl_ol = _mklabel("OLLAMA", size=9, bold=True, color=C_GREEN_BR)
+    lbl_ol.setFrame_(AppKit.NSMakeRect(MARGIN + 15, y - LBL_H, FW - 15, LBL_H))
+    cv.addSubview_(lbl_ol)
+    y -= LBL_H + GAP
+
+    tf_url = _tf(y - TF_H, "http://localhost:11434",
+                 _pc.get("ollama", "base_url", "http://localhost:11434"))
+    _prov_field_refs["ollama_url"] = tf_url
+    y -= TF_H + GAP
+
+    # Ollama default model — NSComboBox styled to match text fields
+    combo = AppKit.NSComboBox.alloc().initWithFrame_(
+        AppKit.NSMakeRect(MARGIN, y - TF_H, FW, TF_H))
+    combo.setFont_(_mono(10))
+    combo.setTextColor_(C_TEXT)
+    combo.setEditable_(True)
+    combo.setCompletes_(True)
+    combo.setNumberOfVisibleItems_(8)
+    combo.setFocusRingType_(AppKit.NSFocusRingTypeNone)
+    combo.setWantsLayer_(True)
+    combo.layer().setBackgroundColor_(_rgba(*C_BG).CGColor())
+    combo.layer().setBorderColor_(C_GREEN_BORD.CGColor())
+    combo.layer().setBorderWidth_(0.5)
+    combo.layer().setCornerRadius_(2.0)
+    models = _pc.get_ollama_models()
+    if models:
+        combo.addItemsWithObjectValues_(models)
+    combo.setStringValue_(_pc.get("ollama", "default_model", "qwen3:8b"))
+    combo.cell().setPlaceholderString_("модель по умолчанию")
+    cv.addSubview_(combo)
+    _prov_field_refs["ollama_model"] = combo
+    _prov_model_combo = combo
+    y -= TF_H + 10
+
+    cv.addSubview_(_sep_line(MARGIN, y, FW, pin="top"))
+    y -= 8
+
+    # ── ANTHROPIC ─────────────────────────────────────────────────────────────
+    dot_an = _mklabel("●", size=9, color=C_GREEN_DIM)
+    dot_an.setFrame_(AppKit.NSMakeRect(MARGIN, y - LBL_H, 12, LBL_H))
+    cv.addSubview_(dot_an)
+    _prov_dot_refs["anthropic"] = dot_an
+
+    lbl_an = _mklabel("ANTHROPIC", size=9, bold=True, color=C_GREEN_BR)
+    lbl_an.setFrame_(AppKit.NSMakeRect(MARGIN + 15, y - LBL_H, FW - 15, LBL_H))
+    cv.addSubview_(lbl_an)
+    y -= LBL_H + GAP
+
+    tf_ant = _tf(y - TF_H, "sk-ant-api...",
+                 _pc.get("anthropic", "api_key"), secure=False)
+    _prov_field_refs["anthropic_key"] = tf_ant
+    y -= TF_H + 10
+
+    cv.addSubview_(_sep_line(MARGIN, y, FW, pin="top"))
+    y -= 8
+
+    # ── OPENAI ────────────────────────────────────────────────────────────────
+    dot_oa = _mklabel("●", size=9, color=C_GREEN_DIM)
+    dot_oa.setFrame_(AppKit.NSMakeRect(MARGIN, y - LBL_H, 12, LBL_H))
+    cv.addSubview_(dot_oa)
+    _prov_dot_refs["openai"] = dot_oa
+
+    lbl_oa = _mklabel("OPENAI", size=9, bold=True, color=C_GREEN_BR)
+    lbl_oa.setFrame_(AppKit.NSMakeRect(MARGIN + 15, y - LBL_H, FW - 15, LBL_H))
+    cv.addSubview_(lbl_oa)
+    y -= LBL_H + GAP
+
+    tf_oakey = _tf(y - TF_H, "sk-proj-...", _pc.get("openai", "api_key"), secure=False)
+    _prov_field_refs["openai_key"] = tf_oakey
+    y -= TF_H + GAP
+
+    tf_oaurl = _tf(y - TF_H, "https://api.openai.com/v1",
+                   _pc.get("openai", "base_url", "https://api.openai.com/v1"))
+    _prov_field_refs["openai_base"] = tf_oaurl
+    y -= TF_H + 10
+
+    cv.addSubview_(_sep_line(MARGIN, y, FW, pin="top"))
+    y -= 8
+
+    # ── GLM ───────────────────────────────────────────────────────────────────
+    dot_gl = _mklabel("●", size=9, color=C_GREEN_DIM)
+    dot_gl.setFrame_(AppKit.NSMakeRect(MARGIN, y - LBL_H, 12, LBL_H))
+    cv.addSubview_(dot_gl)
+    _prov_dot_refs["glm"] = dot_gl
+
+    lbl_gl = _mklabel("GLM (Zhipu)", size=9, bold=True, color=C_GREEN_BR)
+    lbl_gl.setFrame_(AppKit.NSMakeRect(MARGIN + 15, y - LBL_H, FW - 15, LBL_H))
+    cv.addSubview_(lbl_gl)
+    y -= LBL_H + GAP
+
+    tf_glm = _tf(y - TF_H, "API ключ GLM", _pc.get("glm", "api_key"), secure=False)
+    _prov_field_refs["glm_key"] = tf_glm
+    y -= TF_H + 10
+
+    # ── Buttons row ───────────────────────────────────────────────────────────
+    cv.addSubview_(_sep_line(MARGIN, MARGIN + BTN_H + 6, FW, pin="top"))
+
+    BTN_W = 80
+    btn_cancel = _mkbtn("[Отмена]", color=C_GREEN_DIM, size=10)
+    btn_cancel.setFrame_(AppKit.NSMakeRect(MARGIN, MARGIN, BTN_W, BTN_H))
+    btn_cancel.setTarget_(_btn_t)
+    btn_cancel.setAction_(BtnTarget.provClose_)
+    cv.addSubview_(btn_cancel)
+
+    btn_save = _mkbtn("[Сохранить]", color=C_GREEN_BR, size=10)
+    btn_save.setFrame_(AppKit.NSMakeRect(PW - MARGIN - BTN_W, MARGIN, BTN_W, BTN_H))
     btn_save.setTarget_(_btn_t)
     btn_save.setAction_(BtnTarget.provSave_)
     cv.addSubview_(btn_save)
 
-    # ── Position panel ────────────────────────────────────────────────────────
-    px, py = _panel_origin(pw, ph, align="right", prefer="above")
-    _prov_panel.setFrameOrigin_(AppKit.NSMakePoint(px, py))
-    _prov_panel.orderFront_(None)
+    # ── Position: same as main window ─────────────────────────────────────────
+    panel.setFrameOrigin_(AppKit.NSMakePoint(mf.origin.x, mf.origin.y))
+    panel.makeKeyAndOrderFront_(None)
 
-    # Update status dots immediately with current known state
     _refresh_prov_dots()
 
 
