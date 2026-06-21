@@ -645,13 +645,32 @@ _OPP = {"left": "right", "right": "left", "top": "bottom", "bottom": "top"}
 
 
 def _all_screens_bounds():
-    """Union of all connected screens' visible frames → (x, y, x2, y2)."""
+    """Union of all connected screens' visible frames → (x, y, x2, y2).
+    Used ONLY for the main window drag clamp so it can travel between screens."""
     scrs = AppKit.NSScreen.screens() or [AppKit.NSScreen.mainScreen()]
     x  = min(int(s.visibleFrame().origin.x) for s in scrs)
     y  = min(int(s.visibleFrame().origin.y) for s in scrs)
     x2 = max(int(s.visibleFrame().origin.x + s.visibleFrame().size.width)  for s in scrs)
     y2 = max(int(s.visibleFrame().origin.y + s.visibleFrame().size.height) for s in scrs)
     return x, y, x2, y2
+
+
+def _screen_bounds_at(cx, cy):
+    """Visible bounds of the single screen whose area contains point (cx, cy).
+    Panels use this — their world is the current screen only, NOT the union.
+    Falls back to the screen with the most overlap, then mainScreen."""
+    for s in (AppKit.NSScreen.screens() or [AppKit.NSScreen.mainScreen()]):
+        f = s.visibleFrame()
+        if (f.origin.x <= cx < f.origin.x + f.size.width and
+                f.origin.y <= cy < f.origin.y + f.size.height):
+            return (int(f.origin.x), int(f.origin.y),
+                    int(f.origin.x + f.size.width), int(f.origin.y + f.size.height))
+    # Centre is between screens — let macOS pick the most-overlapped one
+    win = globals().get("_win")
+    s = (win.screen() if win else None) or AppKit.NSScreen.mainScreen()
+    f = s.visibleFrame()
+    return (int(f.origin.x), int(f.origin.y),
+            int(f.origin.x + f.size.width), int(f.origin.y + f.size.height))
 
 
 _MAGNET_PANEL_GLOBALS = {
@@ -727,10 +746,12 @@ def _snap_attached_panels_live(new_wx, new_wy):
     win = globals().get("_win")
     if not win:
         return
-    vx, vy, vx2, vy2 = _all_screens_bounds()
-    vw, vh = vx2 - vx, vy2 - vy
     mf  = win.frame()
     ww, wh = mf.size.width, mf.size.height
+    # Panels live in the CURRENT SCREEN's space — not the union of all screens.
+    # Use the screen that the main window centre will be on after this move.
+    vx, vy, vx2, vy2 = _screen_bounds_at(new_wx + ww / 2, new_wy + wh / 2)
+    vw, vh = vx2 - vx, vy2 - vy
     MARGIN = 20
 
     # ── Phase 1: collect all panels that need snapping ───────────────────────
@@ -778,18 +799,19 @@ def _snap_attached_panels_live(new_wx, new_wy):
 
 
 def _smart_snap_panel(key, panel):
-    """On mouseUp: if panel is off-screen, jump to opposite side (axis-aligned)."""
+    """On mouseUp: if panel is off current screen, jump to opposite side (axis-aligned)."""
     win = globals().get("_win")
     if not win or not panel:
         return
-    vx, vy, vx2, vy2 = _all_screens_bounds()
-    vw, vh = vx2 - vx, vy2 - vy
     pf  = panel.frame()
     mf  = win.frame()
     px, py = pf.origin.x, pf.origin.y
     pw, ph = pf.size.width, pf.size.height
     wx, wy = mf.origin.x, mf.origin.y
     ww, wh = mf.size.width, mf.size.height
+    # Panels snap relative to the screen the main window currently lives on
+    vx, vy, vx2, vy2 = _screen_bounds_at(wx + ww / 2, wy + wh / 2)
+    vw, vh = vx2 - vx, vy2 - vy
     MARGIN = 20
 
     cur_side = _panel_side(key, ww, wh, pw, ph) if key in _magnet_offset else None
@@ -5094,7 +5116,7 @@ def _show_hist_panel(history):
             side = _panel_side("hist", ww, wh, pw, ph) or "bottom"
         else:
             side = "bottom"
-        vx, vy, vx2, vy2 = _all_screens_bounds()
+        vx, vy, vx2, vy2 = _screen_bounds_at(wx + ww / 2, wy + wh / 2)
         if side == "bottom":
             default_bot_y = wy - ph - _SNAP_GAP
             if default_bot_y < vy:
@@ -6218,12 +6240,12 @@ def _toggle_cfg_panel():
     ww, wh = int(mf.size.width), int(mf.size.height)
     if _magnet_on.get("cfg", True):
         # Determine which side cfg should be on (use stored offset if available,
-        # else default to top; if top is off-screen use bottom).
+        # else default to top; if top is off-screen on current screen, use bottom).
         if "cfg" in _magnet_offset:
             side = _panel_side("cfg", ww, wh, pw, ph) or "top"
         else:
             side = "top"
-        vx, vy, vx2, vy2 = _all_screens_bounds()
+        vx, vy, vx2, vy2 = _screen_bounds_at(wx + ww / 2, wy + wh / 2)
         if side == "top":
             default_top_y = wy + wh + _SNAP_GAP
             if default_top_y + ph > vy2:
