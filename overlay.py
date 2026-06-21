@@ -756,8 +756,8 @@ def _snap_attached_panels_live(new_wx, new_wy):
     # ── Phase 2: snap in slot order (closest first) to preserve sequence ─────
     candidates.sort(key=lambda c: c[0])
     for _, key, cur_side, target, dx, dy, pw, ph in candidates:
-        perp = dy if cur_side in ("left", "right") else dx
-        nx, ny = _first_free_slot_on_side(target, key, new_wx, new_wy, ww, wh, pw, ph, perp)
+        # perp=0: all panels same height → always align flush with main window edges
+        nx, ny = _first_free_slot_on_side(target, key, new_wx, new_wy, ww, wh, pw, ph, 0)
         # Store IDEAL (unclamped) offset — prevents overlap when two panels land on
         # the same side and clamping would force both to the same Y/X position.
         # Panels may temporarily go off-screen; _reposition_attached_panels places them.
@@ -789,8 +789,7 @@ def _smart_snap_panel(key, panel):
         if not off_screen:
             return
         target = _OPP[cur_side]
-        dx, dy = _magnet_offset.get(key, (px - wx, py - wy))
-        perp = dy if cur_side in ("left", "right") else dx
+        perp = 0  # all panels same height → always align flush with main window edges
     else:
         off_screen = (px + pw > vx + vw + MARGIN or px < vx - MARGIN or
                       py + ph > vy + vh + MARGIN or py < vy - MARGIN)
@@ -1971,13 +1970,12 @@ class DragPanel(AppKit.NSPanel):
                 self._wd_a = True
                 new_x = self._wd_o.x + dx
                 new_y = self._wd_o.y + dy
-                # Clamp main window within union of all screens
+                # Hard-clamp main window within union of all screens — no going past edges
                 try:
-                    GRAB        = 40
                     wf          = self.frame()
                     ww_, wh_    = wf.size.width, wf.size.height
                     x1, y1, x2, y2 = _all_screens_bounds()
-                    new_x = max(x1 - ww_ + GRAB, min(new_x, x2 - GRAB))
+                    new_x = max(x1, min(new_x, x2 - ww_))
                     new_y = max(y1, min(new_y, y2 - wh_))
                 except Exception:
                     pass
