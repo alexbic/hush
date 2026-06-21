@@ -628,9 +628,100 @@ def _update_magnet_btn(key):
     except Exception:
         pass
 
+_SNAP_GAP = 6   # gap between panels in a chain
+
+
+def _panel_side(key, ww, wh, pw, ph):
+    """Return which side ("left","right","top","bottom") a magneted panel is on."""
+    if key not in _magnet_offset:
+        return None
+    dx, dy = _magnet_offset[key]
+    if abs(dx) >= abs(dy):
+        return "left" if dx <= 0 else "right"
+    return "top" if dy >= 0 else "bottom"
+
+
+def _end_of_side_pos(side, excl_key, wx, wy, ww, wh, pw, ph):
+    """Return absolute (nx, ny) for a new panel placed at the END of the chain
+    on the given side (past all panels already there, excluding excl_key)."""
+    G = _SNAP_GAP
+    others = []
+    for k in _MAGNET_KEYS:
+        if k == excl_key or not _magnet_on.get(k, False) or k not in _magnet_offset:
+            continue
+        if _panel_side(k, ww, wh, pw, ph) == side:
+            others.append(_magnet_offset[k])
+
+    if side == "left":
+        base_dx = -(pw + G) if not others else min(d[0] for d in others) - pw - G
+        return int(wx + base_dx), int(wy)
+    if side == "right":
+        base_dx = ww + G if not others else max(d[0] for d in others) + pw + G
+        return int(wx + base_dx), int(wy)
+    if side == "top":
+        base_dy = wh + G if not others else max(d[1] for d in others) + ph + G
+        return int(wx), int(wy + base_dy)
+    # bottom
+    base_dy = -(ph + G) if not others else min(d[1] for d in others) - ph - G
+    return int(wx), int(wy + base_dy)
+
+
+def _opp_side(off_left, off_right, off_top, off_bottom):
+    if off_left:   return "right"
+    if off_right:  return "left"
+    if off_bottom: return "top"
+    return "bottom"
+
+
+def _snap_attached_panels_live(new_wx, new_wy):
+    """Called DURING main-window drag (before repositioning): if any magneted panel
+    would exit the screen at new_wx/new_wy, update its offset to the opposite side."""
+    win = globals().get("_win")
+    if not win:
+        return
+    screen = AppKit.NSScreen.mainScreen()
+    if not screen:
+        return
+    vis = screen.visibleFrame()
+    vx, vy = vis.origin.x, vis.origin.y
+    vw, vh = vis.size.width, vis.size.height
+    mf  = win.frame()
+    ww, wh = mf.size.width, mf.size.height
+    MARGIN = 20
+
+    for key, pname in [("cfg","_cfg_panel"), ("hist","_hist_panel"),
+                        ("editor","_sc_editor_panel"), ("providers","_prov_panel")]:
+        if not _magnet_on.get(key, False) or key not in _magnet_offset:
+            continue
+        p = globals().get(pname)
+        if not p:
+            continue
+        try:
+            if not p.isVisible():
+                continue
+            pf = p.frame()
+            pw, ph = pf.size.width, pf.size.height
+        except Exception:
+            continue
+
+        dx, dy = _magnet_offset[key]
+        px, py = new_wx + dx, new_wy + dy
+        off_right  = px + pw > vx + vw + MARGIN
+        off_left   = px < vx - MARGIN
+        off_top    = py + ph > vy + vh + MARGIN
+        off_bottom = py < vy - MARGIN
+        if not (off_right or off_left or off_top or off_bottom):
+            continue
+
+        side = _opp_side(off_left, off_right, off_top, off_bottom)
+        nx, ny = _end_of_side_pos(side, key, new_wx, new_wy, ww, wh, pw, ph)
+        nx = max(vx, min(nx, vx + vw - pw))
+        ny = max(vy, min(ny, vy + vh - ph))
+        _magnet_offset[key] = (nx - new_wx, ny - new_wy)
+
+
 def _smart_snap_panel(key, panel):
-    """Checkers-style jump: if panel exits screen, flip it to the opposite side
-    of the main window while preserving the perpendicular coordinate (same line)."""
+    """On mouseUp: if panel is off-screen, jump to opposite side at end of chain."""
     win = globals().get("_win")
     if not win or not panel:
         return
@@ -640,36 +731,23 @@ def _smart_snap_panel(key, panel):
     vis = screen.visibleFrame()
     pf  = panel.frame()
     mf  = win.frame()
-    GAP = 6
     px, py = pf.origin.x, pf.origin.y
     pw, ph = pf.size.width, pf.size.height
     vx, vy = vis.origin.x, vis.origin.y
     vw, vh = vis.size.width, vis.size.height
+    wx, wy = mf.origin.x, mf.origin.y
+    ww, wh = mf.size.width, mf.size.height
     MARGIN = 20
 
     off_right  = px + pw > vx + vw + MARGIN
     off_left   = px < vx - MARGIN
     off_top    = py + ph > vy + vh + MARGIN
     off_bottom = py < vy - MARGIN
-
     if not (off_right or off_left or off_top or off_bottom):
         return
 
-    wx, wy = mf.origin.x, mf.origin.y
-    ww, wh = mf.size.width, mf.size.height
-
-    if off_left or off_right:
-        # Horizontal jump: flip X side, keep same Y (same line)
-        nx = (wx + ww + GAP) if off_left else (wx - pw - GAP)
-        ny = py  # preserve vertical position
-        ny = max(vy, min(ny, vy + vh - ph))
-    else:
-        # Vertical jump: flip Y side, keep same X (same line)
-        nx = px  # preserve horizontal position
-        ny = (wy + wh + GAP) if off_bottom else (wy - ph - GAP)
-        nx = max(vx, min(nx, vx + vw - pw))
-
-    # Final clamp to ensure fully on-screen
+    side = _opp_side(off_left, off_right, off_top, off_bottom)
+    nx, ny = _end_of_side_pos(side, key, wx, wy, ww, wh, pw, ph)
     nx = max(vx, min(nx, vx + vw - pw))
     ny = max(vy, min(ny, vy + vh - ph))
 
@@ -1831,7 +1909,11 @@ class DragPanel(AppKit.NSPanel):
             dy  = cur.y - self._wd_s.y
             if self._wd_a or dx*dx + dy*dy > _THRESH2:
                 self._wd_a = True
-                self.setFrameOrigin_(AppKit.NSMakePoint(self._wd_o.x + dx, self._wd_o.y + dy))
+                new_x = self._wd_o.x + dx
+                new_y = self._wd_o.y + dy
+                try: _snap_attached_panels_live(new_x, new_y)
+                except Exception: pass
+                self.setFrameOrigin_(AppKit.NSMakePoint(new_x, new_y))
                 _reposition_attached_panels()
         elif t == _LU:
             did_drag = getattr(self, '_wd_a', False)
@@ -1850,6 +1932,8 @@ class DragPanel(AppKit.NSPanel):
                                 _repel_from_others(_p)
                         except Exception:
                             pass
+                try: _magnet_save()
+                except Exception: pass
         objc.super(DragPanel, self).sendEvent_(event)
 
 
@@ -1903,23 +1987,27 @@ class _DropPanel(AppKit.NSPanel):
             if self._wd_a or dx*dx + dy*dy > _THRESH2:
                 self._wd_a = True
                 if is_attached and w:
-                    w.setFrameOrigin_(AppKit.NSMakePoint(self._wd_o.x + dx, self._wd_o.y + dy))
+                    new_x = self._wd_o.x + dx
+                    new_y = self._wd_o.y + dy
+                    try: _snap_attached_panels_live(new_x, new_y)
+                    except Exception: pass
+                    w.setFrameOrigin_(AppKit.NSMakePoint(new_x, new_y))
                     _reposition_attached_panels()
                 else:
                     self.setFrameOrigin_(AppKit.NSMakePoint(self._wd_o.x + dx, self._wd_o.y + dy))
         elif t == _LU:
             did_drag = getattr(self, '_wd_a', False)
             self._wd_s = None; self._wd_a = False
-            if did_drag and not is_attached:
-                if key:
-                    try:
-                        _update_panel_drag_end(key, self)
-                    except Exception:
-                        pass
-                try:
-                    _repel_from_others(self)
-                except Exception:
-                    pass
+            if did_drag:
+                if is_attached:
+                    try: _magnet_save()
+                    except Exception: pass
+                else:
+                    if key:
+                        try: _update_panel_drag_end(key, self)
+                        except Exception: pass
+                    try: _repel_from_others(self)
+                    except Exception: pass
         objc.super(_DropPanel, self).sendEvent_(event)
 
 
@@ -1979,7 +2067,11 @@ class _EditorPanel(AppKit.NSPanel):
             if self._wd_a or dx*dx + dy*dy > _THRESH2:
                 self._wd_a = True
                 if is_attached and w:
-                    w.setFrameOrigin_(AppKit.NSMakePoint(self._wd_o.x + dx, self._wd_o.y + dy))
+                    new_x = self._wd_o.x + dx
+                    new_y = self._wd_o.y + dy
+                    try: _snap_attached_panels_live(new_x, new_y)
+                    except Exception: pass
+                    w.setFrameOrigin_(AppKit.NSMakePoint(new_x, new_y))
                     _reposition_attached_panels()
                 else:
                     self.setFrameOrigin_(AppKit.NSMakePoint(self._wd_o.x + dx, self._wd_o.y + dy))
@@ -1988,15 +2080,11 @@ class _EditorPanel(AppKit.NSPanel):
             self._wd_s = None; self._wd_a = False
             if did_drag:
                 if key:
-                    try:
-                        _update_panel_drag_end(key, self)
-                    except Exception:
-                        pass
+                    try: _update_panel_drag_end(key, self)
+                    except Exception: pass
                 if not is_attached:
-                    try:
-                        _repel_from_others(self)
-                    except Exception:
-                        pass
+                    try: _repel_from_others(self)
+                    except Exception: pass
         objc.super(_EditorPanel, self).sendEvent_(event)
 
     def performKeyEquivalent_(self, event):
