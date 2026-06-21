@@ -135,7 +135,7 @@ def _anthropic(system: str, text: str, model: str) -> str:
 
 def _openai_compat(system: str, text: str, model: str, provider: str) -> str:
     if provider == "glm":
-        base_url = "https://open.bigmodel.cn/api/paas/v4"
+        base_url = _pc.get("glm", "base_url", "https://api.z.ai/api/paas/v4").rstrip("/")
         api_key  = _pc.get("glm", "api_key")
     else:
         base_url = _pc.get("openai", "base_url", "https://api.openai.com/v1").rstrip("/")

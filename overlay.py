@@ -2868,6 +2868,9 @@ class BtnTarget(AppKit.NSObject):
         if "openai_base" in refs:
             _pc.set_field("openai", "base_url",
                           refs["openai_base"].stringValue().strip() or "https://api.openai.com/v1")
+        if "glm_base" in refs:
+            _pc.set_field("glm", "base_url",
+                          refs["glm_base"].stringValue().strip() or "https://api.z.ai/api/paas/v4")
         _close_providers_panel()
         # Re-probe after UI closes (refs are cleared)
         if changed_ollama:
@@ -7062,13 +7065,18 @@ def _toggle_providers_panel():
     cv.addSubview_(dot_gl)
     _prov_dot_refs["glm"] = dot_gl
 
-    lbl_gl = _mklabel("GLM (Zhipu)", size=9, bold=True, color=C_GREEN_BR)
+    lbl_gl = _mklabel("GLM (Z.ai)", size=9, bold=True, color=C_GREEN_BR)
     lbl_gl.setFrame_(AppKit.NSMakeRect(MARGIN + 15, y - LBL_H, FW - 15, LBL_H))
     cv.addSubview_(lbl_gl)
     y -= LBL_H + GAP
 
     tf_glm = _tf(y - TF_H, "API ключ GLM", _pc.get("glm", "api_key"), secure=False)
     _prov_field_refs["glm_key"] = tf_glm
+    y -= TF_H + GAP
+
+    tf_glmurl = _tf(y - TF_H, "https://api.z.ai/api/paas/v4",
+                    _pc.get("glm", "base_url", "https://api.z.ai/api/paas/v4"))
+    _prov_field_refs["glm_base"] = tf_glmurl
     y -= TF_H + 10
 
     # ── Buttons row ───────────────────────────────────────────────────────────

@@ -15,7 +15,7 @@ _DEFAULTS = {
     "ollama":    {"base_url": "http://localhost:11434", "default_model": "qwen3:8b"},
     "anthropic": {"api_key": ""},
     "openai":    {"api_key": "", "base_url": "https://api.openai.com/v1"},
-    "glm":       {"api_key": ""},
+    "glm":       {"api_key": "", "base_url": "https://api.z.ai/api/paas/v4"},
 }
 
 _data          = {}
@@ -27,7 +27,7 @@ PROVIDER_LABELS = {
     "ollama":    "Ollama",
     "anthropic": "Anthropic",
     "openai":    "OpenAI",
-    "glm":       "GLM",
+    "glm":       "GLM (Z.ai)",
 }
 
 # Well-known cloud models for the scenario model picker
@@ -37,8 +37,6 @@ CLOUD_MODELS = [
     "anthropic:claude-opus-4-8",
     "openai:gpt-4o-mini",
     "openai:gpt-4o",
-    "glm:glm-5-turbo",
-    "glm:glm-5",
     "glm:glm-4.7",
     "glm:glm-4.7-flash",
     "glm:glm-4.5",
