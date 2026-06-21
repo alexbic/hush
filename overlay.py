@@ -1794,9 +1794,9 @@ class TerminalTextView(AppKit.NSTextView):
             if _on_copy_cb:
                 _on_copy_cb()
         elif kc == ENTER and mods == SHIFT:
-            # Shift+Enter → paste stripping MD markers (plain text)
+            # Shift+Enter → paste stripping MD markers; may trigger full_default scenario
             if _on_paste_cb:
-                _on_paste_cb()
+                _on_paste_cb(mode="shift_enter")
         elif kc == ENTER and not mods:
             # Plain Enter → finalize manually typed text into a block
             if _tv and str(_tv.string()).strip():
@@ -2103,7 +2103,7 @@ class _BlockTV(AppKit.NSTextView):
             if _on_copy_cb: _on_copy_cb()
             return
         elif kc == ENTER and mods == SHIFT:
-            if _on_paste_cb: _on_paste_cb()
+            if _on_paste_cb: _on_paste_cb(mode="shift_enter")
             return
 
         objc.super(_BlockTV, self).keyDown_(event)
@@ -2870,14 +2870,16 @@ class BtnTarget(AppKit.NSObject):
             if sc_idx < len(scenarios):
                 lbl = _sc_label_for(scenarios[sc_idx], _st.get("lang", "ru"))
                 sc  = scenarios[sc_idx]
-                if sc.get("silent"):
+                if sc.get("silent") or sc.get("full_default"):
+                    marker = "·" if sc.get("silent") else "★"
+                    color  = C_CYAN if sc.get("silent") else C_AMBER_BR
                     ps = AppKit.NSMutableParagraphStyle.alloc().init()
                     ps.setAlignment_(AppKit.NSTextAlignmentCenter)
                     mstr = AppKit.NSMutableAttributedString.alloc().init()
                     a = {AppKit.NSFontAttributeName: _mono(9),
-                         AppKit.NSForegroundColorAttributeName: C_CYAN,
+                         AppKit.NSForegroundColorAttributeName: color,
                          AppKit.NSParagraphStyleAttributeName: ps}
-                    for part in ("·", lbl, "·"):
+                    for part in (marker, lbl, marker):
                         mstr.appendAttributedString_(
                             AppKit.NSAttributedString.alloc().initWithString_attributes_(part, a))
                     sender.setAttributedTitle_(mstr)
@@ -5394,6 +5396,23 @@ def _toggle_cfg_panel():
                 AppKit.NSAttributedString.alloc().initWithString_attributes_("·", dot_attrs))
             btn = _mkbtn("", color=C_GREEN, size=9)
             btn.setAttributedTitle_(title)
+        elif sc.get("full_default"):
+            ps = AppKit.NSMutableParagraphStyle.alloc().init()
+            ps.setAlignment_(AppKit.NSTextAlignmentCenter)
+            title = AppKit.NSMutableAttributedString.alloc().init()
+            star_attrs = {
+                AppKit.NSFontAttributeName:            _mono(9),
+                AppKit.NSForegroundColorAttributeName: C_AMBER_DIM,
+                AppKit.NSParagraphStyleAttributeName:  ps,
+            }
+            title.appendAttributedString_(
+                AppKit.NSAttributedString.alloc().initWithString_attributes_("★", star_attrs))
+            title.appendAttributedString_(
+                AppKit.NSAttributedString.alloc().initWithString_attributes_(label, star_attrs))
+            title.appendAttributedString_(
+                AppKit.NSAttributedString.alloc().initWithString_attributes_("★", star_attrs))
+            btn = _mkbtn("", color=C_AMBER_DIM, size=9)
+            btn.setAttributedTitle_(title)
         else:
             btn = _mkbtn(label, color=C_GREEN, size=9)
         btn.setFrame_(_cell_rect(i))
@@ -5402,30 +5421,29 @@ def _toggle_cfg_panel():
         btn.setAction_(BtnTarget.cfgScEdit_)
         sc_cv.addSubview_(btn)
         _sc_cfg_buttons[i] = btn
-        sc_buttons.append((btn, sc.get("model") or "", label, bool(sc.get("silent"))))
+        sc_buttons.append((btn, sc.get("model") or "", label,
+                           bool(sc.get("silent")), bool(sc.get("full_default"))))
 
     # Background model availability check
     def _check_models(buttons):
         C_ERR = _rgba(0.9, 0.2, 0.2, 1.0)
-        for btn, model_str, lbl, is_silent in buttons:
+        for btn, model_str, lbl, is_silent, is_fd in buttons:
             if model_str and not _model_available(model_str):
-                def _paint(b=btn, label=lbl, silent=is_silent):
+                def _paint(b=btn, label=lbl, silent=is_silent, fd=is_fd):
                     ps = AppKit.NSMutableParagraphStyle.alloc().init()
                     ps.setAlignment_(AppKit.NSTextAlignmentCenter)
-                    if silent:
+                    if silent or fd:
+                        marker = "·" if silent else "★"
                         mstr = AppKit.NSMutableAttributedString.alloc().init()
-                        dot_a = {AppKit.NSFontAttributeName: _mono(9),
-                                 AppKit.NSForegroundColorAttributeName: C_ERR,
-                                 AppKit.NSParagraphStyleAttributeName: ps}
-                        txt_a = {AppKit.NSFontAttributeName: _mono(9),
-                                 AppKit.NSForegroundColorAttributeName: C_ERR,
-                                 AppKit.NSParagraphStyleAttributeName: ps}
+                        a = {AppKit.NSFontAttributeName: _mono(9),
+                             AppKit.NSForegroundColorAttributeName: C_ERR,
+                             AppKit.NSParagraphStyleAttributeName: ps}
                         mstr.appendAttributedString_(
-                            AppKit.NSAttributedString.alloc().initWithString_attributes_("·", dot_a))
+                            AppKit.NSAttributedString.alloc().initWithString_attributes_(marker, a))
                         mstr.appendAttributedString_(
-                            AppKit.NSAttributedString.alloc().initWithString_attributes_(label, txt_a))
+                            AppKit.NSAttributedString.alloc().initWithString_attributes_(label, a))
                         mstr.appendAttributedString_(
-                            AppKit.NSAttributedString.alloc().initWithString_attributes_("·", dot_a))
+                            AppKit.NSAttributedString.alloc().initWithString_attributes_(marker, a))
                         b.setAttributedTitle_(mstr)
                     else:
                         attrs = {AppKit.NSFontAttributeName: _mono(9),

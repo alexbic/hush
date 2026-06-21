@@ -181,8 +181,10 @@ def _upsert_session():
 
 def _on_session_end():
     """Called when overlay hides — next open starts a fresh session."""
-    global _current_session_id
+    global _current_session_id, _full_mode_standby
     _current_session_id = None
+    _full_mode_standby = False
+    _state["silent"] = True   # after any window close, default back to silent mode
 
 def _get_history():
     """Return only live (non-deleted) items for display."""
@@ -955,10 +957,11 @@ def _on_paste(mode: str = "raw"):
         if not (current and current["full"] == text):
             _add_to_history(text, parent_id=_current_hist_id)
 
-    # In full mode with a default scenario and unprocessed text: apply LLM before paste
+    # In full mode: apply default scenario only on Shift+Enter (not on [↵] button)
     full_sc = overlay.get_full_default_scenario()
     if (not _state.get("silent") and full_sc and full_sc.get("prompt")
-            and overlay.get_active_sc() is None):
+            and overlay.get_active_sc() is None
+            and mode in ("shift_enter", "md")):
         def _apply_and_paste(sc=full_sc, raw=text, m=mode):
             cancel_ev = threading.Event()
             def _interrupt():
