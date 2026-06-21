@@ -479,16 +479,17 @@ def _win_default_pos():
     return int(x), int(y)
 
 def _win_load_pos():
-    """Load saved main window position; validate against visible area; fall back to default."""
+    """Load saved main window position; validate against any screen; fall back to default."""
     key   = _screen_key()
     saved = _cfg_saved.get("win_pos", {}).get(key)
     if saved:
         sx, sy = saved["x"], saved["y"]
-        vis = AppKit.NSScreen.mainScreen().visibleFrame()
-        in_x = vis.origin.x <= sx and sx + W <= vis.origin.x + vis.size.width
-        in_y = vis.origin.y <= sy and sy + H <= vis.origin.y + vis.size.height
-        if in_x and in_y:
-            return int(sx), int(sy)
+        for screen in AppKit.NSScreen.screens():
+            vis  = screen.visibleFrame()
+            in_x = vis.origin.x <= sx and sx + W <= vis.origin.x + vis.size.width
+            in_y = vis.origin.y <= sy and sy + H <= vis.origin.y + vis.size.height
+            if in_x and in_y:
+                return int(sx), int(sy)
     return _win_default_pos()
 
 def _win_save_pos():
@@ -6835,6 +6836,19 @@ def show_result(text: str):
 def show_scenario_result(text: str, hist_id: str = None):
     """Scenario processing done — REPLACE overlay text with result (instant, no animation)."""
     _load_history_combined(text, loaded_id=hist_id, keep_active=True)
+
+
+def restore_ready():
+    """After full_default interrupt: restore ready UI without touching existing text."""
+    def _():
+        _st["mode"] = "ready"
+        _end_processing()
+        _show_target_app_header()
+        _show_buttons(True)
+        _refresh_scenario_colors()
+        if _tv:
+            _win.makeFirstResponder_(_tv)
+    _main(_)
 
 
 def show_processing(name: str, sc_idx: int = None, interrupt_fn=None):

@@ -185,6 +185,7 @@ def _on_session_end():
     _current_session_id = None
     _full_mode_standby = False
     _state["silent"] = True
+    _state["fd_skip"] = False   # reset full_default skip on every session close
     with _accum_lock:
         _accum_texts.clear()   # clear leftover blocks so _is_session_active() → False
 
@@ -963,13 +964,15 @@ def _on_paste(mode: str = "raw"):
     full_sc = overlay.get_full_default_scenario()
     if (not _state.get("silent") and full_sc and full_sc.get("prompt")
             and overlay.get_active_sc() is None
+            and not _state.get("fd_skip")
             and mode in ("shift_enter", "md")):
         def _apply_and_paste(sc=full_sc, raw=text, m=mode):
             cancel_ev = threading.Event()
             def _interrupt():
                 cancel_ev.set()
+                _state["fd_skip"] = True   # next [Отправить] pastes raw, no full_default loop
                 AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(
-                    lambda: overlay.show_result(raw))
+                    overlay.restore_ready)
             AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(
                 lambda: overlay.show_processing(sc.get("name", ""), interrupt_fn=_interrupt))
             result = processor.process_with_prompt(raw, sc["prompt"], model=sc.get("model"))
