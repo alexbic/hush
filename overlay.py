@@ -654,15 +654,28 @@ def _all_screens_bounds():
     return x, y, x2, y2
 
 
+_MAGNET_PANEL_GLOBALS = {
+    "cfg":       "_cfg",
+    "hist":      "_hist",
+    "editor":    "_editor_panel",
+    "providers": "_providers",
+}
+
 def _first_free_slot_on_side(side, excl_key, wx, wy, ww, wh, pw, ph, perp=0):
     """Return absolute (nx, ny) for the first free slot on `side`, scanning
     closest-to-main outward.  `perp` is the perpendicular offset preserved
     from the snapping panel's current lane (dy for left/right, dx for top/bottom).
-    Two panels conflict only if they share the same lane AND same slot."""
+    Two panels conflict only if they share the same lane AND same slot.
+    Only VISIBLE (open) panels count as occupying a slot — closed panels
+    don't block slots and don't create phantom gaps."""
     G = _SNAP_GAP
     occupied = []
     for k in _MAGNET_KEYS:
         if k == excl_key or not _magnet_on.get(k, False) or k not in _magnet_offset:
+            continue
+        # Panel must be actually visible; hidden panels don't block slots
+        p = globals().get(_MAGNET_PANEL_GLOBALS.get(k, ""))
+        if p is None or not p.isVisible():
             continue
         if _panel_side(k, ww, wh, pw, ph) == side:
             occupied.append(_magnet_offset[k])
