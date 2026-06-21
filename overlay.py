@@ -2994,7 +2994,7 @@ class BtnTarget(AppKit.NSObject):
         pid = pop_prov.titleOfSelectedItem() or ""
         _populate_model_popup(pop_model, pid)
 
-    def resetLayout_(self, sender):
+    def hushResetPanels_(self, sender):
         _main(lambda: _reset_panels_layout())
 
     def cfgInfo_(self, sender):
@@ -3408,9 +3408,9 @@ def _main(fn):
 
 W        = 440
 W_EXP    = 640   # expanded width
-H        = 340   # normal window height
+H        = 358   # window height — same for main and all auxiliary panels
 H_EXP    = 680   # expanded height
-H_PANEL  = 358   # shared height for all auxiliary panels (fits providers content)
+H_PANEL  = H     # alias: auxiliary panels use same height as main window
 
 # Header (top): ONE line — status + waveform + [CFG][↵][□][×] all on same row
 HDR_H    = 40
@@ -4402,31 +4402,45 @@ def _reposition_attached_panels():
 
 
 def _reset_panels_layout():
-    """Reset all panels to default positions around the main window."""
-    global _magnet_offset, _magnet_free_pos
-    _magnet_offset = {}
+    """Reset magnets to defaults and reopen all visible panels at default positions."""
+    global _magnet_on, _magnet_offset, _magnet_free_pos
+    _magnet_on       = dict(_MAGNET_DEFAULT)
+    _magnet_offset   = {}
     _magnet_free_pos = {}
-    _reposition_attached_panels()
+    for k in _MAGNET_KEYS:
+        _update_magnet_btn(k)
     win = globals().get("_win")
     if not win:
+        _magnet_save()
         return
     mf  = win.frame()
     GAP = 6
+    # Free panels: move to default positions
     _free_defaults = {
         "editor":    (mf.origin.x + mf.size.width + GAP, mf.origin.y),
         "providers": (mf.origin.x - mf.size.width - GAP, mf.origin.y),
     }
     for key, panel_name in [("editor", "_sc_editor_panel"), ("providers", "_prov_panel")]:
-        if _magnet_on.get(key, False):
-            continue
+        _magnet_free_pos[key] = _free_defaults[key]
         panel = globals().get(panel_name)
         if panel and panel.isVisible():
             try:
-                px, py = _free_defaults.get(key, (mf.origin.x, mf.origin.y))
-                panel.setFrameOrigin_(AppKit.NSMakePoint(px, py))
+                panel.setFrameOrigin_(AppKit.NSMakePoint(*_free_defaults[key]))
             except Exception:
                 pass
     _magnet_save()
+    # Reopen visible attached panels at new default positions
+    # (close + reopen so panel visibly snaps to default)
+    cfg_was_open  = bool(_cfg_panel  and _cfg_panel.isVisible())
+    hist_was_open = bool(_hist_panel and _hist_panel.isVisible())
+    if cfg_was_open:
+        _close_cfg_panel()
+        _toggle_cfg_panel()
+    elif hist_was_open:
+        # hist panel: just reposition (reopening is complex)
+        _reposition_attached_panels()
+    else:
+        _reposition_attached_panels()
 
 
 def _restore_overlay_after_panel():
@@ -5899,7 +5913,7 @@ def _toggle_cfg_panel():
     btn_rst = _mkbtn("🎯", color=C_GREEN_DIM, size=14)
     btn_rst.setFrame_(AppKit.NSMakeRect(pw - MARGIN - RST_W, (QUIT_H - 22) // 2 + 4, RST_W, 22))
     btn_rst.setTarget_(_btn_t)
-    btn_rst.setAction_(BtnTarget.resetLayout_)
+    btn_rst.setAction_(BtnTarget.hushResetPanels_)
     btn_rst.setToolTip_("Расставить все окна по умолчанию")
     cv.addSubview_(btn_rst)
 
