@@ -747,17 +747,23 @@ def _pos_to_cell(nx, ny, wx, wy, ww, wh, pw, ph):
 
 
 def _valid_grid_cells(wx, wy, ww, wh, pw, ph, vx, vy, vx2, vy2):
-    """All (col, row) cells that physically fit on screen around the main window."""
+    """All (col, row) cells around the main window.
+
+    Always includes at least 1 cell on every side so panels can always be
+    placed — even when the screen is too small for a perfect cross layout.
+    Cells that don't fully fit on-screen are still returned; _assign_cell
+    scores them by how much they overflow so on-screen cells win first.
+    """
     G = _SNAP_GAP
-    max_left  = max(0, int((wx - vx        - G) // (pw + G)))
-    max_right = max(0, int((vx2 - wx - ww  - G) // (pw + G)))
-    max_above = max(0, int((vy2 - wy - wh  - G) // (ph + G)))
-    max_below = max(0, int((wy - vy        - G) // (ph + G)))
+    max_left  = max(1, int((wx - vx        - G) // (pw + G)))
+    max_right = max(1, int((vx2 - wx - ww  - G) // (pw + G)))
+    max_above = max(1, int((vy2 - wy - wh  - G) // (ph + G)))
+    max_below = max(1, int((wy - vy        - G) // (ph + G)))
     cells = []
     for col in range(-max_left, max_right + 1):
         for row in range(-max_below, max_above + 1):
             if col == 0 and row == 0:
-                continue  # reserved for main
+                continue
             cells.append((col, row))
     return cells
 
@@ -779,12 +785,14 @@ def _occupied_cells(excl_key, wx, wy, ww, wh, pw, ph):
 def _assign_cell(key, wx, wy, ww, wh, pw, ph, vx, vy, vx2, vy2):
     """Find the best free cell for `key`.  Returns (col, row, nx, ny) or None.
 
-    Priority:
-      1. Preferred cell (from _PANEL_PREF_CELL or current stored offset),
-         if it fits on screen and is free.
-      2. Otherwise: nearest free cell sorted by distance from preferred.
+    Scoring (lower = better):
+      0. axis_group  — prefer same axis as pref (horizontal panel stays in
+                       row=0; vertical panel stays in col=0).  Cross-axis
+                       cells are a last resort.
+      1. off_screen  — total pixels the panel would extend outside screen
+                       bounds.  Fully on-screen cells always beat clipped ones.
+      2. dist        — Euclidean distance² from preferred cell (tie-break).
     """
-    # Determine preferred cell
     if key in _magnet_offset:
         dx, dy = _magnet_offset[key]
         pref = _pos_to_cell(wx + dx, wy + dy, wx, wy, ww, wh, pw, ph)
@@ -798,10 +806,25 @@ def _assign_cell(key, wx, wy, ww, wh, pw, ph, vx, vy, vx2, vy2):
     if not free:
         return None
 
-    def _dist(c):
-        return (c[0] - pref[0]) ** 2 + (c[1] - pref[1]) ** 2
+    pc, pr = pref
 
-    best = min(free, key=_dist)
+    def _score(c):
+        col, row = c
+        # Axis group: 0 = same axis as pref, 1 = cross-axis
+        if pr == 0 and pc != 0:       # pref is horizontal (left/right)
+            axis_group = 0 if row == 0 else 1
+        elif pc == 0 and pr != 0:     # pref is vertical (above/below)
+            axis_group = 0 if col == 0 else 1
+        else:
+            axis_group = 0
+        # How many pixels would the panel extend outside screen
+        nx, ny = _cell_to_pos(col, row, wx, wy, ww, wh, pw, ph)
+        off = (max(0, vx - nx) + max(0, nx + pw - vx2) +
+               max(0, vy - ny) + max(0, ny + ph - vy2))
+        dist = (col - pc) ** 2 + (row - pr) ** 2
+        return (axis_group, off, dist)
+
+    best = min(free, key=_score)
     nx, ny = _cell_to_pos(best[0], best[1], wx, wy, ww, wh, pw, ph)
     return best[0], best[1], nx, ny
 
@@ -943,40 +966,37 @@ def _update_panel_drag_end(key, panel):
         pass
 
 def _calc_panel_pos(key, wx, wy, ww, wh, pw, ph):
-    """Return (px, py) for placing a panel. Uses grid cell when magnet is ON,
-    saved free position when magnet is OFF.  Guarantees no cell conflicts."""
+    """Return (px, py) for placing a panel.
+
+    Magnetic panels: calls _assign_cell which always returns a cell
+    (_valid_grid_cells now guarantees ≥1 cell per side).  Panels may
+    extend slightly off-screen — that's better than overlapping each other.
+
+    Free panels (magnet OFF): use saved _magnet_free_pos, clamped to screen.
+    """
     vx, vy, vx2, vy2 = _screen_bounds_at(wx + ww / 2, wy + wh / 2)
     if _magnet_on.get(key, True):
         result = _assign_cell(key, wx, wy, ww, wh, pw, ph, vx, vy, vx2, vy2)
         if result:
             _, _, nx, ny = result
-        else:
-            # No cell fits — fallback to default pref offset, clamped to screen
-            dx, dy = {
-                "cfg":       (0, wh + _SNAP_GAP),
-                "hist":      (0, -(ph + _SNAP_GAP)),
-                "editor":    (ww + _SNAP_GAP, 0),
-                "providers": (-(pw + _SNAP_GAP), 0),
-            }.get(key, (0, 0))
-            nx = max(vx, min(wx + dx, vx2 - pw))
-            ny = max(vy, min(wy + dy, vy2 - ph))
-        _magnet_offset[key] = (nx - wx, ny - wy)
-        return int(nx), int(ny)
+            _magnet_offset[key] = (nx - wx, ny - wy)
+            return int(nx), int(ny)
+        # Extremely rare (all cells occupied by other panels of this key?)
+        # Just return current stored offset clamped to screen
+        dx, dy = _magnet_offset.get(key, (0, 0))
+        return int(max(vx, min(wx + dx, vx2 - pw))), int(max(vy, min(wy + dy, vy2 - ph)))
     else:
         if key in _magnet_free_pos:
             px, py = _magnet_free_pos[key]
             px = max(vx, min(int(px), vx2 - pw))
             py = max(vy, min(int(py), vy2 - ph))
         else:
-            # First time free: place at default position
-            dx, dy = {
-                "cfg":       (0, wh + _SNAP_GAP),
-                "hist":      (0, -(ph + _SNAP_GAP)),
-                "editor":    (ww + _SNAP_GAP, 0),
-                "providers": (-(pw + _SNAP_GAP), 0),
-            }.get(key, (0, 0))
-            px = max(vx, min(wx + dx, vx2 - pw))
-            py = max(vy, min(wy + dy, vy2 - ph))
+            # First time free: try to place via grid, save as free pos
+            result = _assign_cell(key, wx, wy, ww, wh, pw, ph, vx, vy, vx2, vy2)
+            if result:
+                _, _, px, py = result
+            else:
+                px, py = int(wx), int(wy)
             _magnet_free_pos[key] = (px, py)
         return int(px), int(py)
 
