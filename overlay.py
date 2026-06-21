@@ -2779,6 +2779,14 @@ class BtnTarget(AppKit.NSObject):
         _close_cfg_panel()
         _toggle_providers_panel()
 
+    def scProviderChanged_(self, sender):
+        pop_prov  = (_sc_edit_refs or {}).get("pop_provider")
+        pop_model = (_sc_edit_refs or {}).get("pop_model")
+        if not pop_prov or not pop_model:
+            return
+        pid = pop_prov.titleOfSelectedItem() or ""
+        _populate_model_popup(pop_model, pid)
+
     def cfgInfo_(self, sender):
         """Toggle About card as standalone centered panel."""
         if _about_panel and _about_panel.isVisible():
@@ -2893,7 +2901,7 @@ class BtnTarget(AppKit.NSObject):
             refs["tf_es"].setStringValue_(label.get("es", ""))
         else:
             refs["tf_en"].setStringValue_(str(label)[:6])
-        refs["tf_model"].setStringValue_(default_sc.get("model", "") or "")
+        _reset_sc_model_popups(default_sc.get("model", "") or "")
         refs["tv_prompt"].setString_(default_sc.get("prompt", ""))
 
     def cfgScEdit_(self, sender):
@@ -3294,7 +3302,7 @@ _cfg_panel        = None   # drop panel for settings (stays open during editing)
 _pre_cfg_win_y    = None   # main window Y saved before cfg panel shifts it down
 _sc_editor_panel  = None   # scenario editor panel (covers main window while editing)
 _editing_scenario = False  # True while scenario editor is open
-_sc_edit_refs    = {}     # {tf_ru/en/es, tf_model, tv_prompt, sc_idx, original}
+_sc_edit_refs    = {}     # {tf_ru/en/es, pop_provider, pop_model, tv_prompt, sc_idx, original}
 _sc_edit_pending = None   # callable: what to do after editor is closed (save or discard)
 _sc_cfg_buttons  = {}    # sc_idx → NSButton in current cfg panel (for color sync)
 
@@ -4694,6 +4702,40 @@ def _show_hist_panel(history):
     _hist_panel.makeKeyAndOrderFront_(None)
 
 
+def _sc_model_from_refs() -> str:
+    """Read provider + model popups → 'provider:model' or '' for auto."""
+    pop_prov  = (_sc_edit_refs or {}).get("pop_provider")
+    pop_model = (_sc_edit_refs or {}).get("pop_model")
+    if not pop_prov:
+        return ""
+    pid = pop_prov.titleOfSelectedItem() or ""
+    if not pid or pid == "авто":
+        return ""
+    mname = (pop_model.titleOfSelectedItem() or "") if pop_model else ""
+    if not mname or mname == "—":
+        return ""
+    return f"{pid}:{mname}"
+
+
+def _reset_sc_model_popups(model_str: str):
+    """Reset provider + model popups from a model string like 'anthropic:claude-...'."""
+    pop_prov  = (_sc_edit_refs or {}).get("pop_provider")
+    pop_model = (_sc_edit_refs or {}).get("pop_model")
+    if not pop_prov or not pop_model:
+        return
+    if ":" in (model_str or ""):
+        pid, _, mname = model_str.partition(":")
+    else:
+        pid, mname = "", ""
+    items = [pop_prov.itemTitleAtIndex_(i) for i in range(pop_prov.numberOfItems())]
+    if pid in items:
+        pop_prov.selectItemWithTitle_(pid)
+    else:
+        pop_prov.selectItemAtIndex_(0)
+        pid = ""
+    _populate_model_popup(pop_model, pid, mname)
+
+
 def _sc_edit_dirty() -> bool:
     """True if editor fields differ from values when editor was opened."""
     o = _sc_edit_refs.get("original")
@@ -4703,7 +4745,7 @@ def _sc_edit_dirty() -> bool:
         _sc_edit_refs["tf_ru"].stringValue().strip() != o["ru"] or
         _sc_edit_refs["tf_en"].stringValue().strip() != o["en"] or
         _sc_edit_refs["tf_es"].stringValue().strip() != o["es"] or
-        _sc_edit_refs["tf_model"].stringValue().strip() != o["model"] or
+        _sc_model_from_refs() != o["model"] or
         _sc_edit_refs["tv_prompt"].string().strip() != o["prompt"] or
         _sc_edit_refs.get("silent", False) != o.get("silent", False) or
         _sc_edit_refs.get("full_default", False) != o.get("full_default", False)
@@ -4988,23 +5030,46 @@ def _show_sc_editor(sc_idx):
     y       -= TF_H + GAP
     tf_es    = _make_tf("ES — nombre del botón, hasta 6 símbolos", label_val.get("es", ""))
     y       -= TF_H + GAP
-    # Model selector: NSComboBox (type or pick from available providers)
-    cb_model = AppKit.NSComboBox.alloc().initWithFrame_(
-        AppKit.NSMakeRect(MARGIN, y - TF_H, FW, TF_H + 2))
-    cb_model.setFont_(_mono(9))
-    cb_model.setTextColor_(C_TEXT)
-    cb_model.setEditable_(True)
-    cb_model.setCompletes_(True)
-    cb_model.setNumberOfVisibleItems_(10)
-    cb_model.addItemsWithObjectValues_(_pc.all_model_options())
-    cb_model.setStringValue_(sc.get("model", "") or "")
-    cb_model.cell().setPlaceholderString_("авто (Ollama → Anthropic)")
-    cv.addSubview_(cb_model)
-    tf_model = cb_model   # keep tf_model alias for backward compat with save/refs code
-    y       -= TF_H + GAP + 2
+    # ── Cascading provider → model selector ──────────────────────────────────
+    cur_model_str = sc.get("model", "") or ""
+    if ":" in cur_model_str:
+        cur_pid, _, cur_mname = cur_model_str.partition(":")
+    else:
+        cur_pid, cur_mname = "", ""
 
-    # Color model field hint — skipped for NSComboBox (popup state makes it unsafe)
-    # _model_available runs a blocking HTTP request so we intentionally skip it here.
+    HALF_W = (FW - 6) // 2
+
+    # provider label + model label
+    lbl_p = _mklabel("провайдер", size=9, color=C_IDLE)
+    lbl_p.setFrame_(AppKit.NSMakeRect(MARGIN, y - LBL_H, HALF_W, LBL_H))
+    cv.addSubview_(lbl_p)
+    lbl_m = _mklabel("модель", size=9, color=C_IDLE)
+    lbl_m.setFrame_(AppKit.NSMakeRect(MARGIN + HALF_W + 6, y - LBL_H, HALF_W, LBL_H))
+    cv.addSubview_(lbl_m)
+    y -= LBL_H + 2
+
+    # provider popup
+    prov_items = ["авто"] + _pc.available_providers()
+    pop_prov = AppKit.NSPopUpButton.alloc().initWithFrame_pullsDown_(
+        AppKit.NSMakeRect(MARGIN, y - TF_H, HALF_W, TF_H), False)
+    pop_prov.addItemsWithTitles_(prov_items)
+    pop_prov.setFont_(_mono(9))
+    if cur_pid in prov_items:
+        pop_prov.selectItemWithTitle_(cur_pid)
+    else:
+        pop_prov.selectItemAtIndex_(0)
+    pop_prov.setTarget_(_btn_t)
+    pop_prov.setAction_(BtnTarget.scProviderChanged_)
+    cv.addSubview_(pop_prov)
+
+    # model popup
+    pop_model = AppKit.NSPopUpButton.alloc().initWithFrame_pullsDown_(
+        AppKit.NSMakeRect(MARGIN + HALF_W + 6, y - TF_H, HALF_W, TF_H), False)
+    pop_model.setFont_(_mono(9))
+    _populate_model_popup(pop_model, cur_pid, cur_mname)
+    cv.addSubview_(pop_model)
+
+    y -= TF_H + GAP
 
     # Silent mode checkbox row — separated by thin lines, looks like a setting option
     SIL_H   = 28
@@ -5088,8 +5153,8 @@ def _show_sc_editor(sc_idx):
         "tf_ru":        tf_ru,
         "tf_en":        tf_en,
         "tf_es":        tf_es,
-        "tf_model":     tf_model,   # alias → cb_model
-        "cb_model":     cb_model,
+        "pop_provider": pop_prov,
+        "pop_model":    pop_model,
         "sil_btn":      sil_btn,
         "silent":       is_silent,   # current toggle state (Python bool, toggled in action)
         "fd_btn":       fd_btn,
@@ -5126,7 +5191,7 @@ def _sc_editor_save():
     lbl_ru = refs["tf_ru"].stringValue().strip().upper()[:6]
     lbl_en = refs["tf_en"].stringValue().strip().upper()[:6]
     lbl_es = refs["tf_es"].stringValue().strip().upper()[:6]
-    model  = refs["tf_model"].stringValue().strip() or None
+    model  = _sc_model_from_refs() or None
     prompt = refs["tv_prompt"].string()
     sc_idx = refs.get("sc_idx")
 
@@ -5192,6 +5257,22 @@ def _sc_editor_save():
         # Default: refresh config panel to reflect updated list
         _close_cfg_panel_rebuild()
         _toggle_cfg_panel()
+
+
+def _populate_model_popup(popup, provider_id, selected=""):
+    """Fill the model NSPopUpButton for the given provider_id."""
+    popup.removeAllItems()
+    models = _pc.models_for_provider(provider_id) if provider_id else []
+    if models:
+        popup.addItemsWithTitles_(models)
+        popup.setEnabled_(True)
+        if selected in models:
+            popup.selectItemWithTitle_(selected)
+        else:
+            popup.selectItemAtIndex_(0)
+    else:
+        popup.addItemsWithTitles_(["—"])
+        popup.setEnabled_(False)
 
 
 def _toggle_cfg_panel():
@@ -7116,17 +7197,8 @@ def update_provider_status():
 
 
 def _refresh_sc_model_combo():
-    """Update scenario editor model combo items when Ollama models are re-probed.
-    NOT called automatically — only on explicit re-open of the scenario editor.
-    Mutating NSComboBox items while its popup is visible causes SIGSEGV.
-    """
-    combo = (_sc_edit_refs or {}).get("cb_model")
-    if not combo:
-        return
-    current = combo.stringValue()
-    combo.removeAllItems()
-    combo.addItemsWithObjectValues_(_pc.all_model_options())
-    combo.setStringValue_(current)
+    """No-op: model is now two NSPopUpButton controls, refreshed on re-open."""
+    pass
 
 
 def restore_ready():

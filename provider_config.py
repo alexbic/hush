@@ -131,6 +131,28 @@ def all_model_options() -> list:
     return result
 
 
+def available_providers() -> list:
+    """Provider ids that are currently usable (key set or Ollama running)."""
+    result = []
+    if _status.get("ollama") is True:
+        result.append("ollama")
+    for pid in ("anthropic", "openai", "glm"):
+        if _data.get(pid, {}).get("api_key", ""):
+            result.append(pid)
+    return result
+
+
+def models_for_provider(pid: str) -> list:
+    """Model name strings (no provider: prefix) for a given provider id."""
+    if pid == "ollama":
+        return list(_ollama_models)
+    return [
+        entry.split(":", 1)[1]
+        for entry in CLOUD_MODELS
+        if entry.startswith(f"{pid}:")
+    ]
+
+
 def add_status_callback(fn):
     _status_cbs.append(fn)
 
