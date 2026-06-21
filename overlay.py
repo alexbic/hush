@@ -2656,10 +2656,14 @@ class BtnTarget(AppKit.NSObject):
         hide(force=True)
 
     def actionCancel_(self, sender):
-        """Smart cancel: undo scenario if active, otherwise close overlay."""
+        """Smart cancel: undo scenario if active, stay in window after interrupt, else close."""
         if self._editor_active(): return
         if _st.get("active_sc") is not None:
             self.undoScenario_(sender)
+        elif _st.get("post_interrupt"):
+            # After full_default interrupt: just clear the flag, stay in editing window
+            _st["post_interrupt"] = False
+            _refresh_scenario_colors()
         else:
             hide(force=True)
 
@@ -6764,8 +6768,9 @@ def show_recording():
             _silent_win.orderOut_(None)
         _silent_mode = False
         _st["mode"] = "recording"
-        _st["active_sc"] = None   # new recording clears previous scenario result
-        _st["sc_picker"] = False  # close scenario picker
+        _st["active_sc"] = None
+        _st["post_interrupt"] = False
+        _st["sc_picker"] = False
         _clear_waveform()
         _show_target_app_header()     # always show icon + app name (no status text)
         _show_buttons(False)
@@ -6841,6 +6846,7 @@ def restore_ready():
     """After full_default interrupt: restore ready UI without touching existing text."""
     def _():
         _st["mode"] = "ready"
+        _st["post_interrupt"] = True   # [Отменить] stays in window instead of closing
         _end_processing()
         _show_target_app_header()
         _show_buttons(True)
