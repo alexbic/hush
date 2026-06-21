@@ -6920,10 +6920,8 @@ def _toggle_providers_panel():
 
     _close_providers_panel()
 
-    # ── Same frame as main window (overlays it, like scenario editor) ─────────
     mf     = _win.frame()
     PW     = int(mf.size.width)
-    PH     = int(mf.size.height)
     MARGIN = 12
     FW     = PW - MARGIN * 2
     LBL_H  = 13
@@ -6931,6 +6929,29 @@ def _toggle_providers_panel():
     GAP    = 4
     BTN_H  = 22
 
+    # ── Pre-calculate content height ──────────────────────────────────────────
+    # Header: label + gap + sep + gap
+    HDR_H  = LBL_H + 5 + 1 + 8                          # 27
+    # Each section: (label+GAP) + fields + bottom_gap + sep + gap_after_sep
+    #   OLLAMA:    label(17) + url(26) + combo(32) + sep+gap(9) = 84
+    #   ANTHROPIC: label(17) + key(32) + sep+gap(9) = 58
+    #   OPENAI:    label(17) + key(26) + url(32) + sep+gap(9) = 84
+    #   GLM:       label(17) + key(26) + url(26) + bottom_gap(12) = 81
+    SC_OLLAMA = (LBL_H+GAP) + (TF_H+GAP) + (TF_H+10) + 1 + 8
+    SC_ANTHR  = (LBL_H+GAP) + (TF_H+10) + 1 + 8
+    SC_OPENAI = (LBL_H+GAP) + (TF_H+GAP) + (TF_H+10) + 1 + 8
+    SC_GLM    = (LBL_H+GAP) + (TF_H+GAP) + (TF_H+16)   # last section: extra padding, no sep
+    FOOT_H    = 1 + 6 + BTN_H + MARGIN                  # sep + pad + btn + margin = 41
+    NEEDED_H  = 8 + HDR_H + SC_OLLAMA + SC_ANTHR + SC_OPENAI + SC_GLM + FOOT_H
+
+    # ── Clamp to visible screen height ────────────────────────────────────────
+    screen = _win.screen() or AppKit.NSScreen.mainScreen()
+    vis    = screen.visibleFrame() if screen else AppKit.NSMakeRect(0, 0, 1440, 900)
+    MAX_H  = int(vis.size.height) - 20
+    PH     = min(NEEDED_H, MAX_H)
+    needs_scroll = NEEDED_H > PH
+
+    # ── Panel ─────────────────────────────────────────────────────────────────
     panel = _EditorPanel.alloc().initWithContentRect_styleMask_backing_defer_(
         AppKit.NSMakeRect(0, 0, PW, PH),
         AppKit.NSWindowStyleMaskBorderless,
@@ -6945,54 +6966,83 @@ def _toggle_providers_panel():
         AppKit.NSAppearanceNameDarkAqua))
     _bg = TerminalView.alloc().initWithFrame_(AppKit.NSMakeRect(0, 0, PW, PH))
     panel.setContentView_(_bg)
-    cv = _bg
     _prov_panel = panel
 
-    # shared text-field styler (reuses existing _style_tf)
-    def _tf(y_pos, placeholder, value, secure=False):
-        cls = AppKit.NSSecureTextField if secure else AppKit.NSTextField
-        tf  = cls.alloc().initWithFrame_(AppKit.NSMakeRect(MARGIN, y_pos, FW, TF_H))
-        _style_tf(tf, placeholder)
-        tf.setStringValue_(value)
-        cv.addSubview_(tf)
-        return tf
-
-    y = PH - 8
-
-    # ── Header ────────────────────────────────────────────────────────────────
+    # ── Fixed header (always visible) ─────────────────────────────────────────
+    hdr_top_y = PH - 8
     hdr = _mklabel("ПРОВАЙДЕРЫ / API КЛЮЧИ", size=10, color=C_IDLE)
-    hdr.setFrame_(AppKit.NSMakeRect(MARGIN, y - LBL_H, FW - 30, LBL_H))
-    cv.addSubview_(hdr)
+    hdr.setFrame_(AppKit.NSMakeRect(MARGIN, hdr_top_y - LBL_H, FW - 30, LBL_H))
+    _bg.addSubview_(hdr)
 
     btn_x = _mkbtn("[✕]", color=C_GREEN_DIM, size=9)
-    btn_x.setFrame_(AppKit.NSMakeRect(PW - MARGIN - 28, y - LBL_H, 28, LBL_H))
+    btn_x.setFrame_(AppKit.NSMakeRect(PW - MARGIN - 28, hdr_top_y - LBL_H, 28, LBL_H))
     btn_x.setTarget_(_btn_t)
     btn_x.setAction_(BtnTarget.provClose_)
-    cv.addSubview_(btn_x)
-    y -= LBL_H + 5
+    _bg.addSubview_(btn_x)
 
-    cv.addSubview_(_sep_line(MARGIN, y, FW, pin="top"))
-    y -= 8
+    sep_y = hdr_top_y - LBL_H - 5
+    _bg.addSubview_(_sep_line(MARGIN, sep_y, FW, pin="top"))
 
-    # ── OLLAMA ────────────────────────────────────────────────────────────────
-    dot_ol = _mklabel("●", size=9, color=C_GREEN_DIM)
-    dot_ol.setFrame_(AppKit.NSMakeRect(MARGIN, y - LBL_H, 12, LBL_H))
-    cv.addSubview_(dot_ol)
-    _prov_dot_refs["ollama"] = dot_ol
+    # ── Fixed footer (always visible) ─────────────────────────────────────────
+    _bg.addSubview_(_sep_line(MARGIN, MARGIN + BTN_H + 6, FW, pin="top"))
+    BTN_W = 80
+    btn_cancel = _mkbtn("[Отмена]", color=C_GREEN_DIM, size=10)
+    btn_cancel.setFrame_(AppKit.NSMakeRect(MARGIN, MARGIN, BTN_W, BTN_H))
+    btn_cancel.setTarget_(_btn_t)
+    btn_cancel.setAction_(BtnTarget.provClose_)
+    _bg.addSubview_(btn_cancel)
+    btn_save = _mkbtn("[Сохранить]", color=C_GREEN_BR, size=10)
+    btn_save.setFrame_(AppKit.NSMakeRect(PW - MARGIN - BTN_W, MARGIN, BTN_W, BTN_H))
+    btn_save.setTarget_(_btn_t)
+    btn_save.setAction_(BtnTarget.provSave_)
+    _bg.addSubview_(btn_save)
 
-    lbl_ol = _mklabel("OLLAMA", size=9, bold=True, color=C_GREEN_BR)
-    lbl_ol.setFrame_(AppKit.NSMakeRect(MARGIN + 15, y - LBL_H, FW - 15, LBL_H))
-    cv.addSubview_(lbl_ol)
+    # ── Scrollable content area ───────────────────────────────────────────────
+    FOOT_TOTAL = MARGIN + BTN_H + 6 + 1 + 4  # bottom of content area
+    HDR_TOTAL  = PH - sep_y + 6               # top border of content area
+    scroll_h   = PH - HDR_TOTAL - FOOT_TOTAL
+
+    # doc_view is tall enough for all content (NEEDED content minus fixed header/footer)
+    content_h  = SC_OLLAMA + SC_ANTHR + SC_OPENAI + SC_GLM + 8
+    doc_h      = max(content_h, scroll_h)
+
+    doc_view = AppKit.NSView.alloc().initWithFrame_(
+        AppKit.NSMakeRect(0, 0, FW, doc_h))
+
+    def _tf(y_pos, placeholder, value):
+        tf = AppKit.NSTextField.alloc().initWithFrame_(
+            AppKit.NSMakeRect(0, y_pos, FW, TF_H))
+        _style_tf(tf, placeholder)
+        tf.setStringValue_(value)
+        doc_view.addSubview_(tf)
+        return tf
+
+    def _lbl_row(y_pos, pid, title):
+        dot = _mklabel("●", size=9, color=C_GREEN_DIM)
+        dot.setFrame_(AppKit.NSMakeRect(0, y_pos, 12, LBL_H))
+        doc_view.addSubview_(dot)
+        _prov_dot_refs[pid] = dot
+        lbl = _mklabel(title, size=9, bold=True, color=C_GREEN_BR)
+        lbl.setFrame_(AppKit.NSMakeRect(15, y_pos, FW - 15, LBL_H))
+        doc_view.addSubview_(lbl)
+
+    def _sep(y_pos):
+        line = AppKit.NSBox.alloc().initWithFrame_(
+            AppKit.NSMakeRect(0, y_pos, FW, 1))
+        line.setBoxType_(AppKit.NSBoxSeparator)
+        doc_view.addSubview_(line)
+
+    y = doc_h - 8
+
+    # OLLAMA
+    _lbl_row(y - LBL_H, "ollama", "OLLAMA")
     y -= LBL_H + GAP
-
-    tf_url = _tf(y - TF_H, "http://localhost:11434",
-                 _pc.get("ollama", "base_url", "http://localhost:11434"))
-    _prov_field_refs["ollama_url"] = tf_url
+    _prov_field_refs["ollama_url"] = _tf(y - TF_H, "http://localhost:11434",
+        _pc.get("ollama", "base_url", "http://localhost:11434"))
     y -= TF_H + GAP
 
-    # Ollama default model — NSComboBox styled to match text fields
     combo = AppKit.NSComboBox.alloc().initWithFrame_(
-        AppKit.NSMakeRect(MARGIN, y - TF_H, FW, TF_H))
+        AppKit.NSMakeRect(0, y - TF_H, FW, TF_H))
     combo.setFont_(_mono(10))
     combo.setTextColor_(C_TEXT)
     combo.setEditable_(True)
@@ -7009,94 +7059,62 @@ def _toggle_providers_panel():
         combo.addItemsWithObjectValues_(models)
     combo.setStringValue_(_pc.get("ollama", "default_model", "qwen3:8b"))
     combo.cell().setPlaceholderString_("модель по умолчанию")
-    cv.addSubview_(combo)
+    doc_view.addSubview_(combo)
     _prov_field_refs["ollama_model"] = combo
     _prov_model_combo = combo
     y -= TF_H + 10
+    _sep(y); y -= 1 + 8
 
-    cv.addSubview_(_sep_line(MARGIN, y, FW, pin="top"))
-    y -= 8
-
-    # ── ANTHROPIC ─────────────────────────────────────────────────────────────
-    dot_an = _mklabel("●", size=9, color=C_GREEN_DIM)
-    dot_an.setFrame_(AppKit.NSMakeRect(MARGIN, y - LBL_H, 12, LBL_H))
-    cv.addSubview_(dot_an)
-    _prov_dot_refs["anthropic"] = dot_an
-
-    lbl_an = _mklabel("ANTHROPIC", size=9, bold=True, color=C_GREEN_BR)
-    lbl_an.setFrame_(AppKit.NSMakeRect(MARGIN + 15, y - LBL_H, FW - 15, LBL_H))
-    cv.addSubview_(lbl_an)
+    # ANTHROPIC
+    _lbl_row(y - LBL_H, "anthropic", "ANTHROPIC")
     y -= LBL_H + GAP
-
-    tf_ant = _tf(y - TF_H, "sk-ant-api...",
-                 _pc.get("anthropic", "api_key"), secure=False)
-    _prov_field_refs["anthropic_key"] = tf_ant
+    _prov_field_refs["anthropic_key"] = _tf(y - TF_H, "sk-ant-api...",
+        _pc.get("anthropic", "api_key"))
     y -= TF_H + 10
+    _sep(y); y -= 1 + 8
 
-    cv.addSubview_(_sep_line(MARGIN, y, FW, pin="top"))
-    y -= 8
-
-    # ── OPENAI ────────────────────────────────────────────────────────────────
-    dot_oa = _mklabel("●", size=9, color=C_GREEN_DIM)
-    dot_oa.setFrame_(AppKit.NSMakeRect(MARGIN, y - LBL_H, 12, LBL_H))
-    cv.addSubview_(dot_oa)
-    _prov_dot_refs["openai"] = dot_oa
-
-    lbl_oa = _mklabel("OPENAI", size=9, bold=True, color=C_GREEN_BR)
-    lbl_oa.setFrame_(AppKit.NSMakeRect(MARGIN + 15, y - LBL_H, FW - 15, LBL_H))
-    cv.addSubview_(lbl_oa)
+    # OPENAI
+    _lbl_row(y - LBL_H, "openai", "OPENAI")
     y -= LBL_H + GAP
-
-    tf_oakey = _tf(y - TF_H, "sk-proj-...", _pc.get("openai", "api_key"), secure=False)
-    _prov_field_refs["openai_key"] = tf_oakey
+    _prov_field_refs["openai_key"] = _tf(y - TF_H, "sk-proj-...",
+        _pc.get("openai", "api_key"))
     y -= TF_H + GAP
-
-    tf_oaurl = _tf(y - TF_H, "https://api.openai.com/v1",
-                   _pc.get("openai", "base_url", "https://api.openai.com/v1"))
-    _prov_field_refs["openai_base"] = tf_oaurl
+    _prov_field_refs["openai_base"] = _tf(y - TF_H, "https://api.openai.com/v1",
+        _pc.get("openai", "base_url", "https://api.openai.com/v1"))
     y -= TF_H + 10
+    _sep(y); y -= 1 + 8
 
-    cv.addSubview_(_sep_line(MARGIN, y, FW, pin="top"))
-    y -= 8
-
-    # ── GLM ───────────────────────────────────────────────────────────────────
-    dot_gl = _mklabel("●", size=9, color=C_GREEN_DIM)
-    dot_gl.setFrame_(AppKit.NSMakeRect(MARGIN, y - LBL_H, 12, LBL_H))
-    cv.addSubview_(dot_gl)
-    _prov_dot_refs["glm"] = dot_gl
-
-    lbl_gl = _mklabel("GLM (Z.ai)", size=9, bold=True, color=C_GREEN_BR)
-    lbl_gl.setFrame_(AppKit.NSMakeRect(MARGIN + 15, y - LBL_H, FW - 15, LBL_H))
-    cv.addSubview_(lbl_gl)
+    # GLM
+    _lbl_row(y - LBL_H, "glm", "GLM (Z.ai)")
     y -= LBL_H + GAP
-
-    tf_glm = _tf(y - TF_H, "API ключ GLM", _pc.get("glm", "api_key"), secure=False)
-    _prov_field_refs["glm_key"] = tf_glm
+    _prov_field_refs["glm_key"] = _tf(y - TF_H, "API ключ GLM",
+        _pc.get("glm", "api_key"))
     y -= TF_H + GAP
+    _prov_field_refs["glm_base"] = _tf(y - TF_H, "https://api.z.ai/api/paas/v4",
+        _pc.get("glm", "base_url", "https://api.z.ai/api/paas/v4"))
 
-    tf_glmurl = _tf(y - TF_H, "https://api.z.ai/api/paas/v4",
-                    _pc.get("glm", "base_url", "https://api.z.ai/api/paas/v4"))
-    _prov_field_refs["glm_base"] = tf_glmurl
-    y -= TF_H + 10
+    # ── Wrap in NSScrollView ──────────────────────────────────────────────────
+    sv = AppKit.NSScrollView.alloc().initWithFrame_(
+        AppKit.NSMakeRect(MARGIN, FOOT_TOTAL, FW, scroll_h))
+    sv.setHasVerticalScroller_(needs_scroll)
+    sv.setHasHorizontalScroller_(False)
+    sv.setAutohidesScrollers_(True)
+    sv.setDrawsBackground_(False)
+    sv.setBorderType_(AppKit.NSNoBorder)
+    sv.setDocumentView_(doc_view)
+    if needs_scroll:
+        # Scroll to top (doc_view coord: top = doc_h)
+        sv.contentView().scrollToPoint_(AppKit.NSMakePoint(0, doc_h - scroll_h))
+        sv.reflectScrolledClipView_(sv.contentView())
+    _bg.addSubview_(sv)
 
-    # ── Buttons row ───────────────────────────────────────────────────────────
-    cv.addSubview_(_sep_line(MARGIN, MARGIN + BTN_H + 6, FW, pin="top"))
-
-    BTN_W = 80
-    btn_cancel = _mkbtn("[Отмена]", color=C_GREEN_DIM, size=10)
-    btn_cancel.setFrame_(AppKit.NSMakeRect(MARGIN, MARGIN, BTN_W, BTN_H))
-    btn_cancel.setTarget_(_btn_t)
-    btn_cancel.setAction_(BtnTarget.provClose_)
-    cv.addSubview_(btn_cancel)
-
-    btn_save = _mkbtn("[Сохранить]", color=C_GREEN_BR, size=10)
-    btn_save.setFrame_(AppKit.NSMakeRect(PW - MARGIN - BTN_W, MARGIN, BTN_W, BTN_H))
-    btn_save.setTarget_(_btn_t)
-    btn_save.setAction_(BtnTarget.provSave_)
-    cv.addSubview_(btn_save)
-
-    # ── Position: same as main window ─────────────────────────────────────────
-    panel.setFrameOrigin_(AppKit.NSMakePoint(mf.origin.x, mf.origin.y))
+    # ── Position on screen ────────────────────────────────────────────────────
+    px  = int(mf.origin.x)
+    py  = int(mf.origin.y)                   # align bottom with main window
+    # Clamp so panel doesn't go above screen
+    py  = min(py, int(vis.origin.y + vis.size.height) - PH)
+    py  = max(py, int(vis.origin.y))
+    panel.setFrameOrigin_(AppKit.NSMakePoint(px, py))
     panel.makeKeyAndOrderFront_(None)
 
     _refresh_prov_dots()
