@@ -8,45 +8,83 @@ Built entirely with Python and native AppKit. No Electron, no subscriptions.
 
 ## How It Works
 
+HUSH has two recording modes:
+
+**Silent Mode** — lightweight floating pill, auto-pastes after a short pause:
 ```
-Hold Right ⌥  →  speak  →  release  →  text appears in active app
+Hold Right ⌥  →  speak  →  release  →  text pasted into active app
+```
+
+**Full Mode** — full overlay card, accumulate multiple blocks, paste on demand:
+```
+⇧⌥  →  window opens  →  hold ⌥ to record chunks  →  Shift+Enter to paste
 ```
 
 HUSH uses [Parakeet TDT 0.6B](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) — NVIDIA's CTC/TDT model running locally via Apple Neural Engine (CoreML). First run compiles the model (~2 min); subsequent runs start in seconds.
 
 ---
 
-## Features
+## Modes
 
-### Dictation
+### Silent Mode
 
-- **Hold Right ⌥** to start recording
-- **Release** to stop and transcribe
-- Audio processed **locally** — no data leaves your machine
-- Recognized text is **pasted automatically** into the previously active app via Accessibility API
+Activated by holding **Right ⌥**. A small floating pill appears anchored to the screen edge.
 
-### Silent Pill
-
-When you hold the hotkey, a small floating pill appears anchored to the screen edge:
-
+**States:**
 - **Recording** — EQ bars animate in accent color
 - **Transcribing** — recognized chunks appear as text accumulates inside the pill
-- **Countdown** — 4-second grace period (green→red bars) before LLM processing
+- **Countdown** — 4-second grace period (bars shift green→red) before LLM processing
 - **Processing** — recognized text at top, app icon + EQ indicator at bottom
-- **Hover while processing** — overlay shows "Оставить без обработки"; click to paste raw text immediately, skipping LLM
+- **Hover while processing** — overlay shows interrupt button; click to paste raw text immediately, skipping LLM
 
-The pill **remembers its screen position** across sessions. Drag it anywhere — next session it appears in the same spot.
+**Multi-chunk recording:** release ⌥ between phrases to transcribe each chunk separately — they accumulate in the pill and are processed together when the countdown fires.
 
-### Scenarios (LLM Post-Processing)
+The pill **remembers its screen position** across sessions. Drag it anywhere.
 
-Scenarios are configurable LLM prompts applied after transcription. Select a scenario before dictating; the transcribed text is sent to the LLM and the result is pasted.
+---
+
+### Full Mode
+
+Activated by **⇧⌥** (Shift + Right Option). Opens the main overlay card without starting recording.
+
+**Workflow:**
+1. **⇧⌥** — open the full-mode window
+2. **Hold ⌥** — record a block; **release** — transcribe; block appears in the window
+3. Repeat to add more blocks — they accumulate without auto-pasting
+4. Optionally click a **scenario button** to process the text with an LLM
+5. **Shift+Enter** or **[↵]** button — paste result into the previously active app, close window
+
+**Default scenario for Full Mode:** in scenario settings you can mark one scenario as *full mode default* (★). When set, pressing Shift+Enter without having manually applied a scenario will automatically run that LLM first, then paste the result.
+
+**Cancel:** double-tap ⌥ at any time to discard everything and close both overlays.
+
+---
+
+## Hotkeys
+
+| Gesture | Action |
+|---------|--------|
+| Hold Right ⌥ | Start recording (silent mode) |
+| Release Right ⌥ | Stop recording, transcribe |
+| ⇧⌥ | Open full-mode window |
+| ⌥ (in full-mode window) | Record next block |
+| Double-tap ⌥ | Cancel session, close all overlays |
+| Enter (during countdown) | Force immediate raw paste, skip scenario |
+| Shift+Enter (full mode) | Paste accumulated text (applies default scenario if set) |
+| ⌥ (during LLM processing) | Interrupt LLM, paste raw text instead |
+
+---
+
+## Scenarios (LLM Post-Processing)
+
+Scenarios are configurable LLM prompts applied after transcription.
 
 Built-in scenarios (editable in `~/.config/hush/scenarios.json`):
 
 | Name | What it does |
 |------|-------------|
-| **MAIN** | Smart formatter: detects context type (prompt, task list, letter, note), cleans filler words, formats accordingly |
-| **ЧИСТКА** | Punctuation, capitalization, removes filler words, applies typographic quotes |
+| **MAIN** | Smart formatter: detects context type (prompt, task list, letter, note), cleans filler words |
+| **ЧИСТКА** | Punctuation, capitalization, removes filler words, typographic quotes |
 | **ПИСЬМО** | Formats as a business letter |
 | **Задачи** | Converts to a checkbox task list (Markdown) |
 | **MD** | Formats as Markdown with headers and lists |
@@ -54,31 +92,48 @@ Built-in scenarios (editable in `~/.config/hush/scenarios.json`):
 **Supported LLM providers** (configured per scenario):
 
 ```json
-{ "model": "ollama:qwen3:8b" }           // local via Ollama (default)
+{ "model": "ollama:qwen3:8b" }                      // local via Ollama (default)
 { "model": "anthropic:claude-haiku-4-5-20251001" }  // Anthropic API
-{ "model": "openai:gpt-4o-mini" }         // OpenAI-compatible API
-{ "model": "glm:glm-4-flash" }            // GLM (Zhipu) API
-{ "model": null }                          // auto: Ollama → Anthropic fallback
+{ "model": "openai:gpt-4o-mini" }                   // OpenAI-compatible API
+{ "model": "glm:glm-4-flash" }                      // GLM (Zhipu) API
+{ "model": null }                                    // auto: Ollama → Anthropic fallback
 ```
 
-Scenarios without a prompt paste raw transcription directly (useful for silent mode without LLM).
+**Scenario flags** (set in the settings UI):
 
-### Interrupting LLM Processing
+| Flag | Effect |
+|------|--------|
+| `silent` | Scenario appears in silent pill only |
+| `full_default` ★ | Auto-applied before paste in full mode (one per list) |
 
-While the LLM is processing, hovering the pill shows a soft overlay. Clicking it:
-- Cancels the LLM request
-- Pastes the raw transcribed text immediately
-- Releases the hotkey lock so you can dictate again right away
+Scenarios without a prompt paste raw transcription directly.
 
-### History
+---
+
+## Scenario Settings
+
+Open settings via the **⚙** button. Click any scenario to edit it.
+
+- **Label fields** (RU / EN / ES) — button label, up to 6 characters
+- **Model** — override the LLM for this scenario (empty = auto)
+- **Prompt** — system instruction; transcribed text is appended
+- **silent mode** toggle — restrict scenario to silent pill
+- **full mode по умолч.** toggle ★ — mark as the default for full mode (radio — only one allowed)
+
+Unsaved changes are detected when switching scenarios or closing — a save/discard prompt appears.
+
+---
+
+## History
 
 - Last 50 transcriptions stored in `~/.config/hush/history.json`
-- **Double-tap Right ⌥** to open the full history panel
-- Browse, copy, re-paste, or delete entries
+- Browse, copy, re-paste, or delete entries from the history panel
 - Sessions group multi-chunk dictations into one entry
 - Entries can be merged (continuation of an earlier session)
 
-### Color Themes
+---
+
+## Color Themes
 
 8 built-in themes — switch from the pill's settings menu:
 
@@ -92,10 +147,6 @@ While the LLM is processing, hovering the pill shows a soft overlay. Clicking it
 | sky | light blue | dark blue |
 | sand | warm beige | brown |
 | arctic | icy white | teal |
-
-### Multi-language UI
-
-Scenario labels support EN / RU / ES — the active language follows system locale.
 
 ---
 
@@ -157,12 +208,10 @@ Edit `~/.config/hush/scenarios.json`. Each scenario:
   "label": { "en": "CLEAN", "ru": "ЧИСТКА", "es": "LIMPI" },
   "model": "ollama:qwen3:8b",
   "prompt": "Your prompt here. Input text is appended after ===",
-  "silent": true
+  "silent": true,
+  "full_default": false
 }
 ```
-
-- `"silent": true` — scenario appears in silent pill mode only
-- `"prompt": ""` — paste raw transcription without LLM
 
 Changes take effect without restarting HUSH.
 
@@ -172,7 +221,7 @@ Changes take effect without restarting HUSH.
 
 ```
 main.py          Hotkey listener, session lifecycle, paste logic
-overlay.py       All UI: pill, processing card, history panel, themes
+overlay.py       All UI: pill, full-mode card, history panel, themes
 recorder.py      Audio capture via sounddevice
 transcriber.py   Parakeet TDT subprocess wrapper + CoreML warmup
 processor.py     LLM routing (Ollama / Anthropic / OpenAI / GLM / n8n)
@@ -182,17 +231,26 @@ build_app.sh     Builds self-contained HUSH.app bundle
 launcher.c       Thin C launcher (ensures correct NSBundle for status bar)
 ```
 
-### Session lifecycle
+### Silent mode session lifecycle
 
 ```
-hotkey press  →  recorder.start()  →  audio chunks
-hotkey release →  recorder.stop()  →  wav file
-                  transcriber.transcribe(wav)
-                    └─ parakeet-cli [CoreML / ANE]
-                  text accumulated in pill
-                  4-second countdown
-                  processor.process_with_prompt(text, scenario)
-                  injector / subprocess paste
+Hold ⌥  →  recorder.start()  →  audio stream
+Release ⌥  →  recorder.stop()  →  wav file queued
+              transcriber.transcribe(wav)  [CoreML / ANE]
+              text appended to pill accumulation
+              4-second countdown
+              processor.process_with_prompt(text, scenario)
+              injector paste  →  prev app receives text
+```
+
+### Full mode session lifecycle
+
+```
+⇧⌥  →  overlay opens (standby, no recording)
+⌥ held  →  recorder.start()
+⌥ released  →  recorder.stop()  →  transcribe  →  block shown in window
+(repeat for more blocks)
+Shift+Enter  →  [optional: default scenario LLM]  →  paste  →  window closes
 ```
 
 ### CoreML model cache
@@ -200,19 +258,6 @@ hotkey release →  recorder.stop()  →  wav file
 Parakeet is a CoreML model (~400 MB, `parakeet-tdt-0.6b-v3-coreml`). Apple Neural Engine compiles device-specific execution plans on first run and caches them. Subsequent runs skip compilation and start in ~7 seconds.
 
 HUSH preserves the cache by keeping the binary at a stable path (`~/.local/bin/parakeet-cli`). Rebuilding the app bundle does not invalidate the cache.
-
----
-
-## Hotkeys
-
-| Gesture | Action |
-|---------|--------|
-| Hold Right ⌥ | Start recording |
-| Release Right ⌥ | Stop recording, transcribe, paste |
-| Double-tap Right ⌥ (idle) | Open history panel |
-| Double-tap Right ⌥ (counting down) | Force immediate paste (skip countdown) |
-| Double-tap Right ⌥ (recording) | Cancel current session |
-| Click pill (processing) | Paste raw text, skip LLM |
 
 ---
 
