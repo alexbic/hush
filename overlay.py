@@ -7196,9 +7196,6 @@ def update_provider_status():
     _refresh_prov_dots()
 
 
-def _refresh_sc_model_combo():
-    """No-op: model is now two NSPopUpButton controls, refreshed on re-open."""
-    pass
 
 
 def restore_ready():

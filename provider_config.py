@@ -1,6 +1,4 @@
-"""Provider configuration: ~/.config/hush/providers.json
-Handles load/save, migration from ~/.hush_env, async availability probing.
-"""
+"""Provider configuration: ~/.config/hush/providers.json"""
 
 import json
 import os
@@ -9,7 +7,6 @@ import urllib.request
 import urllib.error
 
 PROVIDERS_FILE = os.path.expanduser("~/.config/hush/providers.json")
-_HUSH_ENV      = os.path.expanduser("~/.hush_env")
 
 _DEFAULTS = {
     "ollama":    {"base_url": "http://localhost:11434", "default_model": "qwen3:8b"},
@@ -20,8 +17,8 @@ _DEFAULTS = {
 
 _data          = {}
 _status        = {"ollama": None, "anthropic": None, "openai": None, "glm": None}
-_ollama_models = []   # list of model name strings from /api/tags
-_status_cbs    = []   # callbacks fired when status changes
+_ollama_models = []
+_status_cbs    = []
 
 PROVIDER_LABELS = {
     "ollama":    "Ollama",
@@ -30,7 +27,6 @@ PROVIDER_LABELS = {
     "glm":       "GLM (Z.ai)",
 }
 
-# Well-known cloud models for the scenario model picker
 CLOUD_MODELS = [
     "anthropic:claude-haiku-4-5-20251001",
     "anthropic:claude-sonnet-4-6",
@@ -45,7 +41,6 @@ CLOUD_MODELS = [
 
 
 def load():
-    """Load providers.json; fill defaults; migrate ~/.hush_env if needed."""
     global _data
     if os.path.exists(PROVIDERS_FILE):
         try:
@@ -59,7 +54,6 @@ def load():
         _data.setdefault(provider, {})
         for k, v in defs.items():
             _data[provider].setdefault(k, v)
-    _migrate_env()
 
 
 def save():
@@ -69,38 +63,6 @@ def save():
             json.dump(_data, f, indent=2, ensure_ascii=False)
     except Exception as e:
         print(f"[providers] save error: {e}")
-
-
-def _migrate_env():
-    """Import keys from ~/.hush_env if providers.json lacks them."""
-    if not os.path.exists(_HUSH_ENV):
-        return
-    env = {}
-    try:
-        with open(_HUSH_ENV) as f:
-            for line in f:
-                line = line.strip()
-                if line.startswith("export "):
-                    line = line[7:]
-                if "=" in line and not line.startswith("#"):
-                    k, _, v = line.partition("=")
-                    env[k.strip()] = v.strip().strip('"').strip("'")
-    except Exception:
-        return
-    mapping = [
-        ("ANTHROPIC_API_KEY",    "anthropic", "api_key"),
-        ("OPENAI_API_KEY",       "openai",    "api_key"),
-        ("GLM_API_KEY",          "glm",       "api_key"),
-        ("OLLAMA_BASE_URL",      "ollama",    "base_url"),
-        ("OLLAMA_DEFAULT_MODEL", "ollama",    "default_model"),
-    ]
-    changed = False
-    for env_key, provider, field in mapping:
-        if env.get(env_key) and not _data[provider].get(field):
-            _data[provider][field] = env[env_key]
-            changed = True
-    if changed:
-        save()
 
 
 def get(provider: str, key: str, default: str = "") -> str:
@@ -113,22 +75,11 @@ def set_field(provider: str, key: str, value: str):
 
 
 def get_status(provider: str):
-    """None = not yet probed; True = available; False = unavailable."""
     return _status.get(provider)
 
 
 def get_ollama_models() -> list:
     return list(_ollama_models)
-
-
-def all_model_options() -> list:
-    """Models for scenario picker: Ollama (if running) + cloud (only if key set)."""
-    result = [f"ollama:{m}" for m in _ollama_models]
-    for entry in CLOUD_MODELS:
-        provider = entry.split(":")[0]
-        if _data.get(provider, {}).get("api_key", ""):
-            result.append(entry)
-    return result
 
 
 def available_providers() -> list:
@@ -143,7 +94,7 @@ def available_providers() -> list:
 
 
 def models_for_provider(pid: str) -> list:
-    """Model name strings (no provider: prefix) for a given provider id."""
+    """Model names (no provider: prefix) for a given provider."""
     if pid == "ollama":
         return list(_ollama_models)
     return [
@@ -166,13 +117,11 @@ def _notify():
 
 
 def probe_all():
-    """Start async availability check for all providers."""
     threading.Thread(target=_probe_ollama, daemon=True, name="hush-probe-ollama").start()
     threading.Thread(target=_probe_cloud,  daemon=True, name="hush-probe-cloud").start()
 
 
 def probe_ollama():
-    """Re-probe Ollama only (after URL change)."""
     threading.Thread(target=_probe_ollama, daemon=True, name="hush-probe-ollama").start()
 
 
@@ -202,7 +151,6 @@ def _probe_cloud():
 
 
 def mask_key(key: str) -> str:
-    """Show first 8 + last 4 chars of an API key."""
     if not key:
         return ""
     if len(key) <= 14:
