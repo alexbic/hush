@@ -37,8 +37,10 @@ CLOUD_MODELS = [
     "anthropic:claude-opus-4-8",
     "openai:gpt-4o-mini",
     "openai:gpt-4o",
-    "glm:glm-4-flash",
-    "glm:glm-4-air",
+    "glm:glm-5-turbo",
+    "glm:glm-5",
+    "glm:glm-4.5",
+    "glm:glm-4.5-air",
 ]
 
 

@@ -158,8 +158,13 @@ def _openai_compat(system: str, text: str, model: str, provider: str) -> str:
             "Authorization": f"Bearer {api_key}",
         },
     )
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        data = json.loads(resp.read())
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            data = json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")
+        _log(f"  HTTP {e.code} body: {body[:300]}")
+        raise
     return data["choices"][0]["message"]["content"].strip()
 
 
