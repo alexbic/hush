@@ -675,10 +675,35 @@ def _smart_snap_panel(key, panel):
         if s not in order:
             order.append(s)
 
+    _other_panels = [("cfg","_cfg_panel"),("hist","_hist_panel"),
+                     ("editor","_sc_editor_panel"),("providers","_prov_panel")]
+
+    def _resolve_overlap(nx, ny):
+        """If (nx,ny) overlaps another visible panel, stack below it."""
+        for _ok, _op in _other_panels:
+            if _ok == key:
+                continue
+            _op_ref = globals().get(_op)
+            if not _op_ref:
+                continue
+            try:
+                if not _op_ref.isVisible():
+                    continue
+                of = _op_ref.frame()
+                if (nx < of.origin.x + of.size.width + 2 and nx + pw > of.origin.x - 2 and
+                        ny < of.origin.y + of.size.height + 2 and ny + ph > of.origin.y - 2):
+                    ny = of.origin.y - ph - GAP
+            except Exception:
+                pass
+        return nx, ny
+
     # Pick first candidate that fits fully on-screen
     for side in order:
         nx, ny = candidates[side]
         if nx >= vx and ny >= vy and nx + pw <= vx + vw and ny + ph <= vy + vh:
+            nx, ny = _resolve_overlap(nx, ny)
+            nx = max(vx, min(nx, vx + vw - pw))
+            ny = max(vy, min(ny, vy + vh - ph))
             panel.setFrameOrigin_(AppKit.NSMakePoint(nx, ny))
             if _magnet_on.get(key, False):
                 _magnet_offset[key] = (nx - wx, ny - wy)
@@ -690,6 +715,9 @@ def _smart_snap_panel(key, panel):
     # Fallback: clamp to visible screen area
     nx = max(vx, min(px, vx + vw - pw))
     ny = max(vy, min(py, vy + vh - ph))
+    nx, ny = _resolve_overlap(nx, ny)
+    nx = max(vx, min(nx, vx + vw - pw))
+    ny = max(vy, min(ny, vy + vh - ph))
     panel.setFrameOrigin_(AppKit.NSMakePoint(nx, ny))
     if _magnet_on.get(key, False):
         _magnet_offset[key] = (nx - wx, ny - wy)
@@ -3593,7 +3621,8 @@ _hist_panel       = None   # drop panel for history
 _hist_panel_side  = None   # "below" | "right" | "left" — current placement
 _hist_filter      = "blocks"   # "mixed" | "sessions" | "blocks" — active tab
 _cfg_panel        = None   # drop panel for settings (stays open during editing)
-_pre_cfg_win_y    = None   # main window Y saved before cfg panel shifts it down
+_pre_cfg_win_y    = None   # (legacy, unused — panels no longer shift main window)
+_panels_reset_open = False  # True after 🎯 press opens all; second press closes all
 _sc_editor_panel  = None   # scenario editor panel (covers main window while editing)
 _editing_scenario = False  # True while scenario editor is open
 _sc_edit_refs    = {}     # {tf_ru/en/es, pop_provider, pop_model, tv_prompt, sc_idx, original}
@@ -4472,8 +4501,22 @@ def _reposition_attached_panels():
 
 
 def _reset_panels_layout():
-    """Reset: all magnets ON, open all panels at default positions around main window."""
-    global _magnet_on, _magnet_offset, _magnet_free_pos
+    """🎯 first press: open all panels at default positions. Second press: close all."""
+    global _magnet_on, _magnet_offset, _magnet_free_pos, _panels_reset_open
+
+    if _panels_reset_open:
+        # Second press — close everything except main window
+        _panels_reset_open = False
+        _close_editor_now()
+        _close_providers_panel()
+        if _hist_panel and _hist_panel.isVisible():
+            _hist_panel.orderOut_(None)
+            _cfg_saved.setdefault("panels_open", {})["hist"] = False
+            _save_settings()
+        _close_cfg_panel()
+        return
+
+    _panels_reset_open = True
     _magnet_on       = dict(_MAGNET_DEFAULT)   # all True
     _magnet_offset   = {}
     _magnet_free_pos = {}
@@ -4487,16 +4530,16 @@ def _reset_panels_layout():
     # Open panels that aren't visible yet
     if not (_cfg_panel and _cfg_panel.isVisible()):
         _toggle_cfg_panel()
-    if not (_hist_panel and _hist_panel.isVisible()):
-        history = _on_history_cb() if _on_history_cb else []
-        _show_hist_panel(history)
     if not (_prov_panel and _prov_panel.isVisible()):
         _toggle_providers_panel()
-    if not (_sc_editor_panel and _sc_editor_panel.isVisible()):
-        sc_list = _st.get("scenarios", [])
-        if sc_list:
-            _show_sc_editor_impl(0)
-    # Reposition ALL attached panels to fresh default offsets
+    sc_list = _st.get("scenarios", [])
+    if sc_list and not (_sc_editor_panel and _sc_editor_panel.isVisible()):
+        _show_sc_editor_impl(0)
+    history = _on_history_cb() if _on_history_cb else []
+    if not (_hist_panel and _hist_panel.isVisible()):
+        _show_hist_panel(history)
+    # Clear offsets again so _reposition_attached_panels uses clean defaults
+    _magnet_offset = {}
     _reposition_attached_panels()
 
 
@@ -5999,17 +6042,12 @@ def _toggle_cfg_panel():
         dx, dy = _magnet_offset["cfg"]
         px = mf.origin.x + dx
         py = mf.origin.y + dy
-        # Slide main window down if panel would go off-screen
+        # If panel would go off-screen above, snap it below main window instead
         vis = AppKit.NSScreen.mainScreen().visibleFrame()
         top = py + ph
         if top > vis.origin.y + vis.size.height:
-            overflow = top - (vis.origin.y + vis.size.height)
-            new_win_y = max(vis.origin.y, mf.origin.y - overflow)
-            _pre_cfg_win_y = mf.origin.y
-            _win.setFrameOrigin_(AppKit.NSMakePoint(mf.origin.x, new_win_y))
-            py = new_win_y + dy
-            if _hist_panel and _hist_panel.isVisible():
-                _reposition_attached_panels()
+            py = int(mf.origin.y - ph - CFG_GAP)
+            _magnet_offset["cfg"] = (dx, -(ph + CFG_GAP))
     else:
         if "cfg" in _magnet_free_pos:
             px, py = _magnet_free_pos["cfg"]
@@ -7720,7 +7758,8 @@ def hide(force: bool = False):
             _lbl.setTextColor_(C_IDLE)
         if _hist_panel and _hist_panel.isVisible():
             _hist_panel.orderOut_(None)
-        _close_cfg_panel()   # restores win Y before saving position
+        _close_editor_now()
+        _close_cfg_panel()
         _close_providers_panel()
         _win_save_pos()
         _win.orderOut_(None)
