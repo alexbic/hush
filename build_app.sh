@@ -71,7 +71,6 @@ if [ "${_use_bash_launcher}" = "1" ]; then
 #!/bin/bash
 MACOS_DIR="$(cd "$(dirname "$0")" && pwd)"
 RESOURCES="$(cd "$MACOS_DIR/../Resources" && pwd)"
-[ -f "$HOME/.hush_env" ] && source "$HOME/.hush_env"
 export RESOURCEPATH="$RESOURCES"
 PYTHON="$(command -v python3.14 2>/dev/null || command -v python3 2>/dev/null || echo python3)"
 exec "$PYTHON" "$RESOURCES/main.py" "$@"
@@ -177,4 +176,4 @@ echo "Запуск:  open \"$SRC_DIR/$APP\""
 echo "Или перенеси в /Applications и запускай оттуда."
 echo ""
 echo "Примечание: требует python3.14 из Homebrew."
-echo "API ключи (опционально): ~/.hush_env"
+echo "API ключи: кнопка [КЛЮЧИ] в меню приложения → ~/.config/hush/providers.json"
