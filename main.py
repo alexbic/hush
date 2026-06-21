@@ -184,7 +184,9 @@ def _on_session_end():
     global _current_session_id, _full_mode_standby
     _current_session_id = None
     _full_mode_standby = False
-    _state["silent"] = True   # after any window close, default back to silent mode
+    _state["silent"] = True
+    with _accum_lock:
+        _accum_texts.clear()   # clear leftover blocks so _is_session_active() → False
 
 def _get_history():
     """Return only live (non-deleted) items for display."""
