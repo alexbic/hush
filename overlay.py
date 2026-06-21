@@ -2994,6 +2994,9 @@ class BtnTarget(AppKit.NSObject):
         pid = pop_prov.titleOfSelectedItem() or ""
         _populate_model_popup(pop_model, pid)
 
+    def resetLayout_(self, sender):
+        _main(lambda: _reset_panels_layout())
+
     def cfgInfo_(self, sender):
         """Toggle About card as standalone centered panel."""
         if _about_panel and _about_panel.isVisible():
@@ -3963,7 +3966,6 @@ def _update_cursor_pos():
 
 def _toggle_expand():
     global _expanded, _font_size_saved
-    _close_all_panels()   # close history/cfg before resize
     if not _expanded:
         _expanded = True
         _font_size_saved = _st["font_size"]
@@ -3991,6 +3993,8 @@ def _toggle_expand():
             _expand_btn.setAttributedTitle_(_atitle("[□]", size=12, color=C_GREEN_DIM))
         if _win:
             _win.setAlphaValue_(_st["opacity"])
+    # Reposition attached panels (their SIZE stays unchanged — 440×440)
+    _reposition_attached_panels()
 
 
 def _do_win_resize(new_h, new_w=None, animate=True):
@@ -4396,6 +4400,34 @@ def _reposition_attached_panels():
             pass
 
 
+def _reset_panels_layout():
+    """Reset all panels to default positions around the main window."""
+    global _magnet_offset, _magnet_free_pos
+    _magnet_offset = {}
+    _magnet_free_pos = {}
+    _reposition_attached_panels()
+    win = globals().get("_win")
+    if not win:
+        return
+    mf  = win.frame()
+    GAP = 6
+    _free_defaults = {
+        "editor":    (mf.origin.x + mf.size.width + GAP, mf.origin.y),
+        "providers": (mf.origin.x - mf.size.width - GAP, mf.origin.y),
+    }
+    for key, panel_name in [("editor", "_sc_editor_panel"), ("providers", "_prov_panel")]:
+        if _magnet_on.get(key, False):
+            continue
+        panel = globals().get(panel_name)
+        if panel and panel.isVisible():
+            try:
+                px, py = _free_defaults.get(key, (mf.origin.x, mf.origin.y))
+                panel.setFrameOrigin_(AppKit.NSMakePoint(px, py))
+            except Exception:
+                pass
+    _magnet_save()
+
+
 def _restore_overlay_after_panel():
     """Restore overlay state + focus after a drop panel is closed via Escape."""
     if _st.get("mode") == "history_open":
@@ -4766,31 +4798,33 @@ def _show_hist_panel(history):
     screen  = AppKit.NSScreen.mainScreen()
     vis     = screen.visibleFrame() if screen else None
 
-    # Determine placement: below (preferred) or side (fallback)
-    ph_dyn   = min(DP_HIST_MAX_H, max(FIXED + 40, FIXED + n_filtered * DP_HIST_ITEM_H))
-    py_below = mf.origin.y - ph_dyn - gap
-    fits_below = (vis is None or py_below >= vis.origin.y)
-
-    if fits_below:
-        ph           = ph_dyn
-        px           = mf.origin.x + mf.size.width - pw   # right-aligned to main window
-        panel_origin = AppKit.NSMakePoint(px, py_below)
-        _hist_panel_side = "below"
+    # Fixed square size; open to the LEFT of main window
+    ph        = pw   # square panel (same W×H as main window width)
+    GAP_H     = 6
+    if _magnet_on.get("hist", False) and "hist" in _magnet_offset:
+        dx, dy = _magnet_offset["hist"]
+        px = int(mf.origin.x + dx)
+        py = int(mf.origin.y + dy)
+    elif "hist" in _magnet_free_pos and not _magnet_on.get("hist", False):
+        px, py = int(_magnet_free_pos["hist"][0]), int(_magnet_free_pos["hist"][1])
     else:
-        ph       = int(mf.size.height)    # match main window height when to the side
-        px_right = mf.origin.x + mf.size.width + gap
-        px_left  = mf.origin.x - pw - gap
-        fits_right = (vis is None or px_right + pw <= vis.origin.x + vis.size.width)
+        px_left  = int(mf.origin.x - pw - GAP_H)
+        px_right = int(mf.origin.x + mf.size.width + GAP_H)
         fits_left  = (vis is None or px_left >= vis.origin.x)
-        if fits_right:
-            panel_origin     = AppKit.NSMakePoint(px_right, mf.origin.y)
-            _hist_panel_side = "right"
-        elif fits_left:
-            panel_origin     = AppKit.NSMakePoint(px_left, mf.origin.y)
-            _hist_panel_side = "left"
+        if fits_left:
+            px = px_left
         else:
-            _hist_panel_side = None
-            return   # no room anywhere
+            px = px_right
+        py = int(mf.origin.y)
+        if _magnet_on.get("hist", True):
+            _magnet_offset["hist"] = (px - int(mf.origin.x), 0)
+        else:
+            _magnet_free_pos["hist"] = (px, py)
+    if vis:
+        py = min(py, int(vis.origin.y + vis.size.height) - ph)
+        py = max(py, int(vis.origin.y))
+    panel_origin  = AppKit.NSMakePoint(px, py)
+    _hist_panel_side = "left"
 
     if _hist_panel:
         _hist_panel.orderOut_(None)
@@ -5578,7 +5612,7 @@ def _toggle_cfg_panel():
     sc_box_y  = QUIT_H + VGAP
     hk_th_y   = sc_box_y + SC_BOX_H + VGAP
     box_y     = hk_th_y + HK_TH_H + VGAP
-    ph        = box_y + BOX_H + MARGIN_T
+    ph        = pw   # square panel (same W×H = 440×440)
 
     _close_cfg_panel_rebuild()
     _cfg_panel = _make_drop_panel(pw, ph)
@@ -5619,6 +5653,13 @@ def _toggle_cfg_panel():
     btn_keys.setAction_(BtnTarget.cfgProviders_)
     btn_keys.setToolTip_("Настройка провайдеров и API ключей")
     cv.addSubview_(btn_keys)
+
+    btn_rst = _mkbtn("⌖", color=C_GREEN_DIM, size=12)
+    btn_rst.setFrame_(AppKit.NSMakeRect(pw - INFO_SZ - KEYS_W - INFO_SZ - 20, ph - INFO_SZ - 4, INFO_SZ, INFO_SZ))
+    btn_rst.setTarget_(_btn_t)
+    btn_rst.setAction_(BtnTarget.resetLayout_)
+    btn_rst.setToolTip_("Расставить все окна по умолчанию")
+    cv.addSubview_(btn_rst)
 
     _mkmagnet_btn("cfg", cv, 6, ph - INFO_SZ - 4, 22, INFO_SZ)
 
@@ -7277,21 +7318,10 @@ def _toggle_providers_panel():
     GAP    = 4
     BTN_H  = 22
 
-    # ── Pre-calculate content height ──────────────────────────────────────────
-    HDR_H  = LBL_H + 5 + 1 + 8
-    SC_OLLAMA = (LBL_H+GAP) + (TF_H+10) + 1 + 8          # url only, no model combo
-    SC_ANTHR  = (LBL_H+GAP) + (TF_H+10) + 1 + 8
-    SC_OPENAI = (LBL_H+GAP) + (TF_H+GAP) + (TF_H+10) + 1 + 8
-    SC_GLM    = (LBL_H+GAP) + (TF_H+GAP) + (TF_H+16)
-    FOOT_H    = 1 + 6 + BTN_H + MARGIN
-    NEEDED_H  = 8 + HDR_H + SC_OLLAMA + SC_ANTHR + SC_OPENAI + SC_GLM + FOOT_H
-
-    # ── Clamp to visible screen height ────────────────────────────────────────
+    # ── Fixed square size (same as main window width) ─────────────────────────
     screen = _win.screen() or AppKit.NSScreen.mainScreen()
     vis    = screen.visibleFrame() if screen else AppKit.NSMakeRect(0, 0, 1440, 900)
-    MAX_H  = int(vis.size.height) - 20
-    PH     = min(NEEDED_H, MAX_H)
-    needs_scroll = NEEDED_H > PH
+    PH     = PW   # square panel
 
     # ── Panel ─────────────────────────────────────────────────────────────────
     panel = _EditorPanel.alloc().initWithContentRect_styleMask_backing_defer_(
@@ -7394,9 +7424,22 @@ def _toggle_providers_panel():
     btn_save.setAction_(BtnTarget.provSave_)
     cv.addSubview_(btn_save)
 
-    # ── Position on screen ────────────────────────────────────────────────────
-    px = int(mf.origin.x)
-    py = int(mf.origin.y)
+    # ── Position to the LEFT of main window ──────────────────────────────────
+    GAP_X = 6
+    if _magnet_on.get("providers", False) and "providers" in _magnet_offset:
+        dx, dy = _magnet_offset["providers"]
+        px = int(mf.origin.x + dx)
+        py = int(mf.origin.y + dy)
+    elif "providers" in _magnet_free_pos and not _magnet_on.get("providers", False):
+        px, py = _magnet_free_pos["providers"]
+        px, py = int(px), int(py)
+    else:
+        px = int(mf.origin.x - PW - GAP_X)
+        py = int(mf.origin.y)
+        if not _magnet_on.get("providers", False):
+            _magnet_free_pos["providers"] = (px, py)
+        else:
+            _magnet_offset["providers"] = (-PW - GAP_X, 0)
     py = min(py, int(vis.origin.y + vis.size.height) - PH)
     py = max(py, int(vis.origin.y))
     panel.setFrameOrigin_(AppKit.NSMakePoint(px, py))
