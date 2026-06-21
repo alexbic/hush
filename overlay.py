@@ -5374,7 +5374,26 @@ def _toggle_cfg_panel():
     sc_buttons = []
     for i, sc in enumerate(scenarios):
         label = _sc_label_for(sc, cur_lang)
-        if sc.get("silent"):
+        if sc.get("full_default"):
+            # full_default takes priority — amber ★ markers
+            ps = AppKit.NSMutableParagraphStyle.alloc().init()
+            ps.setAlignment_(AppKit.NSTextAlignmentCenter)
+            title = AppKit.NSMutableAttributedString.alloc().init()
+            star_attrs = {
+                AppKit.NSFontAttributeName:            _mono(9),
+                AppKit.NSForegroundColorAttributeName: C_AMBER_DIM,
+                AppKit.NSParagraphStyleAttributeName:  ps,
+            }
+            title.appendAttributedString_(
+                AppKit.NSAttributedString.alloc().initWithString_attributes_("★", star_attrs))
+            title.appendAttributedString_(
+                AppKit.NSAttributedString.alloc().initWithString_attributes_(label, star_attrs))
+            title.appendAttributedString_(
+                AppKit.NSAttributedString.alloc().initWithString_attributes_("★", star_attrs))
+            btn = _mkbtn("", color=C_AMBER_DIM, size=9)
+            btn.setAttributedTitle_(title)
+        elif sc.get("silent"):
+            # silent-only scenario — cyan · markers
             ps = AppKit.NSMutableParagraphStyle.alloc().init()
             ps.setAlignment_(AppKit.NSTextAlignmentCenter)
             title = AppKit.NSMutableAttributedString.alloc().init()
@@ -5395,23 +5414,6 @@ def _toggle_cfg_panel():
             title.appendAttributedString_(
                 AppKit.NSAttributedString.alloc().initWithString_attributes_("·", dot_attrs))
             btn = _mkbtn("", color=C_GREEN, size=9)
-            btn.setAttributedTitle_(title)
-        elif sc.get("full_default"):
-            ps = AppKit.NSMutableParagraphStyle.alloc().init()
-            ps.setAlignment_(AppKit.NSTextAlignmentCenter)
-            title = AppKit.NSMutableAttributedString.alloc().init()
-            star_attrs = {
-                AppKit.NSFontAttributeName:            _mono(9),
-                AppKit.NSForegroundColorAttributeName: C_AMBER_DIM,
-                AppKit.NSParagraphStyleAttributeName:  ps,
-            }
-            title.appendAttributedString_(
-                AppKit.NSAttributedString.alloc().initWithString_attributes_("★", star_attrs))
-            title.appendAttributedString_(
-                AppKit.NSAttributedString.alloc().initWithString_attributes_(label, star_attrs))
-            title.appendAttributedString_(
-                AppKit.NSAttributedString.alloc().initWithString_attributes_("★", star_attrs))
-            btn = _mkbtn("", color=C_AMBER_DIM, size=9)
             btn.setAttributedTitle_(title)
         else:
             btn = _mkbtn(label, color=C_GREEN, size=9)
