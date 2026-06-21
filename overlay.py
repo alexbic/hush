@@ -699,7 +699,8 @@ def _first_free_slot_on_side(side, excl_key, wx, wy, ww, wh, pw, ph, perp=0):
 def _snap_attached_panels_live(new_wx, new_wy):
     """During main-window drag: panels that go off-screen jump to the opposite
     side of their CURRENT AXIS (left↔right or top↔bottom), preserving their
-    perpendicular lane so panels never mix axes."""
+    perpendicular lane.  Multiple panels snapping at once are processed in
+    slot order (closest-to-main first) to preserve their relative sequence."""
     win = globals().get("_win")
     if not win:
         return
@@ -713,6 +714,8 @@ def _snap_attached_panels_live(new_wx, new_wy):
     ww, wh = mf.size.width, mf.size.height
     MARGIN = 20
 
+    # ── Phase 1: collect all panels that need snapping ───────────────────────
+    candidates = []   # (slot_dist, key, cur_side, target, dx, dy, pw, ph)
     for key, pname in [("cfg","_cfg_panel"), ("hist","_hist_panel"),
                         ("editor","_sc_editor_panel"), ("providers","_prov_panel")]:
         if not _magnet_on.get(key, False) or key not in _magnet_offset:
@@ -727,26 +730,27 @@ def _snap_attached_panels_live(new_wx, new_wy):
             pw, ph = pf.size.width, pf.size.height
         except Exception:
             continue
-
         dx, dy = _magnet_offset[key]
         px, py = new_wx + dx, new_wy + dy
         off_screen = (px + pw > vx + vw + MARGIN or px < vx - MARGIN or
                       py + ph > vy + vh + MARGIN or py < vy - MARGIN)
         if not off_screen:
             continue
-
-        # Snap to opposite of panel's CURRENT SIDE, not just any off-screen edge
         cur_side = _panel_side(key, ww, wh, pw, ph)
         if cur_side is None:
             continue
-        target = _OPP[cur_side]
+        # Slot distance = how far along its own axis the panel is from main window
+        slot_dist = abs(dx) if cur_side in ("left", "right") else abs(dy)
+        candidates.append((slot_dist, key, cur_side, _OPP[cur_side], dx, dy, pw, ph))
 
-        # Perpendicular component preserved (dy for left/right, dx for top/bottom)
+    # ── Phase 2: snap in slot order (closest first) to preserve sequence ─────
+    candidates.sort(key=lambda c: c[0])
+    for _, key, cur_side, target, dx, dy, pw, ph in candidates:
         perp = dy if cur_side in ("left", "right") else dx
         nx, ny = _first_free_slot_on_side(target, key, new_wx, new_wy, ww, wh, pw, ph, perp)
         nx = max(vx, min(nx, vx + vw - pw))
         ny = max(vy, min(ny, vy + vh - ph))
-        _magnet_offset[key] = (nx - new_wx, ny - new_wy)
+        _magnet_offset[key] = (nx - new_wx, ny - new_wy)  # updated immediately so next panel sees it
 
 
 def _smart_snap_panel(key, panel):
@@ -1950,6 +1954,20 @@ class DragPanel(AppKit.NSPanel):
                 self._wd_a = True
                 new_x = self._wd_o.x + dx
                 new_y = self._wd_o.y + dy
+                # Clamp main window so at least 40 px stay visible on any screen
+                try:
+                    GRAB = 40
+                    wf   = self.frame()
+                    ww_  = wf.size.width
+                    scrs = AppKit.NSScreen.screens() or [AppKit.NSScreen.mainScreen()]
+                    x1   = min(s.visibleFrame().origin.x for s in scrs)
+                    y1   = min(s.visibleFrame().origin.y for s in scrs)
+                    x2   = max(s.visibleFrame().origin.x + s.visibleFrame().size.width  for s in scrs)
+                    y2   = max(s.visibleFrame().origin.y + s.visibleFrame().size.height for s in scrs)
+                    new_x = max(x1 - ww_ + GRAB, min(new_x, x2 - GRAB))
+                    new_y = max(y1, min(new_y, y2 - GRAB))
+                except Exception:
+                    pass
                 try: _snap_attached_panels_live(new_x, new_y)
                 except Exception: pass
                 self.setFrameOrigin_(AppKit.NSMakePoint(new_x, new_y))
@@ -4583,12 +4601,12 @@ def _reposition_attached_panels():
             dx, dy = _default_offset.get(key, (0, 0))
             _magnet_offset[key] = (dx, dy)
         nx, ny = int(wo.x + dx), int(wo.y + dy)
-        # Safety: never let a "top" panel overlap the main window from above
-        if dy > 0 and ny < int(wo.y) + wh + 2:
+        # Safety only for vertical panels — check side before applying
+        side = _panel_side(key, ww, wh, ww, ph)
+        if side == "top" and ny < int(wo.y) + wh + 2:
             ny = int(wo.y) + wh + GAP
             _magnet_offset[key] = (dx, wh + GAP)
-        # Safety: never let a "bottom" panel overlap from below
-        elif dy < 0 and ny + ph > int(wo.y) - 2:
+        elif side == "bottom" and ny + ph > int(wo.y) - 2:
             ny = int(wo.y) - ph - GAP
             _magnet_offset[key] = (dx, -(ph + GAP))
         try:
