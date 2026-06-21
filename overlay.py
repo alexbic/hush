@@ -1796,7 +1796,7 @@ class TerminalTextView(AppKit.NSTextView):
                 _on_copy_cb()
         elif kc == ENTER and mods == SHIFT:
             if _on_paste_cb:
-                _on_paste_cb(mode="shift_enter")
+                _on_paste_cb()   # always raw, no full_default
         elif kc == ENTER and not mods:
             # Plain Enter → finalize manually typed text into a block
             if _tv and str(_tv.string()).strip():
@@ -2103,7 +2103,7 @@ class _BlockTV(AppKit.NSTextView):
             if _on_copy_cb: _on_copy_cb()
             return
         elif kc == ENTER and mods == SHIFT:
-            if _on_paste_cb: _on_paste_cb(mode="shift_enter")
+            if _on_paste_cb: _on_paste_cb()   # always raw
             return
 
         objc.super(_BlockTV, self).keyDown_(event)
