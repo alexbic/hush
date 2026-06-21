@@ -76,27 +76,43 @@ def _md_to_raw_attrs(md_text: str):
 
 
 def _md_to_styled_attrs(md_text: str):
-    """Render Markdown to NSAttributedString with terminal color scheme."""
+    """Render Markdown to NSAttributedString with theme-aware colors."""
     try:
         html_body = _markdown.markdown(
             md_text,
             extensions=["fenced_code", "tables", "nl2br"]
         )
         fs = _st.get("font_size", 12)
+
+        def _c(col):
+            if hasattr(col, 'redComponent'):
+                return "#{:02X}{:02X}{:02X}".format(
+                    int(col.redComponent()   * 255),
+                    int(col.greenComponent() * 255),
+                    int(col.blueComponent()  * 255))
+            return "#{:02X}{:02X}{:02X}".format(
+                int(col[0]*255), int(col[1]*255), int(col[2]*255))
+
+        tx  = _c(C_TEXT)
+        acc = _c(C_GREEN)
+        dim = _c(C_GREEN_DIM)
+
         styled = (
             '<html><head><meta charset="utf-8"><style>'
-            f'body{{font-family:"SF Mono",monospace;font-size:{fs}px;'
-            f'color:#54FF54;background:transparent;margin:0;padding:0;}}'
-            f'h1{{font-size:{fs+4}px;color:#FFFFFF;font-weight:bold;margin:4px 0;}}'
-            f'h2{{font-size:{fs+2}px;color:#CCFFCC;font-weight:bold;margin:3px 0;}}'
-            f'h3{{font-size:{fs+1}px;color:#AAFFAA;font-weight:bold;margin:2px 0;}}'
-            'strong{color:#AAFFAA;font-weight:bold;}'
-            'em{color:#55FFFF;font-style:italic;}'
-            'code{color:#FFFF88;font-family:"SF Mono",monospace;}'
-            'pre{color:#FFFF88;padding:4px;border-left:2px solid #2ECC71;}'
-            'a{color:#55AAFF;text-decoration:none;}'
+            f'body{{font-family:"-apple-system","SF Pro Text","Helvetica Neue",sans-serif;'
+            f'font-size:{fs}px;font-weight:300;'
+            f'color:{tx};background:transparent;margin:0;padding:0;}}'
+            f'h1{{font-size:{fs+3}px;color:{tx};font-weight:600;margin:4px 0;}}'
+            f'h2{{font-size:{fs+1}px;color:{tx};font-weight:500;margin:3px 0;}}'
+            f'h3{{font-size:{fs}px;color:{tx};font-weight:500;margin:2px 0;}}'
+            f'strong{{color:{tx};font-weight:600;}}'
+            f'em{{color:{acc};font-style:italic;font-weight:300;}}'
+            f'code{{color:{dim};font-family:"SF Mono","Menlo",monospace;font-size:{fs-1}px;}}'
+            f'pre{{color:{dim};font-family:"SF Mono","Menlo",monospace;font-size:{fs-1}px;'
+            f'padding:4px;border-left:2px solid {acc};}}'
+            f'a{{color:{acc};text-decoration:none;}}'
             'li{margin:1px 0;}p{margin:2px 0;}'
-            'hr{border:none;border-top:1px solid #336633;}'
+            f'hr{{border:none;border-top:1px solid {dim};}}'
             f'</style></head><body>{html_body}</body></html>'
         )
         ns_data = AppKit.NSData.dataWithBytes_length_(
@@ -230,13 +246,16 @@ def _save_settings():
     try:
         os.makedirs(os.path.dirname(SETTINGS_FILE), exist_ok=True)
         data = {
-            "opacity":      _st["opacity"],
-            "font_size":    _st["font_size"],
-            "lang":         _st.get("lang", "ru"),
-            "hotkey_copy":  _st.get("hotkey_copy", "ctrl"),
-            "theme":        _st.get("theme", "emerald"),
-            "silent_pos":   _cfg_saved.get("silent_pos", {}),
-            "win_pos":      _cfg_saved.get("win_pos", {}),
+            "opacity":       _st["opacity"],
+            "font_size":     _st["font_size"],
+            "lang":          _st.get("lang", "ru"),
+            "hotkey_copy":   _st.get("hotkey_copy", "ctrl"),
+            "theme":         _st.get("theme", "emerald"),
+            "silent_pos":    _cfg_saved.get("silent_pos", {}),
+            "win_pos":       _cfg_saved.get("win_pos", {}),
+            "magnet_on":     _cfg_saved.get("magnet_on",     {}),
+            "magnet_offset": _cfg_saved.get("magnet_offset", {}),
+            "magnet_free":   _cfg_saved.get("magnet_free",   {}),
         }
         with open(SETTINGS_FILE, "w") as f:
             json.dump(data, f)
@@ -501,6 +520,142 @@ def _win_save_pos():
     key = _screen_key()
     _cfg_saved.setdefault("win_pos", {})[key] = {"x": fr.origin.x, "y": fr.origin.y}
     _save_settings()
+
+
+# ── Magnet window system ───────────────────────────────────────────────────────
+
+_PANEL_GAP = 10
+
+def _repel_from_others(panel):
+    """Push panel away from overlapping windows (anti-overlap)."""
+    others = [p for p in (_win, _cfg_panel, _prov_panel, _sc_editor_panel)
+              if p is not None and p is not panel and p.isVisible()]
+    if not others:
+        return
+    fr = panel.frame()
+    x, y, w, h = fr.origin.x, fr.origin.y, fr.size.width, fr.size.height
+    for _ in range(8):
+        moved = False
+        for other in others:
+            of = other.frame()
+            ox, oy, ow, oh = of.origin.x, of.origin.y, of.size.width, of.size.height
+            G = _PANEL_GAP
+            h_left  = x + w + G - ox
+            h_right = ox + ow + G - x
+            v_top   = y + h + G - oy
+            v_bot   = oy + oh + G - y
+            if h_left > 0 and h_right > 0 and v_top > 0 and v_bot > 0:
+                candidates = [
+                    (h_right,  0),
+                    (-h_left,  0),
+                    (0,  v_bot),
+                    (0, -v_top),
+                ]
+                dx, dy = min(candidates, key=lambda c: c[0]**2 + c[1]**2)
+                x += dx; y += dy; moved = True
+        if not moved:
+            break
+    panel.setFrameOrigin_(AppKit.NSMakePoint(x, y))
+
+
+_MAGNET_KEYS    = ["cfg", "hist", "editor", "providers"]  # tag=index
+_MAGNET_DEFAULT = {"cfg": True, "hist": True, "editor": False, "providers": False}
+_magnet_on      = dict(_MAGNET_DEFAULT)
+_magnet_offset  = {}   # {key: (dx, dy)} from _win origin when ON
+_magnet_free_pos = {}  # {key: (x, y)} saved free position when OFF
+_magnet_btns    = {}   # {key: NSButton} for UI updates
+
+
+def _magnet_save():
+    _cfg_saved["magnet_on"]     = dict(_magnet_on)
+    _cfg_saved["magnet_offset"] = {k: list(v) for k, v in _magnet_offset.items()}
+    _cfg_saved["magnet_free"]   = {k: list(v) for k, v in _magnet_free_pos.items()}
+    _save_settings()
+
+def _magnet_load():
+    global _magnet_on, _magnet_offset, _magnet_free_pos
+    loaded = _cfg_saved.get("magnet_on", {})
+    _magnet_on = {k: loaded.get(k, _MAGNET_DEFAULT.get(k, False)) for k in _MAGNET_DEFAULT}
+    raw = _cfg_saved.get("magnet_offset", {})
+    _magnet_offset = {k: tuple(v) for k, v in raw.items()}
+    raw = _cfg_saved.get("magnet_free", {})
+    _magnet_free_pos = {k: tuple(v) for k, v in raw.items()}
+
+def _panel_by_key(key):
+    return {"cfg":       globals().get("_cfg_panel"),
+            "hist":      globals().get("_hist_panel"),
+            "editor":    globals().get("_sc_editor_panel"),
+            "providers": globals().get("_prov_panel")}.get(key)
+
+def _toggle_magnet(key):
+    panel  = _panel_by_key(key)
+    was_on = _magnet_on.get(key, False)
+    if was_on:
+        if panel:
+            try:
+                pf = panel.frame()
+                _magnet_free_pos[key] = (pf.origin.x, pf.origin.y)
+            except Exception:
+                pass
+        _magnet_on[key] = False
+        if key in _magnet_free_pos and panel:
+            fx, fy = _magnet_free_pos[key]
+            try:
+                panel.setFrameOrigin_(AppKit.NSMakePoint(fx, fy))
+            except Exception:
+                pass
+    else:
+        win = globals().get("_win")
+        if panel and win:
+            try:
+                pf = panel.frame()
+                wf = win.frame()
+                _magnet_offset[key] = (pf.origin.x - wf.origin.x, pf.origin.y - wf.origin.y)
+            except Exception:
+                pass
+        _magnet_on[key] = True
+    _magnet_save()
+    _update_magnet_btn(key)
+
+def _update_magnet_btn(key):
+    btn = _magnet_btns.get(key)
+    if not btn:
+        return
+    try:
+        is_on = _magnet_on.get(key, False)
+        col   = C_GREEN_BR if is_on else C_GREEN_DIM
+        lbl   = "[+]" if is_on else "[-]"
+        btn.setAttributedTitle_(_atitle(lbl, size=8, color=col))
+    except Exception:
+        pass
+
+def _update_panel_drag_end(key, panel):
+    win = globals().get("_win")
+    if not panel or not win:
+        return
+    try:
+        pf = panel.frame()
+        if _magnet_on.get(key, False):
+            wf = win.frame()
+            _magnet_offset[key] = (pf.origin.x - wf.origin.x, pf.origin.y - wf.origin.y)
+        else:
+            _magnet_free_pos[key] = (pf.origin.x, pf.origin.y)
+        _magnet_save()
+    except Exception:
+        pass
+
+def _mkmagnet_btn(key, cv, x, y, w=28, h=16):
+    is_on = _magnet_on.get(key, False)
+    lbl   = "[+]" if is_on else "[-]"
+    col   = C_GREEN_BR if is_on else C_GREEN_DIM
+    btn   = _mkbtn(lbl, color=col, size=8)
+    btn.setFrame_(AppKit.NSMakeRect(x, y, w, h))
+    btn.setTag_(_MAGNET_KEYS.index(key))
+    btn.setTarget_(_btn_t)
+    btn.setAction_(BtnTarget.panelMagnet_)
+    cv.addSubview_(btn)
+    _magnet_btns[key] = btn
+    return btn
 
 
 _WIN_ALPHA = 1.0    # pill (silent mode) is always fully opaque
@@ -801,6 +956,18 @@ def _apply_theme_to_all_windows():
             cv = sw.contentView()
             if cv:
                 _redisplay_tree(cv)
+
+    # Re-render rich blocks with new theme colors
+    for _b in list(globals().get("_rich_blocks", [])):
+        try:
+            _b._rendered = _md_to_styled_attrs(_b._md_text)
+            if _b._inner_tv and not getattr(_b, "_md_mode", False):
+                _b._inner_tv.textStorage().setAttributedString_(_b._rendered)
+        except Exception:
+            pass
+    # Update magnet button colors
+    for _mkey in list(_magnet_btns):
+        _update_magnet_btn(_mkey)
 
 def _apply_all_panels_alpha():
     """Apply _st['opacity'] to _win and all open panels. Silent strip (_silent_win) is excluded."""
@@ -1648,21 +1815,40 @@ class _DropPanel(AppKit.NSPanel):
     def sendEvent_(self, event):
         _LD = 1; _LU = 2; _LDRAG = 6; _THRESH2 = 25.0
         t = event.type()
-        w = globals().get("_win")
+        w   = globals().get("_win")
+        key = getattr(self, '_panel_key', None)
+        is_attached = _magnet_on.get(key, True) if key else True
         if t == _LD:
             self._wd_s = AppKit.NSEvent.mouseLocation()
-            self._wd_o = w.frame().origin if w else None
+            if is_attached and w:
+                self._wd_o = w.frame().origin
+            else:
+                self._wd_o = self.frame().origin
             self._wd_a = False
-        elif t == _LDRAG and getattr(self, '_wd_s', None) is not None and w and self._wd_o is not None:
+        elif t == _LDRAG and getattr(self, '_wd_s', None) is not None and self._wd_o is not None:
             cur = AppKit.NSEvent.mouseLocation()
             dx  = cur.x - self._wd_s.x
             dy  = cur.y - self._wd_s.y
             if self._wd_a or dx*dx + dy*dy > _THRESH2:
                 self._wd_a = True
-                w.setFrameOrigin_(AppKit.NSMakePoint(self._wd_o.x + dx, self._wd_o.y + dy))
-                _reposition_attached_panels()
+                if is_attached and w:
+                    w.setFrameOrigin_(AppKit.NSMakePoint(self._wd_o.x + dx, self._wd_o.y + dy))
+                    _reposition_attached_panels()
+                else:
+                    self.setFrameOrigin_(AppKit.NSMakePoint(self._wd_o.x + dx, self._wd_o.y + dy))
         elif t == _LU:
+            did_drag = getattr(self, '_wd_a', False)
             self._wd_s = None; self._wd_a = False
+            if did_drag and not is_attached:
+                if key:
+                    try:
+                        _update_panel_drag_end(key, self)
+                    except Exception:
+                        pass
+                try:
+                    _repel_from_others(self)
+                except Exception:
+                    pass
         objc.super(_DropPanel, self).sendEvent_(event)
 
 
@@ -1720,7 +1906,19 @@ class _EditorPanel(AppKit.NSPanel):
                 self._wd_a = True
                 self.setFrameOrigin_(AppKit.NSMakePoint(self._wd_o.x + dx, self._wd_o.y + dy))
         elif t == _LU:
+            did_drag = getattr(self, '_wd_a', False)
             self._wd_s = None; self._wd_a = False
+            if did_drag:
+                key = getattr(self, '_panel_key', None)
+                if key:
+                    try:
+                        _update_panel_drag_end(key, self)
+                    except Exception:
+                        pass
+                try:
+                    _repel_from_others(self)
+                except Exception:
+                    pass
         objc.super(_EditorPanel, self).sendEvent_(event)
 
     def performKeyEquivalent_(self, event):
@@ -2856,6 +3054,11 @@ class BtnTarget(AppKit.NSObject):
 
     def provClose_(self, sender):
         _close_providers_panel()
+
+    def panelMagnet_(self, sender):
+        tag = sender.tag()
+        if 0 <= tag < len(_MAGNET_KEYS):
+            _main(lambda t=tag: _toggle_magnet(_MAGNET_KEYS[t]))
 
     def provSave_(self, sender):
         """Save all provider fields to providers.json and re-probe."""
@@ -4146,37 +4349,42 @@ def _hist_side_origin(pw, ph):
 
 
 def _reposition_attached_panels():
-    """Move cfg and hist panels to stay attached to main window (called on drag)."""
-    if not _win:
+    """Move magnetically-attached panels to track _win position."""
+    win = globals().get("_win")
+    if not win:
         return
-    mf  = _win.frame()
-    gap = 6
-    if _cfg_panel and _cfg_panel.isVisible():
-        pf      = _cfg_panel.frame()
-        CFG_GAP = 4
-        px = mf.origin.x + mf.size.width - pf.size.width
-        py = mf.origin.y + mf.size.height + CFG_GAP
-        _cfg_panel.setFrameOrigin_(AppKit.NSMakePoint(px, py))
-    if _hist_panel and _hist_panel.isVisible():
-        pf   = _hist_panel.frame()
-        side = _hist_panel_side
-        if side == "below":
-            px = mf.origin.x + mf.size.width - pf.size.width
-            py = mf.origin.y - pf.size.height - gap
-            screen = AppKit.NSScreen.mainScreen()
-            vis    = screen.visibleFrame() if screen else None
-            if vis and py < vis.origin.y:
-                _hist_panel.orderOut_(None)   # dragged too close to screen bottom
-            else:
-                _hist_panel.setFrameOrigin_(AppKit.NSMakePoint(px, py))
-        elif side == "right":
-            px = mf.origin.x + mf.size.width + gap
-            py = mf.origin.y
-            _hist_panel.setFrameOrigin_(AppKit.NSMakePoint(px, py))
-        elif side == "left":
-            px = mf.origin.x - pf.size.width - gap
-            py = mf.origin.y
-            _hist_panel.setFrameOrigin_(AppKit.NSMakePoint(px, py))
+    wo  = win.frame().origin
+    mf  = win.frame()
+    GAP = 6
+    _default_offset = {
+        "cfg":       (0,          mf.size.height + 4),
+        "hist":      (0,          -(mf.size.height + GAP)),
+        "editor":    (mf.size.width + GAP, 0),
+        "providers": (-(mf.size.width + GAP), 0),
+    }
+    for key, panel_name in [("cfg",       "_cfg_panel"),
+                              ("hist",      "_hist_panel"),
+                              ("editor",    "_sc_editor_panel"),
+                              ("providers", "_prov_panel")]:
+        if not _magnet_on.get(key, False):
+            continue
+        panel = globals().get(panel_name)
+        if not panel:
+            continue
+        try:
+            if not panel.isVisible():
+                continue
+        except Exception:
+            continue
+        if key in _magnet_offset:
+            dx, dy = _magnet_offset[key]
+        else:
+            dx, dy = _default_offset.get(key, (0, 0))
+            _magnet_offset[key] = (dx, dy)
+        try:
+            panel.setFrameOrigin_(AppKit.NSMakePoint(wo.x + dx, wo.y + dy))
+        except Exception:
+            pass
 
 
 def _restore_overlay_after_panel():
@@ -4580,6 +4788,7 @@ def _show_hist_panel(history):
         _hist_panel.close()
 
     _hist_panel = _make_drop_panel(pw, ph)
+    _hist_panel._panel_key = "hist"
     cv = _hist_panel.contentView()
 
     # ── Controller ───────────────────────────────────────────────────────────
@@ -4646,6 +4855,9 @@ def _show_hist_panel(history):
     all_btn.setHidden_(len(ctrl._items) == 0)
     cv.addSubview_(all_btn)
     ctrl._all_btn = all_btn
+
+    HMAG_W = 28
+    _mkmagnet_btn("hist", cv, pw - CHK_W - CHK_R - HMAG_W - 4, hdr_y + 6, HMAG_W, 18)
 
     # ── Scrollable list ───────────────────────────────────────────────────────
     scroll_y = BOT_PAD + FOOT_H
@@ -5203,6 +5415,7 @@ def _show_sc_editor_impl(sc_idx):
         },
     }
     _sc_editor_panel = panel
+    _sc_editor_panel._panel_key = "editor"
     _editing_scenario = True
 
     # Position editor exactly over main window, hide main window behind it
@@ -5360,6 +5573,7 @@ def _toggle_cfg_panel():
 
     _close_cfg_panel_rebuild()
     _cfg_panel = _make_drop_panel(pw, ph)
+    _cfg_panel._panel_key = "cfg"
     cv = _cfg_panel.contentView()
 
     # ── Fieldset box helper ───────────────────────────────────────────────────────
@@ -5396,6 +5610,9 @@ def _toggle_cfg_panel():
     btn_keys.setAction_(BtnTarget.cfgProviders_)
     btn_keys.setToolTip_("Настройка провайдеров и API ключей")
     cv.addSubview_(btn_keys)
+
+    MAG_W = 28
+    _mkmagnet_btn("cfg", cv, pw - INFO_SZ - KEYS_W - MAG_W - 20, ph - INFO_SZ - 4, MAG_W, INFO_SZ)
 
     # ── OPACITY FIELDSET (narrow) ─────────────────────────────────────────────────
     op_cv, op_cw, op_ch = _fieldset(op_x, box_y, op_w, BOX_H, _T("cfg_opacity"))
@@ -5637,23 +5854,32 @@ def _toggle_cfg_panel():
 
     _cfg_panel.setAlphaValue_(_st.get("opacity", 0.88))
 
-    # "Glued above" positioning: panel sits just above main window with small gap.
-    # If that would push panel off-screen, slide main window DOWN to make room.
+    # Position cfg panel: magnet-aware.
     CFG_GAP = 4
-    mf   = _win.frame()
-    px   = mf.origin.x + mf.size.width - pw
-    py   = mf.origin.y + mf.size.height + CFG_GAP
-    vis  = AppKit.NSScreen.mainScreen().visibleFrame()
-    top  = py + ph
-
-    if top > vis.origin.y + vis.size.height:
-        overflow = top - (vis.origin.y + vis.size.height)
-        new_win_y = max(vis.origin.y, mf.origin.y - overflow)
-        _pre_cfg_win_y = mf.origin.y
-        _win.setFrameOrigin_(AppKit.NSMakePoint(mf.origin.x, new_win_y))
-        py = new_win_y + mf.size.height + CFG_GAP
-        if _hist_panel and _hist_panel.isVisible():
-            _reposition_attached_panels()
+    mf = _win.frame()
+    if _magnet_on.get("cfg", True):
+        if "cfg" not in _magnet_offset:
+            _magnet_offset["cfg"] = (mf.size.width - pw, mf.size.height + CFG_GAP)
+        dx, dy = _magnet_offset["cfg"]
+        px = mf.origin.x + dx
+        py = mf.origin.y + dy
+        # Slide main window down if panel would go off-screen
+        vis = AppKit.NSScreen.mainScreen().visibleFrame()
+        top = py + ph
+        if top > vis.origin.y + vis.size.height:
+            overflow = top - (vis.origin.y + vis.size.height)
+            new_win_y = max(vis.origin.y, mf.origin.y - overflow)
+            _pre_cfg_win_y = mf.origin.y
+            _win.setFrameOrigin_(AppKit.NSMakePoint(mf.origin.x, new_win_y))
+            py = new_win_y + dy
+            if _hist_panel and _hist_panel.isVisible():
+                _reposition_attached_panels()
+    else:
+        if "cfg" in _magnet_free_pos:
+            px, py = _magnet_free_pos["cfg"]
+        else:
+            px = int(mf.origin.x + mf.size.width - pw)
+            py = int(mf.origin.y + mf.size.height + CFG_GAP)
 
     _cfg_panel.setFrameOrigin_(AppKit.NSMakePoint(px, py))
     AppKit.NSApp.activateIgnoringOtherApps_(True)
@@ -6424,6 +6650,9 @@ def init(on_scenario_callback, on_history_callback=None,
     _on_session_end_cb     = on_session_end_callback
     _btn_t                 = BtnTarget.alloc().init()
 
+    # Load magnet window state from saved settings
+    _magnet_load()
+
     # One-time migration: silent_sc_idx (old setting) → scenario["silent"] flag.
     # After migration, settings.json is rewritten without silent_sc_idx so this
     # never runs again.
@@ -7072,6 +7301,7 @@ def _toggle_providers_panel():
     _bg = TerminalView.alloc().initWithFrame_(AppKit.NSMakeRect(0, 0, PW, PH))
     panel.setContentView_(_bg)
     _prov_panel = panel
+    _prov_panel._panel_key = "providers"
 
     cv = _bg
 
@@ -7103,6 +7333,8 @@ def _toggle_providers_panel():
     btn_x.setTarget_(_btn_t)
     btn_x.setAction_(BtnTarget.provClose_)
     cv.addSubview_(btn_x)
+    MAG_W_P = 28
+    _mkmagnet_btn("providers", cv, PW - MARGIN - 28 - MAG_W_P - 4, y - LBL_H, MAG_W_P, LBL_H)
     y -= LBL_H + 5
     cv.addSubview_(_sep_line(MARGIN, y, FW, pin="top"))
     y -= 8
