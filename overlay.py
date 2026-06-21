@@ -682,83 +682,105 @@ _MAGNET_PANEL_GLOBALS = {
 }
 
 def _first_free_slot_on_side(side, excl_key, wx, wy, ww, wh, pw, ph, perp=0):
-    """Return absolute (nx, ny) for the first free slot on `side`, scanning
-    closest-to-main outward.  `perp` is the perpendicular offset preserved
-    from the snapping panel's current lane (dy for left/right, dx for top/bottom).
-    Two panels conflict only if they share the same lane AND same slot.
-    Only VISIBLE (open) panels count as occupying a slot — closed panels
-    don't block slots and don't create phantom gaps."""
+    """Return (nx, ny) for slot 0 on `side` if it is free, else None.
+    3×2 grid constraint: max 1 panel per cardinal side.  Closed/hidden panels
+    never block a slot."""
     G = _SNAP_GAP
     occupied = []
     for k in _MAGNET_KEYS:
         if k == excl_key or not _magnet_on.get(k, False) or k not in _magnet_offset:
             continue
-        # Panel must be actually visible; hidden panels don't block slots
         p = globals().get(_MAGNET_PANEL_GLOBALS.get(k, ""))
         if p is None or not p.isVisible():
             continue
         if _panel_side(k, ww, wh, pw, ph) == side:
             occupied.append(_magnet_offset[k])
 
-    for n in range(8):
-        if side == "top":
-            slot = wh + G + n * (ph + G)
-            same_lane = [d for d in occupied if abs(d[0] - perp) < pw]
-            if not any(abs(d[1] - slot) < ph for d in same_lane):
-                return int(wx + perp), int(wy + slot)
-        elif side == "bottom":
-            slot = -(ph + G + n * (ph + G))
-            same_lane = [d for d in occupied if abs(d[0] - perp) < pw]
-            if not any(abs(d[1] - slot) < ph for d in same_lane):
-                return int(wx + perp), int(wy + slot)
-        elif side == "right":
-            slot = ww + G + n * (pw + G)
-            same_lane = [d for d in occupied if abs(d[1] - perp) < ph]
-            if not any(abs(d[0] - slot) < pw for d in same_lane):
-                return int(wx + slot), int(wy + perp)
-        else:  # left
-            slot = -(pw + G + n * (pw + G))
-            same_lane = [d for d in occupied if abs(d[1] - perp) < ph]
-            if not any(abs(d[0] - slot) < pw for d in same_lane):
-                return int(wx + slot), int(wy + perp)
-
-    # Fallback: end of chain in this lane
-    same_lane_all = [d for d in occupied if (
-        abs(d[0] - perp) < pw if side in ("top", "bottom") else abs(d[1] - perp) < ph
-    )]
-    if side == "left":
-        base = min((d[0] for d in same_lane_all), default=-(pw + G)) - pw - G
-        return int(wx + base), int(wy + perp)
-    if side == "right":
-        base = max((d[0] for d in same_lane_all), default=ww + G) + pw + G
-        return int(wx + base), int(wy + perp)
     if side == "top":
-        base = max((d[1] for d in same_lane_all), default=wh + G) + ph + G
-        return int(wx + perp), int(wy + base)
-    base = min((d[1] for d in same_lane_all), default=-(ph + G)) - ph - G
-    return int(wx + perp), int(wy + base)
+        slot = wh + G
+        same_lane = [d for d in occupied if abs(d[0] - perp) < pw]
+        if not any(abs(d[1] - slot) < ph for d in same_lane):
+            return int(wx + perp), int(wy + slot)
+    elif side == "bottom":
+        slot = -(ph + G)
+        same_lane = [d for d in occupied if abs(d[0] - perp) < pw]
+        if not any(abs(d[1] - slot) < ph for d in same_lane):
+            return int(wx + perp), int(wy + slot)
+    elif side == "right":
+        slot = ww + G
+        same_lane = [d for d in occupied if abs(d[1] - perp) < ph]
+        if not any(abs(d[0] - slot) < pw for d in same_lane):
+            return int(wx + slot), int(wy + perp)
+    else:  # left
+        slot = -(pw + G)
+        same_lane = [d for d in occupied if abs(d[1] - perp) < ph]
+        if not any(abs(d[0] - slot) < pw for d in same_lane):
+            return int(wx + slot), int(wy + perp)
+    return None  # slot 0 occupied on this side
+
+
+def _diag_pos_free(excl_key, wx, wy, nx, ny, pw, ph):
+    """True if no other visible magnetic panel's stored offset places it at (nx, ny)."""
+    for k in _MAGNET_KEYS:
+        if k == excl_key or not _magnet_on.get(k, False) or k not in _magnet_offset:
+            continue
+        p = globals().get(_MAGNET_PANEL_GLOBALS.get(k, ""))
+        if p is None or not p.isVisible():
+            continue
+        dx, dy = _magnet_offset[k]
+        if abs((wx + dx) - nx) < pw and abs((wy + dy) - ny) < ph:
+            return False
+    return True
 
 
 def _best_slot(key, prefer_side, avoid_side, wx, wy, ww, wh, pw, ph,
                vx, vy, vx2, vy2, GRAB=40):
-    """Try all 4 sides and return (best_side, nx, ny) — the slot with the most
-    visible panel area.  `prefer_side` is tried first; `avoid_side` is skipped
-    (it's the side the panel came from).  Returns (None, None, None) if no side
-    gives at least GRAB pixels of visibility."""
-    best_side, best_nx, best_ny, best_vis = None, None, None, -1
-    order = [prefer_side] + [s for s in ("left", "right", "top", "bottom")
-                              if s != prefer_side and s != avoid_side]
-    for side in order:
-        nx, ny = _first_free_slot_on_side(side, key, wx, wy, ww, wh, pw, ph, 0)
-        if side in ("left", "right"):
-            vis = max(0, min(nx + pw, vx2) - max(nx, vx))
-        else:
-            vis = max(0, min(ny + ph, vy2) - max(ny, vy))
+    """Find the best free grid cell for `key` and return (label, nx, ny).
+    Tries 4 cardinal sides first (1 slot each — 3×2 constraint), then 4 diagonal
+    corners as overflow.  Returns (None, None, None) if no position gives ≥GRAB px."""
+    G = _SNAP_GAP
+    best_label, best_nx, best_ny, best_vis = None, None, None, -1
+
+    # ── Cardinal slots (max 1 per side) ──────────────────────────────────────
+    cardinal = [prefer_side] + [s for s in ("left", "right", "top", "bottom")
+                                 if s != prefer_side and s != avoid_side]
+    for side in cardinal:
+        pos = _first_free_slot_on_side(side, key, wx, wy, ww, wh, pw, ph, 0)
+        if pos is None:
+            continue  # slot 0 already taken by another panel
+        nx, ny = pos
+        vis = (max(0, min(nx + pw, vx2) - max(nx, vx)) if side in ("left", "right")
+               else max(0, min(ny + ph, vy2) - max(ny, vy)))
         if vis > best_vis:
-            best_vis, best_side, best_nx, best_ny = vis, side, nx, ny
+            best_vis, best_label, best_nx, best_ny = vis, side, nx, ny
+
+    # ── Diagonal fallback — "second row" in the 3×2 grid ─────────────────────
+    diagonals = [
+        ("top-left",     wx - pw - G, wy + wh + G),
+        ("top-right",    wx + ww + G, wy + wh + G),
+        ("bottom-left",  wx - pw - G, wy - ph - G),
+        ("bottom-right", wx + ww + G, wy - ph - G),
+    ]
+    # Prefer diagonals on the same row as prefer_side
+    if prefer_side in ("top", "bottom"):
+        row = "top" if prefer_side == "top" else "bottom"
+        diagonals.sort(key=lambda d: (0 if row in d[0] else 1))
+    else:
+        col = "left" if prefer_side == "left" else "right"
+        diagonals.sort(key=lambda d: (0 if col in d[0] else 1))
+
+    for label, nx, ny in diagonals:
+        if not _diag_pos_free(key, wx, wy, nx, ny, pw, ph):
+            continue
+        x_vis = max(0, min(nx + pw, vx2) - max(nx, vx))
+        y_vis = max(0, min(ny + ph, vy2) - max(ny, vy))
+        vis = min(x_vis, y_vis)
+        if vis > best_vis:
+            best_vis, best_label, best_nx, best_ny = vis, label, nx, ny
+
     if best_vis < GRAB:
         return None, None, None
-    return best_side, best_nx, best_ny
+    return best_label, best_nx, best_ny
 
 
 def _snap_attached_panels_live(new_wx, new_wy):
@@ -5174,7 +5196,14 @@ def _show_hist_panel(history):
             default_bot_y = wy - ph - _SNAP_GAP
             if default_bot_y < vy:
                 side = "top"
-        px, py = _first_free_slot_on_side(side, "hist", wx, wy, ww, wh, pw, ph, 0)
+        pos = _first_free_slot_on_side(side, "hist", wx, wy, ww, wh, pw, ph, 0)
+        if pos is None:  # cardinal slot taken — find best grid cell
+            _, px, py = _best_slot("hist", side, _OPP[side], wx, wy, ww, wh, pw, ph,
+                                   vx, vy, vx2, vy2)
+            if px is None:
+                px, py = wx + ww // 2 - pw // 2, wy - ph - _SNAP_GAP  # last resort
+        else:
+            px, py = pos
         _magnet_offset["hist"] = (px - wx, py - wy)
     else:
         if "hist" in _magnet_free_pos:
@@ -6303,7 +6332,14 @@ def _toggle_cfg_panel():
             default_top_y = wy + wh + _SNAP_GAP
             if default_top_y + ph > vy2:
                 side = "bottom"
-        px, py = _first_free_slot_on_side(side, "cfg", wx, wy, ww, wh, pw, ph, 0)
+        pos = _first_free_slot_on_side(side, "cfg", wx, wy, ww, wh, pw, ph, 0)
+        if pos is None:  # cardinal slot taken — find best grid cell
+            _, px, py = _best_slot("cfg", side, _OPP[side], wx, wy, ww, wh, pw, ph,
+                                   vx, vy, vx2, vy2)
+            if px is None:
+                px, py = wx + ww // 2 - pw // 2, wy + wh + _SNAP_GAP  # last resort
+        else:
+            px, py = pos
         _magnet_offset["cfg"] = (px - wx, py - wy)
     else:
         if "cfg" in _magnet_free_pos:
