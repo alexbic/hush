@@ -3410,6 +3410,7 @@ W        = 440
 W_EXP    = 640   # expanded width
 H        = 340   # normal window height
 H_EXP    = 680   # expanded height
+H_PANEL  = 358   # shared height for all auxiliary panels (fits providers content)
 
 # Header (top): ONE line — status + waveform + [CFG][↵][□][×] all on same row
 HDR_H    = 40
@@ -4798,8 +4799,8 @@ def _show_hist_panel(history):
     screen  = AppKit.NSScreen.mainScreen()
     vis     = screen.visibleFrame() if screen else None
 
-    # Fixed square size; open to the LEFT of main window
-    ph        = pw   # square panel (same W×H as main window width)
+    # Fixed height same as providers; open to the LEFT of main window
+    ph        = H_PANEL
     GAP_H     = 6
     if _magnet_on.get("hist", False) and "hist" in _magnet_offset:
         dx, dy = _magnet_offset["hist"]
@@ -5612,7 +5613,7 @@ def _toggle_cfg_panel():
     sc_box_y  = QUIT_H + VGAP
     hk_th_y   = sc_box_y + SC_BOX_H + VGAP
     box_y     = hk_th_y + HK_TH_H + VGAP
-    ph        = pw   # square panel (same W×H = 440×440)
+    ph        = max(box_y + BOX_H + MARGIN_T, H_PANEL)
 
     _close_cfg_panel_rebuild()
     _cfg_panel = _make_drop_panel(pw, ph)
@@ -5653,13 +5654,6 @@ def _toggle_cfg_panel():
     btn_keys.setAction_(BtnTarget.cfgProviders_)
     btn_keys.setToolTip_("Настройка провайдеров и API ключей")
     cv.addSubview_(btn_keys)
-
-    btn_rst = _mkbtn("⌖", color=C_GREEN_DIM, size=12)
-    btn_rst.setFrame_(AppKit.NSMakeRect(pw - INFO_SZ - KEYS_W - INFO_SZ - 20, ph - INFO_SZ - 4, INFO_SZ, INFO_SZ))
-    btn_rst.setTarget_(_btn_t)
-    btn_rst.setAction_(BtnTarget.resetLayout_)
-    btn_rst.setToolTip_("Расставить все окна по умолчанию")
-    cv.addSubview_(btn_rst)
 
     _mkmagnet_btn("cfg", cv, 6, ph - INFO_SZ - 4, 22, INFO_SZ)
 
@@ -5894,12 +5888,20 @@ def _toggle_cfg_panel():
     # ── SEP between scenarios and quit ───────────────────────────────────────────
     cv.addSubview_(_sep_line(MARGIN, QUIT_H, pw - MARGIN * 2, pin="bottom"))
 
-    # ── QUIT SECTION ─────────────────────────────────────────────────────────────
+    # ── QUIT SECTION (quit btn + reset-layout btn) ────────────────────────────────
+    RST_W = 32
     btn_quit = _mkbtn(_T("btn_quit"), color=C_REC, size=10)
-    btn_quit.setFrame_(AppKit.NSMakeRect(MARGIN, (QUIT_H - 22) // 2 + 4, pw - MARGIN * 2, 22))
+    btn_quit.setFrame_(AppKit.NSMakeRect(MARGIN, (QUIT_H - 22) // 2 + 4, pw - MARGIN * 2 - RST_W - 6, 22))
     btn_quit.setTarget_(_btn_t)
     btn_quit.setAction_(BtnTarget.cfgQuit_)
     cv.addSubview_(btn_quit)
+
+    btn_rst = _mkbtn("🎯", color=C_GREEN_DIM, size=14)
+    btn_rst.setFrame_(AppKit.NSMakeRect(pw - MARGIN - RST_W, (QUIT_H - 22) // 2 + 4, RST_W, 22))
+    btn_rst.setTarget_(_btn_t)
+    btn_rst.setAction_(BtnTarget.resetLayout_)
+    btn_rst.setToolTip_("Расставить все окна по умолчанию")
+    cv.addSubview_(btn_rst)
 
     _cfg_panel.setAlphaValue_(_st.get("opacity", 0.88))
 
@@ -7318,10 +7320,10 @@ def _toggle_providers_panel():
     GAP    = 4
     BTN_H  = 22
 
-    # ── Fixed square size (same as main window width) ─────────────────────────
+    # ── Fixed height (same across all panels) ─────────────────────────────────
     screen = _win.screen() or AppKit.NSScreen.mainScreen()
     vis    = screen.visibleFrame() if screen else AppKit.NSMakeRect(0, 0, 1440, 900)
-    PH     = PW   # square panel
+    PH     = H_PANEL
 
     # ── Panel ─────────────────────────────────────────────────────────────────
     panel = _EditorPanel.alloc().initWithContentRect_styleMask_backing_defer_(
