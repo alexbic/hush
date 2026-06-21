@@ -644,6 +644,16 @@ def _panel_side(key, ww, wh, pw, ph):
 _OPP = {"left": "right", "right": "left", "top": "bottom", "bottom": "top"}
 
 
+def _all_screens_bounds():
+    """Union of all connected screens' visible frames → (x, y, x2, y2)."""
+    scrs = AppKit.NSScreen.screens() or [AppKit.NSScreen.mainScreen()]
+    x  = min(int(s.visibleFrame().origin.x) for s in scrs)
+    y  = min(int(s.visibleFrame().origin.y) for s in scrs)
+    x2 = max(int(s.visibleFrame().origin.x + s.visibleFrame().size.width)  for s in scrs)
+    y2 = max(int(s.visibleFrame().origin.y + s.visibleFrame().size.height) for s in scrs)
+    return x, y, x2, y2
+
+
 def _first_free_slot_on_side(side, excl_key, wx, wy, ww, wh, pw, ph, perp=0):
     """Return absolute (nx, ny) for the first free slot on `side`, scanning
     closest-to-main outward.  `perp` is the perpendicular offset preserved
@@ -704,12 +714,8 @@ def _snap_attached_panels_live(new_wx, new_wy):
     win = globals().get("_win")
     if not win:
         return
-    screen = AppKit.NSScreen.mainScreen()
-    if not screen:
-        return
-    vis = screen.visibleFrame()
-    vx, vy = vis.origin.x, vis.origin.y
-    vw, vh = vis.size.width, vis.size.height
+    vx, vy, vx2, vy2 = _all_screens_bounds()
+    vw, vh = vx2 - vx, vy2 - vy
     mf  = win.frame()
     ww, wh = mf.size.width, mf.size.height
     MARGIN = 20
@@ -752,11 +758,9 @@ def _snap_attached_panels_live(new_wx, new_wy):
     for _, key, cur_side, target, dx, dy, pw, ph in candidates:
         perp = dy if cur_side in ("left", "right") else dx
         nx, ny = _first_free_slot_on_side(target, key, new_wx, new_wy, ww, wh, pw, ph, perp)
-        # Clamp only on the snap axis — perpendicular axis tracks main window
-        if target in ("left", "right"):
-            nx = max(vx, min(nx, vx + vw - pw))
-        else:
-            ny = max(vy, min(ny, vy + vh - ph))
+        # Store IDEAL (unclamped) offset — prevents overlap when two panels land on
+        # the same side and clamping would force both to the same Y/X position.
+        # Panels may temporarily go off-screen; _reposition_attached_panels places them.
         _magnet_offset[key] = (nx - new_wx, ny - new_wy)  # updated immediately so next panel sees it
 
 
@@ -765,16 +769,12 @@ def _smart_snap_panel(key, panel):
     win = globals().get("_win")
     if not win or not panel:
         return
-    screen = AppKit.NSScreen.mainScreen()
-    if not screen:
-        return
-    vis = screen.visibleFrame()
+    vx, vy, vx2, vy2 = _all_screens_bounds()
+    vw, vh = vx2 - vx, vy2 - vy
     pf  = panel.frame()
     mf  = win.frame()
     px, py = pf.origin.x, pf.origin.y
     pw, ph = pf.size.width, pf.size.height
-    vx, vy = vis.origin.x, vis.origin.y
-    vw, vh = vis.size.width, vis.size.height
     wx, wy = mf.origin.x, mf.origin.y
     ww, wh = mf.size.width, mf.size.height
     MARGIN = 20
@@ -803,17 +803,19 @@ def _smart_snap_panel(key, panel):
         perp = 0
 
     nx, ny = _first_free_slot_on_side(target, key, wx, wy, ww, wh, pw, ph, perp)
-    # Clamp only on the snap axis — perpendicular axis follows the main window
-    if target in ("left", "right"):
-        nx = max(vx, min(nx, vx + vw - pw))
-    else:
-        ny = max(vy, min(ny, vy + vh - ph))
-
-    panel.setFrameOrigin_(AppKit.NSMakePoint(nx, ny))
+    # Store IDEAL offset (no clamping) — prevents overlap when clamping would
+    # force two panels to the same position. Panel may go off-screen; that is
+    # preferable to overlapping. Clamp only for the physical display position.
     if _magnet_on.get(key, False):
         _magnet_offset[key] = (nx - wx, ny - wy)
     else:
         _magnet_free_pos[key] = (nx, ny)
+    # Display: clamp only on snap axis so at least the panel is within reach
+    if target in ("left", "right"):
+        nx = max(vx, min(nx, vx + vw - pw))
+    else:
+        ny = max(vy, min(ny, vy + vh - ph))
+    panel.setFrameOrigin_(AppKit.NSMakePoint(nx, ny))
     _magnet_save()
 
 
@@ -1969,17 +1971,12 @@ class DragPanel(AppKit.NSPanel):
                 self._wd_a = True
                 new_x = self._wd_o.x + dx
                 new_y = self._wd_o.y + dy
-                # Clamp main window so at least 40 px stay visible on any screen
+                # Clamp main window within union of all screens
                 try:
-                    GRAB = 40
-                    wf   = self.frame()
-                    ww_  = wf.size.width
-                    scrs = AppKit.NSScreen.screens() or [AppKit.NSScreen.mainScreen()]
-                    x1   = min(s.visibleFrame().origin.x for s in scrs)
-                    y1   = min(s.visibleFrame().origin.y for s in scrs)
-                    x2   = max(s.visibleFrame().origin.x + s.visibleFrame().size.width  for s in scrs)
-                    y2   = max(s.visibleFrame().origin.y + s.visibleFrame().size.height for s in scrs)
-                    wh_  = wf.size.height
+                    GRAB        = 40
+                    wf          = self.frame()
+                    ww_, wh_    = wf.size.width, wf.size.height
+                    x1, y1, x2, y2 = _all_screens_bounds()
                     new_x = max(x1 - ww_ + GRAB, min(new_x, x2 - GRAB))
                     new_y = max(y1, min(new_y, y2 - wh_))
                 except Exception:
