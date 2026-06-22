@@ -600,6 +600,12 @@ _magnet_free_pos = {}  # {key: (x, y)} saved free position when OFF
 _snap_ts        = {}   # {key: monotonic()} — timestamp of last snap (oscillation guard)
 _magnet_btns    = {}   # {key: NSButton} for UI updates
 
+# ── Cluster mode (expanded window) ────────────────────────────────────────────
+_cluster_mode     = False   # True while main window is in expanded state
+_cluster_offsets  = {}      # {key: (dx, dy)} from _cfg_panel origin
+_cluster_was_open = set()   # panel keys visible BEFORE expand (to restore on collapse)
+_cluster_cfg_auto = False   # True if cfg was auto-opened as cluster anchor
+
 
 def _magnet_save():
     _cfg_saved["magnet_on"]     = dict(_magnet_on)
@@ -883,6 +889,8 @@ def _snap_attached_panels_live(new_wx, new_wy):
     """During main-window drag: reassign each visible magnetic panel to the
     best free grid cell on the current screen.  Uses the cell-based grid so
     panels never overlap and always fit within screen bounds."""
+    if _cluster_mode:
+        return   # panels are clustered around cfg, not attached to _win
     win = globals().get("_win")
     if not win:
         return
@@ -2257,9 +2265,16 @@ class _DropPanel(AppKit.NSPanel):
         w   = globals().get("_win")
         key = getattr(self, '_panel_key', None)
         is_attached = _magnet_on.get(key, True) if key else True
+        # In cluster mode: cfg is the anchor; other panels move freely
+        is_cluster_anchor = (_cluster_mode and
+                             key == "cfg" and
+                             globals().get("_cfg_panel") is self)
+        in_cluster = _cluster_mode and not is_cluster_anchor
         if t == _LD:
             self._wd_s = AppKit.NSEvent.mouseLocation()
-            if is_attached and w:
+            if is_cluster_anchor or in_cluster:
+                self._wd_o = self.frame().origin   # always track self in cluster mode
+            elif is_attached and w:
                 self._wd_o = w.frame().origin
             else:
                 self._wd_o = self.frame().origin
@@ -2274,7 +2289,14 @@ class _DropPanel(AppKit.NSPanel):
             dy  = cur.y - self._wd_s.y
             if self._wd_a or dx*dx + dy*dy > _THRESH2:
                 self._wd_a = True
-                if is_attached and w:
+                if is_cluster_anchor:
+                    # cfg drags itself; all cluster panels follow
+                    self.setFrameOrigin_(AppKit.NSMakePoint(self._wd_o.x + dx, self._wd_o.y + dy))
+                    _reposition_cluster()
+                elif in_cluster:
+                    # other cluster panels move freely
+                    self.setFrameOrigin_(AppKit.NSMakePoint(self._wd_o.x + dx, self._wd_o.y + dy))
+                elif is_attached and w:
                     new_x = self._wd_o.x + dx
                     new_y = self._wd_o.y + dy
                     try: _snap_attached_panels_live(new_x, new_y)
@@ -2287,7 +2309,12 @@ class _DropPanel(AppKit.NSPanel):
             did_drag = getattr(self, '_wd_a', False)
             self._wd_s = None; self._wd_a = False; self._wd_on_btn = False
             if did_drag:
-                if is_attached:
+                if is_cluster_anchor:
+                    _update_cluster_offsets()
+                elif in_cluster:
+                    # Update this panel's offset relative to cfg
+                    _update_cluster_offsets()
+                elif is_attached:
                     try: _magnet_save()
                     except Exception: pass
                 else:
@@ -4391,6 +4418,121 @@ def _update_cursor_pos():
     _cur_view.setNeedsDisplay_(True)
 
 
+def _reposition_cluster():
+    """Move cluster panels to track _cfg_panel (expanded mode anchor)."""
+    cfg = globals().get("_cfg_panel")
+    if not cfg or not cfg.isVisible():
+        return
+    cf  = cfg.frame()
+    cx, cy = int(cf.origin.x), int(cf.origin.y)
+    for key, pname in [("hist", "_hist_panel"),
+                       ("providers", "_prov_panel"),
+                       ("editor", "_sc_editor_panel")]:
+        if key not in _cluster_offsets:
+            continue
+        panel = globals().get(pname)
+        if not panel or not panel.isVisible():
+            continue
+        dx, dy = _cluster_offsets[key]
+        try:
+            panel.setFrameOrigin_(AppKit.NSMakePoint(cx + dx, cy + dy))
+        except Exception:
+            pass
+
+
+def _update_cluster_offsets():
+    """Recalculate cluster offsets after a cluster panel is individually dragged."""
+    cfg = globals().get("_cfg_panel")
+    if not cfg or not cfg.isVisible():
+        return
+    cf  = cfg.frame()
+    cx, cy = int(cf.origin.x), int(cf.origin.y)
+    for key, pname in [("hist", "_hist_panel"),
+                       ("providers", "_prov_panel"),
+                       ("editor", "_sc_editor_panel")]:
+        panel = globals().get(pname)
+        if panel and panel.isVisible():
+            pf = panel.frame()
+            _cluster_offsets[key] = (int(pf.origin.x) - cx, int(pf.origin.y) - cy)
+
+
+def _enter_cluster_mode():
+    """Detach panels from _win; cluster them around _cfg_panel as anchor."""
+    global _cluster_mode, _cluster_offsets, _cluster_was_open, _cluster_cfg_auto
+
+    _cluster_was_open = set()
+    if globals().get("_hist_panel") and _hist_panel.isVisible():
+        _cluster_was_open.add("hist")
+    if globals().get("_prov_panel") and _prov_panel.isVisible():
+        _cluster_was_open.add("providers")
+    if globals().get("_sc_editor_panel") and _sc_editor_panel.isVisible():
+        _cluster_was_open.add("editor")
+
+    # Ensure cfg is open — it becomes the cluster anchor (0,0)
+    _cluster_cfg_auto = not (globals().get("_cfg_panel") and _cfg_panel.isVisible())
+    if _cluster_cfg_auto:
+        _toggle_cfg_panel()
+
+    cfg = globals().get("_cfg_panel")
+    if not cfg or not cfg.isVisible():
+        return
+
+    cf  = cfg.frame()
+    cx, cy = int(cf.origin.x), int(cf.origin.y)
+    cw  = int(cf.size.width)
+
+    GAP = _SNAP_GAP
+    default_offsets = {
+        "hist":      (0,           -(H_PANEL + GAP)),
+        "providers": (-(W + GAP),   0),
+        "editor":    (cw + GAP,     0),
+    }
+
+    _cluster_offsets = {}
+    for key, pname in [("hist", "_hist_panel"),
+                       ("providers", "_prov_panel"),
+                       ("editor", "_sc_editor_panel")]:
+        panel = globals().get(pname)
+        if panel and panel.isVisible():
+            dx, dy = default_offsets[key]
+            _cluster_offsets[key] = (dx, dy)
+            try:
+                panel.setFrameOrigin_(AppKit.NSMakePoint(cx + dx, cy + dy))
+            except Exception:
+                pass
+
+    _cluster_mode = True
+
+
+def _exit_cluster_mode():
+    """Restore panels from cluster back to _win attachment."""
+    global _cluster_mode, _cluster_offsets
+
+    _cluster_mode = False
+    _cluster_offsets = {}
+
+    # Close panels that weren't open before expand
+    for key, pname, close_fn in [
+        ("hist",      "_hist_panel",      lambda: _hist_panel.orderOut_(None) if _hist_panel else None),
+        ("providers", "_prov_panel",      _close_providers_panel),
+        ("editor",    "_sc_editor_panel", _close_editor_now),
+    ]:
+        if key not in _cluster_was_open:
+            panel = globals().get(pname)
+            if panel and panel.isVisible():
+                try:
+                    close_fn()
+                except Exception:
+                    pass
+
+    # Close cfg if it was auto-opened as anchor
+    if _cluster_cfg_auto:
+        _close_cfg_panel()
+
+    # Restore _win-relative positioning for panels that were open
+    _reposition_attached_panels()
+
+
 def _toggle_expand():
     global _expanded, _font_size_saved
     if not _expanded:
@@ -4407,7 +4549,9 @@ def _toggle_expand():
             _expand_btn.setAttributedTitle_(_atitle("[─]", size=12, color=C_GREEN_DIM))
         if _win:
             _win.setAlphaValue_(_st["opacity"])
+        _main(_enter_cluster_mode)
     else:
+        _exit_cluster_mode()
         _expanded = False
         if _font_size_saved is not None:
             _st["font_size"] = _font_size_saved
@@ -4420,8 +4564,6 @@ def _toggle_expand():
             _expand_btn.setAttributedTitle_(_atitle("[□]", size=12, color=C_GREEN_DIM))
         if _win:
             _win.setAlphaValue_(_st["opacity"])
-    # Reposition attached panels (their SIZE stays unchanged — 440×440)
-    _reposition_attached_panels()
 
 
 def _do_win_resize(new_h, new_w=None, animate=True):
@@ -4798,6 +4940,8 @@ def _hist_side_origin(pw, ph):
 
 def _reposition_attached_panels():
     """Move magnetically-attached panels to track _win position."""
+    if _cluster_mode:
+        return   # expanded mode: panels cluster around cfg, not _win
     win = globals().get("_win")
     if not win:
         return
