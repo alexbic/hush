@@ -3432,6 +3432,10 @@ class BtnTarget(AppKit.NSObject):
         if _on_copy_cb:
             _on_copy_cb()
 
+    def histClose_(self, sender):
+        if _hist_panel and _hist_panel.isVisible():
+            _hist_panel.orderOut_(None)
+
     def cfgProviders_(self, sender):
         _toggle_providers_panel()
 
@@ -5019,8 +5023,15 @@ def _reset_panels_layout():
 
 
 def _reset_to_cross_layout():
-    """[✚] Hard reset to default cross: cfg top, hist bottom, providers left, editor right."""
-    global _magnet_on, _magnet_offset, _magnet_free_pos, _panels_reset_open
+    """[🔄] Hard reset: exit cluster if active, cross layout, all magnets ON."""
+    global _magnet_on, _magnet_offset, _magnet_free_pos, _panels_reset_open, _cluster_mode, _cluster_offsets
+
+    # Exit cluster mode cleanly before resetting
+    if _cluster_mode:
+        _cluster_mode    = False
+        _cluster_offsets = {}
+        if globals().get("_expanded"):
+            pass   # stay expanded — just reset panel positions
 
     _panels_reset_open = True
     # All panels magneted for the default cross
@@ -5446,7 +5457,7 @@ def _show_hist_panel(history):
     FIXED   = HDR_H + FOOT_H + BOT_PAD
     # Size panel by filtered item count (current active tab)
     n_filtered = len(_hist_filter_items(history, _hist_filter))
-    pw      = int(_win.frame().size.width)
+    pw      = W    # panel always normal width regardless of expanded mode
     mf      = _win.frame()
     gap     = 6
     screen  = AppKit.NSScreen.mainScreen()
@@ -5489,15 +5500,25 @@ def _show_hist_panel(history):
     ctrl._on_merge    = _on_history_merge_cb
     _hist_ctrl        = ctrl
 
-    # ── Header: three filter tabs + select-all checkbox ──────────────────────
+    # ── Header: three filter tabs + select-all checkbox + close [×] ─────────
     hdr_y   = ph - HDR_H
     TAB_GAP  = 6
     MAG_OFF  = 30   # left offset for magnet icon
+    CLOSE_W  = 22   # [×] button on the far right
+    CLOSE_GAP = 4
     n_tabs   = 3
-    tab_area_w = pw - CHK_W - CHK_R - 12 - MAG_OFF
+    tab_area_w = pw - CHK_W - CHK_R - 12 - MAG_OFF - CLOSE_W - CLOSE_GAP
     tab_w      = (tab_area_w - TAB_GAP * (n_tabs - 1)) // n_tabs
     tab_h      = 20
     tab_y      = hdr_y + (HDR_H - tab_h) // 2
+
+    # Close button — far right of header
+    hcl = _mkbtn("[×]", color=C_REC, size=11)
+    hcl.setFrame_(AppKit.NSMakeRect(pw - CLOSE_W - CLOSE_GAP, tab_y, CLOSE_W, tab_h))
+    hcl.setToolTip_("Закрыть историю")
+    hcl.setTarget_(_btn_t)
+    hcl.setAction_(BtnTarget.histClose_)
+    cv.addSubview_(hcl)
 
     tab_specs = [
         ("mixed",    "hist_mixed"),
@@ -7933,7 +7954,8 @@ def _toggle_providers_panel():
     except Exception:
         pass
 
-    PW     = W   # panels always use the normal (non-expanded) width
+    PW     = W   # panel always normal width regardless of expanded mode
+    mf     = _win.frame()   # main window frame — for grid position only
     MARGIN = 12
     FW     = PW - MARGIN * 2
     LBL_H  = 13

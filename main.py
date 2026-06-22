@@ -272,8 +272,7 @@ FINALIZE_GRACE_S = 4.0
 #   Shift + Right ⌥  → open full-mode window (standby); then ⌥ alone records there
 #   Double-tap ⌥     → cancel current session and close all overlays
 _full_mode_standby = False   # True after Shift+⌥ opened the full-mode window
-_last_release_time = 0.0
-DOUBLE_TAP_WINDOW  = 0.40    # seconds between release and next press to count as double-tap
+_last_release_time = 0.0   # kept for release handler timing
 
 _kbd = kb.Controller()
 
@@ -532,22 +531,36 @@ def _force_paste_raw_now():
 
 def _on_hotkey_press(full_mode: bool = False):
     """Called when Right ⌥ is pressed.
-    full_mode=True  (Shift held) → open full-mode window without starting recording.
-    full_mode=False → silent or continue current session mode.
-    Double-tap ⌥    → cancel everything and close overlays.
+    full_mode=True  (Shift+⌥) → toggle full-mode window open/close.
+    full_mode=False (⌥ alone)  → silent or continue current session mode.
     """
     global _prev_app, _active_scenario_idx, _full_mode_standby
     if _state["hotkey_held"]:
         return
 
-    # Double-tap: cancel current session (works in any mode)
-    if not full_mode and time.time() - _last_release_time < DOUBLE_TAP_WINDOW:
-        _state["hotkey_held"] = True   # set so release handler clears it
-        _cancel_all()
-        return
-
     _state["hotkey_held"] = True
 
+    # Shift+⌥: toggle full-mode window
+    if full_mode:
+        if _full_mode_standby or _is_session_active():
+            # Full-mode is open → close it
+            _cancel_all()
+            return
+        # Full-mode is closed → open it (standby, no recording yet)
+        front = AppKit.NSWorkspace.sharedWorkspace().frontmostApplication()
+        if not _is_excluded_app(front):
+            _prev_app = front
+            overlay.set_prev_app_icon(_prev_app)
+        _active_scenario_idx = None
+        _session_reset()
+        _full_mode_standby = True
+        _state["silent"] = False
+        overlay._silent_mode = False
+        AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(overlay.hide_silent)
+        overlay.show_recording()
+        return  # no recorder.start()
+
+    # Regular ⌥ (no Shift):
     front = AppKit.NSWorkspace.sharedWorkspace().frontmostApplication()
     if not _is_excluded_app(front):
         _prev_app = front
@@ -565,18 +578,6 @@ def _on_hotkey_press(full_mode: bool = False):
 
     if _state.get("stream"):
         return  # already recording
-
-    if full_mode and not active and not _full_mode_standby:
-        # Shift+⌥: open full-mode window (standby) — do NOT start recording.
-        # Release of this ⌥ tap will be ignored (stream=None → _on_hotkey_release exits early).
-        # Next ⌥ press (no Shift needed) will record inside the full-mode window.
-        _session_reset()
-        _full_mode_standby = True
-        _state["silent"] = False
-        overlay._silent_mode = False
-        AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(overlay.hide_silent)
-        overlay.show_recording()
-        return  # no recorder.start()
 
     if _full_mode_standby:
         # ⌥ pressed while full-mode window is open → start recording there
