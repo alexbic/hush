@@ -5761,9 +5761,10 @@ def _show_sc_editor_impl(sc_idx):
 
     y -= TF_H + GAP
 
-    # Silent mode checkbox row — separated by thin lines, looks like a setting option
-    SIL_H   = 28
-    SIL_SEP = 6
+    # Silent mode + Full mode default — one row, side by side
+    SIL_H   = 26
+    SIL_SEP = 5
+    CHK_W   = FW // 2 - 2
     y -= SIL_SEP
     cv.addSubview_(_sep_line(MARGIN, y, FW, pin="top"))
     y -= 1
@@ -5772,18 +5773,16 @@ def _show_sc_editor_impl(sc_idx):
     chk_color  = C_CYAN if is_silent else C_GREEN_DIM
     sil_btn    = _mkbtn(chk_prefix + _T("sc_silent"), color=chk_color,
                         size=10, align=AppKit.NSTextAlignmentLeft)
-    sil_btn.setFrame_(AppKit.NSMakeRect(MARGIN, y - SIL_H, FW, SIL_H))
+    sil_btn.setFrame_(AppKit.NSMakeRect(MARGIN, y - SIL_H, CHK_W, SIL_H))
     sil_btn.setTarget_(_btn_t)
     sil_btn.setAction_(BtnTarget.cfgScToggleSilent_)
     cv.addSubview_(sil_btn)
-    y -= SIL_H
-    # Full mode default checkbox row
-    is_full_default  = bool(sc.get("full_default", False))
+    is_full_default = bool(sc.get("full_default", False))
     fd_prefix = "[✓] " if is_full_default else "[ ] "
     fd_color  = C_GREEN_BR if is_full_default else C_GREEN_DIM
     fd_btn    = _mkbtn(fd_prefix + _T("sc_full_default"), color=fd_color,
                        size=10, align=AppKit.NSTextAlignmentLeft)
-    fd_btn.setFrame_(AppKit.NSMakeRect(MARGIN, y - SIL_H, FW, SIL_H))
+    fd_btn.setFrame_(AppKit.NSMakeRect(MARGIN + CHK_W + 4, y - SIL_H, CHK_W, SIL_H))
     fd_btn.setTarget_(_btn_t)
     fd_btn.setAction_(BtnTarget.cfgScToggleFullDefault_)
     cv.addSubview_(fd_btn)
