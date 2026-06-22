@@ -5680,6 +5680,20 @@ def _show_hist_panel(history):
     cv.addSubview_(replace_btn)
     ctrl._replace_btn = replace_btn
 
+    # In cluster mode: override panel_origin to follow cluster offset
+    if _cluster_mode:
+        cfg = globals().get("_cfg_panel")
+        if cfg and cfg.isVisible():
+            cf = cfg.frame()
+            cx, cy = int(cf.origin.x), int(cf.origin.y)
+            if "hist" in _cluster_offsets:
+                dx, dy = _cluster_offsets["hist"]
+            else:
+                # Hist wasn't in cluster yet — assign it a slot and add offset
+                dx, dy = W + _SNAP_GAP, 0   # default: to the right of cfg (grid col 1)
+                _cluster_offsets["hist"] = (dx, dy)
+            panel_origin = AppKit.NSMakePoint(cx + dx, cy + dy)
+
     _hist_panel.setFrameOrigin_(panel_origin)
     AppKit.NSApp.activateIgnoringOtherApps_(True)
     _hist_panel.makeKeyAndOrderFront_(None)
@@ -6185,6 +6199,17 @@ def _show_sc_editor_impl(sc_idx):
     _ewx, _ewy = int(mf.origin.x), int(mf.origin.y)
     _eww, _ewh = int(mf.size.width), int(mf.size.height)
     ex, ey = _calc_panel_pos("editor", _ewx, _ewy, _eww, _ewh, int(mf.size.width), H_PANEL)
+    if _cluster_mode:
+        cfg = globals().get("_cfg_panel")
+        if cfg and cfg.isVisible():
+            cf = cfg.frame()
+            cx, cy = int(cf.origin.x), int(cf.origin.y)
+            if "editor" in _cluster_offsets:
+                dx, dy = _cluster_offsets["editor"]
+            else:
+                dx, dy = W + _SNAP_GAP, -(H_PANEL + _SNAP_GAP)   # default: bottom-right slot
+                _cluster_offsets["editor"] = (dx, dy)
+            ex, ey = cx + dx, cy + dy
     panel.setFrameOrigin_(AppKit.NSMakePoint(ex, ey))
     AppKit.NSApp.activateIgnoringOtherApps_(True)
     panel.makeKeyAndOrderFront_(None)
@@ -8139,6 +8164,17 @@ def _toggle_providers_panel():
     wx2, wy2 = int(mf.origin.x), int(mf.origin.y)
     ww2, wh2 = int(mf.size.width), int(mf.size.height)
     px, py = _calc_panel_pos("providers", wx2, wy2, ww2, wh2, PW, PH)
+    if _cluster_mode:
+        cfg = globals().get("_cfg_panel")
+        if cfg and cfg.isVisible():
+            cf = cfg.frame()
+            cx, cy = int(cf.origin.x), int(cf.origin.y)
+            if "providers" in _cluster_offsets:
+                dx, dy = _cluster_offsets["providers"]
+            else:
+                dx, dy = 0, -(H_PANEL + _SNAP_GAP)   # default: below cfg (grid row 1)
+                _cluster_offsets["providers"] = (dx, dy)
+            px, py = cx + dx, cy + dy
     panel.setFrameOrigin_(AppKit.NSMakePoint(px, py))
     panel.makeKeyAndOrderFront_(None)
 
