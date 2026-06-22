@@ -4493,7 +4493,8 @@ def _update_cluster_offsets():
 
 
 def _cluster_anchor_pos():
-    """Compute the top-left position for the panel cluster (to the left of expanded window)."""
+    """Compute the top-left position for the panel cluster (to the left of expanded window).
+    Always uses the same screen as _win to avoid flying to a different monitor."""
     GAP = _SNAP_GAP
     if not _win:
         return 50, 400
@@ -4503,15 +4504,16 @@ def _cluster_anchor_pos():
     # Try left of main window, top-aligned
     cx = wx - W - GAP
     cy = wy + wh - H_PANEL
-    screen = AppKit.NSScreen.mainScreen()
+    # IMPORTANT: use _win's own screen, not mainScreen (avoids cluster jumping to other monitor)
+    screen = _win.screen() or AppKit.NSScreen.mainScreen()
     sf = screen.visibleFrame() if screen else None
     if sf:
         sx, sy = int(sf.origin.x), int(sf.origin.y)
         sw, sh = int(sf.size.width), int(sf.size.height)
         if cx < sx:
-            cx = wx + ww + GAP   # fallback: right side
+            cx = wx + ww + GAP   # fallback: right of main window
         cx = max(sx, min(cx, sx + sw - W))
-        cy = min(cy, sy + sh - H_PANEL)
+        cy = max(sy, min(cy, sy + sh - H_PANEL))
     return cx, cy
 
 
