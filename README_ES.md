@@ -1,3 +1,7 @@
+<div align="right">
+  <a href="README_RU.md">🇷🇺 Русский</a> &nbsp;|&nbsp; <a href="README.md">🇬🇧 English</a> &nbsp;|&nbsp; <b>🇪🇸 Español</b>
+</div>
+
 <div align="center">
 
 <img src="hush_brand_full.png" alt="HUSH — Hear · Understand · Shape · Hand back" width="500">
