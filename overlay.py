@@ -4463,19 +4463,82 @@ def _update_cluster_offsets():
             _cluster_offsets[key] = (int(pf.origin.x) - cx, int(pf.origin.y) - cy)
 
 
+def _cluster_anchor_pos():
+    """Compute the top-left position for the panel cluster (to the left of expanded window)."""
+    GAP = _SNAP_GAP
+    if not _win:
+        return 50, 400
+    wf = _win.frame()
+    wx, wy = int(wf.origin.x), int(wf.origin.y)
+    ww, wh = int(wf.size.width), int(wf.size.height)
+    # Try left of main window, top-aligned
+    cx = wx - W - GAP
+    cy = wy + wh - H_PANEL
+    screen = AppKit.NSScreen.mainScreen()
+    sf = screen.visibleFrame() if screen else None
+    if sf:
+        sx, sy = int(sf.origin.x), int(sf.origin.y)
+        sw, sh = int(sf.size.width), int(sf.size.height)
+        if cx < sx:
+            cx = wx + ww + GAP   # fallback: right side
+        cx = max(sx, min(cx, sx + sw - W))
+        cy = min(cy, sy + sh - H_PANEL)
+    return cx, cy
+
+
+def _apply_cluster_offsets(cfg_panel, offsets):
+    """Move cfg to its anchor pos, then move each panel by its (dx, dy) offset from cfg."""
+    cx, cy = _cluster_anchor_pos()
+    cf = cfg_panel.frame()
+    cfg_panel.setFrameOrigin_(AppKit.NSMakePoint(cx, cy))
+    panel_map = {"hist": "_hist_panel", "providers": "_prov_panel", "editor": "_sc_editor_panel"}
+    for key, (dx, dy) in offsets.items():
+        p = globals().get(panel_map.get(key, ""))
+        if p and p.isVisible():
+            p.setFrameOrigin_(AppKit.NSMakePoint(cx + dx, cy + dy))
+
+
+def _cluster_grid_offsets(visible_keys):
+    """Compute tight 2×2 grid offsets (relative to cfg at 0,0) for visible panels.
+
+    Grid:
+        [cfg ][hist ]   ← top row (dy=0)
+        [prov][edit ]   ← bottom row (dy = -(H+GAP))
+    cfg is always top-left; other panels fill remaining slots left-to-right, top-to-bottom.
+    """
+    GAP = _SNAP_GAP
+    # Slot positions (col, row) in the grid — col 0/1, row 0/1
+    SLOTS = [
+        ("cfg",       0, 0),
+        ("hist",      1, 0),
+        ("providers", 0, 1),
+        ("editor",    1, 1),
+    ]
+    offsets = {}
+    for key, col, row in SLOTS:
+        if key == "cfg":
+            continue
+        if key not in visible_keys:
+            continue
+        dx =  col * (W + GAP)
+        dy = -row * (H_PANEL + GAP)   # macOS: down = lower y
+        offsets[key] = (dx, dy)
+    return offsets
+
+
 def _enter_cluster_mode():
-    """Detach panels from _win; cluster them around _cfg_panel as anchor."""
+    """Gather all open panels into a compact 2×2 grid to the left of the expanded window."""
     global _cluster_mode, _cluster_offsets, _cluster_was_open, _cluster_cfg_auto
 
     _cluster_was_open = set()
-    if globals().get("_hist_panel") and _hist_panel.isVisible():
-        _cluster_was_open.add("hist")
-    if globals().get("_prov_panel") and _prov_panel.isVisible():
-        _cluster_was_open.add("providers")
-    if globals().get("_sc_editor_panel") and _sc_editor_panel.isVisible():
-        _cluster_was_open.add("editor")
+    for key, pname in [("hist", "_hist_panel"),
+                       ("providers", "_prov_panel"),
+                       ("editor", "_sc_editor_panel")]:
+        p = globals().get(pname)
+        if p and p.isVisible():
+            _cluster_was_open.add(key)
 
-    # Ensure cfg is open — it becomes the cluster anchor (0,0)
+    # Cfg is always the cluster anchor — open it if needed
     _cluster_cfg_auto = not (globals().get("_cfg_panel") and _cfg_panel.isVisible())
     if _cluster_cfg_auto:
         _toggle_cfg_panel()
@@ -4484,30 +4547,8 @@ def _enter_cluster_mode():
     if not cfg or not cfg.isVisible():
         return
 
-    cf  = cfg.frame()
-    cx, cy = int(cf.origin.x), int(cf.origin.y)
-    cw  = int(cf.size.width)
-
-    GAP = _SNAP_GAP
-    default_offsets = {
-        "hist":      (0,           -(H_PANEL + GAP)),
-        "providers": (-(W + GAP),   0),
-        "editor":    (cw + GAP,     0),
-    }
-
-    _cluster_offsets = {}
-    for key, pname in [("hist", "_hist_panel"),
-                       ("providers", "_prov_panel"),
-                       ("editor", "_sc_editor_panel")]:
-        panel = globals().get(pname)
-        if panel and panel.isVisible():
-            dx, dy = default_offsets[key]
-            _cluster_offsets[key] = (dx, dy)
-            try:
-                panel.setFrameOrigin_(AppKit.NSMakePoint(cx + dx, cy + dy))
-            except Exception:
-                pass
-
+    _cluster_offsets = _cluster_grid_offsets(_cluster_was_open | {"cfg"})
+    _apply_cluster_offsets(cfg, _cluster_offsets)
     _cluster_mode = True
 
 
@@ -5026,18 +5067,43 @@ def _reset_panels_layout():
 
 
 def _reset_to_cross_layout():
-    """[🔄] Hard reset: exit cluster if active, cross layout, all magnets ON."""
+    """[🔄] Reset panel layout.
+    In expanded mode → 2×2 compact grid (panels gather as a square).
+    In normal mode   → classic cross around main window, all magnets ON.
+    """
     global _magnet_on, _magnet_offset, _magnet_free_pos, _panels_reset_open, _cluster_mode, _cluster_offsets
 
-    # Exit cluster mode cleanly before resetting
-    if _cluster_mode:
-        _cluster_mode    = False
-        _cluster_offsets = {}
-        if globals().get("_expanded"):
-            pass   # stay expanded — just reset panel positions
+    if globals().get("_expanded"):
+        # ── Expanded / cluster mode: gather panels into 2×2 grid ──────────────
+        # Ensure cfg is open (cluster anchor)
+        if not (_cfg_panel and _cfg_panel.isVisible()):
+            _toggle_cfg_panel()
+        # Open all panels that make sense to show
+        if not (_hist_panel and _hist_panel.isVisible()):
+            history = _on_history_cb() if _on_history_cb else []
+            _show_hist_panel(history)
+        if not (_prov_panel and _prov_panel.isVisible()):
+            _toggle_providers_panel()
+        sc_list = _st.get("scenarios", [])
+        if sc_list and not (_sc_editor_panel and _sc_editor_panel.isVisible()):
+            _show_sc_editor_impl(0)
 
+        cfg = globals().get("_cfg_panel")
+        if cfg and cfg.isVisible():
+            visible_keys = set()
+            for k, pn in [("hist","_hist_panel"),("providers","_prov_panel"),("editor","_sc_editor_panel")]:
+                p = globals().get(pn)
+                if p and p.isVisible():
+                    visible_keys.add(k)
+            _cluster_offsets = _cluster_grid_offsets(visible_keys | {"cfg"})
+            _apply_cluster_offsets(cfg, _cluster_offsets)
+            _cluster_mode = True
+        return
+
+    # ── Normal mode: classic cross, all magnets ON ─────────────────────────────
+    _cluster_mode    = False
+    _cluster_offsets = {}
     _panels_reset_open = True
-    # All panels magneted for the default cross
     _magnet_on       = {k: True for k in _MAGNET_KEYS}
     _magnet_free_pos = {}
     for k in _MAGNET_KEYS:
@@ -5050,15 +5116,13 @@ def _reset_to_cross_layout():
     ww = int(mf.size.width)
     wh = int(mf.size.height)
     G  = _SNAP_GAP
-    # Force default cross offsets
     _magnet_offset = {
-        "cfg":       (0,        wh + 4),
-        "hist":      (0,       -(H_PANEL + G)),
-        "editor":    (ww + G,   0),
+        "cfg":       (0,         wh + 4),
+        "hist":      (0,        -(H_PANEL + G)),
+        "editor":    (ww + G,    0),
         "providers": (-(ww + G), 0),
     }
     _magnet_save()
-    # Reopen cfg to pick up new offset (close→open for visual snap effect)
     if _cfg_panel and _cfg_panel.isVisible():
         _close_cfg_panel_rebuild()
     _toggle_cfg_panel()
