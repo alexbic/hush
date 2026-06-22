@@ -1686,7 +1686,7 @@ def _draw_wf_bars(bars, peaks, bounds, bar_w=3.0, gap=2.5):
         path.setLineCapStyle_(AppKit.NSRoundLineCapStyle)
         for s in range(STEPS + 1):
             px    = s * w / STEPS
-            phase = (px / w) * 2.0 * math.pi * 2.0 - _wf_t * 1.0
+            phase = (px / w) * 2.0 * math.pi * 4.0 - _wf_t * 1.0
             py    = cy + amp_px * math.sin(phase)
             pt    = AppKit.NSMakePoint(px, py)
             if s == 0:
