@@ -2120,8 +2120,6 @@ class _HistCtrl(AppKit.NSObject):
     def delete_(self, sender):
         ids = [self._items[i]["id"] for i in sorted(self._sel)
                if 0 <= i < len(self._items)]
-        if _hist_panel and _hist_panel.isVisible():
-            _hist_panel.orderOut_(None)
         if ids and self._on_delete:
             self._on_delete(ids)   # main.py removes by UUID, calls refresh_hist_panel
 
@@ -2135,8 +2133,6 @@ class _HistCtrl(AppKit.NSObject):
         items_sel = self._selected_items()
         combined  = "\n\n".join(item["full"] for item in items_sel)
         loaded_id = items_sel[0]["id"] if len(items_sel) == 1 else None
-        if _hist_panel and _hist_panel.isVisible():
-            _hist_panel.orderOut_(None)
         if combined:
             _load_history_combined(combined, loaded_id=loaded_id)
 
@@ -2160,8 +2156,6 @@ class _HistCtrl(AppKit.NSObject):
         new_id = None
         if getattr(self, '_on_merge', None):
             new_id = self._on_merge(combined, source_ids)
-        if _hist_panel and _hist_panel.isVisible():
-            _hist_panel.orderOut_(None)
         _add_rich_block(combined, hist_id=new_id)
 
     def histAppend_(self, sender):
@@ -2169,8 +2163,6 @@ class _HistCtrl(AppKit.NSObject):
         Sessions are expanded into their individual blocks.
         """
         items_sel = self._selected_items()
-        if _hist_panel and _hist_panel.isVisible():
-            _hist_panel.orderOut_(None)
         for item in items_sel:
             if item.get("type") == "session":
                 block_texts = item.get("blocks_text") or []
@@ -6737,8 +6729,6 @@ def _toggle_cfg_panel():
 
 def _restore_history_item(full_text: str, item_id: str = None):
     """Load single history item into the text view."""
-    if _hist_panel:
-        _hist_panel.orderOut_(None)
     _load_history_combined(full_text, loaded_id=item_id)
 
 
@@ -6746,8 +6736,6 @@ def _restore_session(blocks_text: list, block_hist_ids: list = None, session_id:
     """Restore a session: recreate each block separately (preserving per-block structure)."""
     if not _doc_view:
         return
-    if _hist_panel:
-        _hist_panel.orderOut_(None)
     _st["text"]      = ""
     _st["mode"]      = "ready"
     _st["is_md"]     = False
