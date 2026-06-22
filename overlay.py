@@ -1010,6 +1010,7 @@ def _mkmagnet_btn(key, cv, x, y, w=22, h=22):
     btn.setTag_(_MAGNET_KEYS.index(key))
     btn.setTarget_(_btn_t)
     btn.setAction_(BtnTarget.panelMagnet_)
+    btn.setToolTip_("Прикрепить к главному окну" if not is_on else "Открепить от главного окна")
     cv.addSubview_(btn)
     _magnet_btns[key] = btn
     return btn
@@ -6093,12 +6094,14 @@ def _toggle_cfg_panel():
     FBTN_W = max(28, (fn_cw - 8) // 2)
     fn_start_x = (fn_cw - 2 * FBTN_W - 4) // 2
     fn_btn_y   = (fn_ch - 22) // 2
-    for j, (lbl_txt, act) in enumerate(
-            [("[A-]", BtnTarget.cfgFontDec_), ("[A+]", BtnTarget.cfgFontInc_)]):
+    for j, (lbl_txt, act, tip) in enumerate(
+            [("[A-]", BtnTarget.cfgFontDec_, "Уменьшить шрифт"),
+             ("[A+]", BtnTarget.cfgFontInc_, "Увеличить шрифт")]):
         b = _mkbtn(lbl_txt, color=C_GREEN, size=11)
         b.setFrame_(AppKit.NSMakeRect(fn_start_x + j * (FBTN_W + 4), fn_btn_y, FBTN_W, 22))
         b.setTarget_(_btn_t)
         b.setAction_(act)
+        b.setToolTip_(tip)
         fn_cv.addSubview_(b)
 
     # ── LANGUAGE FIELDSET ─────────────────────────────────────────────────────────
@@ -6122,6 +6125,7 @@ def _toggle_cfg_panel():
     hk_cv, hk_cw, hk_ch = _fieldset(hk_x, hk_th_y, hk_w, HK_TH_H, _T("cfg_hotkey"))
     HOT_COPY_OPTIONS = ["ctrl", "cmd", "ctrl+shift", "cmd+shift"]
     HOT_COPY_LABELS  = ["[^]", "[⌘]", "[^⇧]", "[⌘⇧]"]
+    HOT_COPY_TIPS    = ["Control", "Command", "Control + Shift", "Command + Shift"]
     cur_hk    = _st.get("hotkey_copy", "ctrl")
     HK_GAP    = 5                                         # gap between buttons
     HK_EDGE   = 4                                         # left/right margin
@@ -6129,7 +6133,7 @@ def _toggle_cfg_panel():
     HK_BTN_W  = max(38, (hk_cw - 2 * HK_EDGE - 3 * HK_GAP) // 4)
     hk_start_x = (hk_cw - (4 * HK_BTN_W + 3 * HK_GAP)) // 2
     hk_btn_y   = (hk_ch - HK_BTN_H) // 2
-    for i, (hk_val, hk_lbl) in enumerate(zip(HOT_COPY_OPTIONS, HOT_COPY_LABELS)):
+    for i, (hk_val, hk_lbl, hk_tip) in enumerate(zip(HOT_COPY_OPTIONS, HOT_COPY_LABELS, HOT_COPY_TIPS)):
         active = (hk_val == cur_hk)
         color  = C_CYAN if active else C_GREEN_DIM
         sz     = 12 if active else 10
@@ -6148,6 +6152,7 @@ def _toggle_cfg_panel():
         hb.setTag_(i)
         hb.setTarget_(_btn_t)
         hb.setAction_(BtnTarget.cfgHotkeyCopy_)
+        hb.setToolTip_(f"Мастер-клавиша: {hk_tip}")
         hk_cv.addSubview_(hb)
 
     # ── THEME FIELDSET (right half, 2 rows × 4 squares: светлые / тёмные) ─────────
@@ -6168,6 +6173,13 @@ def _toggle_cfg_panel():
         _CALayer = objc.lookUpClass('CALayer')
     except Exception:
         _CALayer = None
+
+    _THEME_LABELS = {
+        "paper": "Paper (светлая)", "sky": "Sky (светлая)",
+        "sand": "Sand (светлая)", "arctic": "Arctic (светлая)",
+        "emerald": "Emerald (тёмная)", "ocean": "Ocean (тёмная)",
+        "neon": "Neon (тёмная)", "gold": "Gold (тёмная)",
+    }
 
     def _make_swatch(tname, tbg, tcolor, idx, sq_x, sq_y_val):
         active = (tname == cur_theme)
@@ -6204,6 +6216,7 @@ def _toggle_cfg_panel():
         tb.setTag_(idx)
         tb.setTarget_(_btn_t)
         tb.setAction_(BtnTarget.cfgTheme_)
+        tb.setToolTip_(_THEME_LABELS.get(tname, tname))
         th_cv.addSubview_(tb)
 
     # Ряд 1 (вверх): светлые темы — от края SQ_EDGE, равные промежутки
@@ -6308,32 +6321,35 @@ def _toggle_cfg_panel():
     # ── SEP between scenarios and quit ───────────────────────────────────────────
     cv.addSubview_(_sep_line(MARGIN, QUIT_H, pw - MARGIN * 2, pin="bottom"))
 
-    # ── QUIT SECTION: [ВЫХОД] [🎯] [✚] ───────────────────────────────────────────
-    SB_W = 30   # small button width
-    SB_G = 4    # gap between small buttons
+    # ── QUIT SECTION: [🔄 reset] | [ВЫХОД центр] | [🎯 панели] ───────────────────
+    SB_W  = 34   # side button width
+    SB_G  = 6    # gap between side buttons and quit
     BTN_Y = (QUIT_H - 22) // 2 + 4
-    quit_w = pw - MARGIN * 2 - SB_W * 2 - SB_G - 6
+    quit_w = pw - MARGIN * 2 - SB_W * 2 - SB_G * 2
+    quit_x = MARGIN + SB_W + SB_G
+
+    # 🔄 — reset to default cross layout (left)
+    btn_cross = _mkbtn("🔄", color=C_GREEN_DIM, size=14)
+    btn_cross.setFrame_(AppKit.NSMakeRect(MARGIN, BTN_Y, SB_W, 22))
+    btn_cross.setTarget_(_btn_t)
+    btn_cross.setAction_(BtnTarget.hushDefaultCross_)
+    btn_cross.setToolTip_("Сброс: настройки↑  история↓  провайдеры←  сценарии→")
+    cv.addSubview_(btn_cross)
+
+    # [ВЫХОД] — центр
     btn_quit = _mkbtn(_T("btn_quit"), color=C_REC, size=10)
-    btn_quit.setFrame_(AppKit.NSMakeRect(MARGIN, BTN_Y, quit_w, 22))
+    btn_quit.setFrame_(AppKit.NSMakeRect(quit_x, BTN_Y, quit_w, 22))
     btn_quit.setTarget_(_btn_t)
     btn_quit.setAction_(BtnTarget.cfgQuit_)
     cv.addSubview_(btn_quit)
 
-    # 🎯 — show/hide all panels at saved positions
+    # 🎯 — show/hide all panels (right)
     btn_rst = _mkbtn("🎯", color=C_GREEN_DIM, size=14)
-    btn_rst.setFrame_(AppKit.NSMakeRect(pw - MARGIN - SB_W * 2 - SB_G, BTN_Y, SB_W, 22))
+    btn_rst.setFrame_(AppKit.NSMakeRect(pw - MARGIN - SB_W, BTN_Y, SB_W, 22))
     btn_rst.setTarget_(_btn_t)
     btn_rst.setAction_(BtnTarget.hushResetPanels_)
     btn_rst.setToolTip_("Показать/скрыть все панели")
     cv.addSubview_(btn_rst)
-
-    # ✚ — reset to default cross layout
-    btn_cross = _mkbtn("✚", color=C_GREEN_DIM, size=12)
-    btn_cross.setFrame_(AppKit.NSMakeRect(pw - MARGIN - SB_W, BTN_Y, SB_W, 22))
-    btn_cross.setTarget_(_btn_t)
-    btn_cross.setAction_(BtnTarget.hushDefaultCross_)
-    btn_cross.setToolTip_("Сброс в крест: настройки↑  история↓  провайдеры←  сценарии→")
-    cv.addSubview_(btn_cross)
 
     _cfg_panel.setAlphaValue_(_st.get("opacity", 0.88))
 
@@ -7221,6 +7237,7 @@ def init(on_scenario_callback, on_history_callback=None,
     _cfg_hdr_btn.setAutoresizingMask_(AppKit.NSViewMinXMargin | AppKit.NSViewMinYMargin)
     _cfg_hdr_btn.setTarget_(_btn_t)
     _cfg_hdr_btn.setAction_(BtnTarget.cfg_)
+    _cfg_hdr_btn.setToolTip_("Настройки")
     _pill.addSubview_(_cfg_hdr_btn)
 
     # Expand [□] — permanently hidden; double-click on app icon activates expand
