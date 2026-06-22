@@ -4,8 +4,7 @@ parakeet-cli/
 
 # Generated build artifacts
 HUSH.app/
-hush.icns
-hush_icon_1024.png
+assets/hush.icns
 dist/
 build/
 
@@ -24,3 +23,11 @@ __pycache__/
 
 # macOS
 .DS_Store
+
+# Claude Code internal
+.claude/
+
+# Root-level generated copies
+blocks.png
+hush.icns
+hush_icon_1024.png
