@@ -1987,6 +1987,59 @@ class _DotSep(AppKit.NSView):
         path.fill()
 
 
+class _HistItemView(AppKit.NSView):
+    """History row: draws text, click fires action, drag moves cluster.
+    Unlike NSButton, doesn't start a blocking nextEventMatchingMask_ loop in mouseDown_,
+    so mouseDragged_ events reach _DropPanel.sendEvent_ normally for cluster dragging."""
+
+    _astr   = None   # NSAttributedString to draw
+    _rep    = None   # representedObject (item dict)
+    _target = None
+    _action = None
+    _ds     = None   # drag start (NSPoint), set in mouseDown_
+    _da     = False  # did drag exceed threshold
+
+    def isOpaque(self): return False
+    def acceptsFirstMouse_(self, event): return True
+
+    def drawRect_(self, rect):
+        if self._astr:
+            b = self.bounds()
+            self._astr.drawInRect_(b)
+
+    # Compatibility shims matching NSButton API used in _build_hist_docview
+    def setAttributedTitle_(self, s):
+        self._astr = s
+        self.setNeedsDisplay_(True)
+
+    def setRepresentedObject_(self, o): self._rep = o
+    def representedObject(self):        return self._rep
+    def setTarget_(self, t):            self._target = t
+    def setAction_(self, a):            self._action = a
+    def setBordered_(self, v):          pass  # no-op; NSView has no border
+
+    def mouseDown_(self, event):
+        self._ds = AppKit.NSEvent.mouseLocation()
+        self._da = False
+        # No super() call → no blocking tracking loop → drag events reach window
+
+    def mouseDragged_(self, event):
+        if self._ds is None:
+            return
+        cur = AppKit.NSEvent.mouseLocation()
+        dx  = cur.x - self._ds.x
+        dy  = cur.y - self._ds.y
+        if self._da or dx * dx + dy * dy > 100.0:
+            self._da = True
+
+    def mouseUp_(self, event):
+        was_drag = self._da
+        self._ds = None
+        self._da = False
+        if not was_drag and self._target and self._action:
+            self._target.performSelector_withObject_(self._action, self)
+
+
 class _HoverBtn(AppKit.NSButton):
     """Borderless button that brightens on hover — for terminal-style checkboxes."""
 
@@ -5261,10 +5314,9 @@ def _build_hist_docview(ctrl, scroll_w, scroll_h, CHK_W, CHK_R):
                     AppKit.NSParagraphStyleAttributeName:  ps,
                 }, AppKit.NSMakeRange(len(display), len(raw_str) - len(display)))
 
-            item_btn = AppKit.NSButton.alloc().init()
-            item_btn.setBordered_(False)
+            item_btn = _HistItemView.alloc().initWithFrame_(
+                AppKit.NSMakeRect(ITEM_X, row_y + 1, ITEM_W, DP_HIST_ITEM_H - 2))
             item_btn.setAttributedTitle_(ns_str)
-            item_btn.setFrame_(AppKit.NSMakeRect(ITEM_X, row_y + 1, ITEM_W, DP_HIST_ITEM_H - 2))
             if is_session:
                 rep = {"id": item["id"], "full": full,
                        "type": "session",
