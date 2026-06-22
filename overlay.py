@@ -249,7 +249,6 @@ def _save_settings():
             "opacity":       _st["opacity"],
             "font_size":     _st["font_size"],
             "lang":          _st.get("lang", "ru"),
-            "hotkey_copy":   _st.get("hotkey_copy", "ctrl"),
             "theme":         _st.get("theme", "emerald"),
             "silent_pos":    _cfg_saved.get("silent_pos", {}),
             "win_pos":       _cfg_saved.get("win_pos", {}),
@@ -297,6 +296,7 @@ STRINGS = {
         "btn_sc_accept":  "[ОТПРАВИТЬ]",
         "btn_sc_undo":    "[ОТМЕНИТЬ]",
         "btn_scene":      "[СЦЕНАРИЙ]",
+        "btn_copy":       "[КОПИРОВАТЬ]",
         "cfg_opacity":    "прозрачность",
         "cfg_font":       "шрифт",
         "cfg_lang":       "язык",
@@ -355,6 +355,7 @@ STRINGS = {
         "btn_sc_accept":  "[SEND]",
         "btn_sc_undo":    "[CANCEL]",
         "btn_scene":      "[SCENE]",
+        "btn_copy":       "[COPY]",
         "cfg_opacity":    "opacity",
         "cfg_font":       "font",
         "cfg_lang":       "language",
@@ -412,6 +413,7 @@ STRINGS = {
         "btn_sc_accept":  "[ENVIAR]",
         "btn_sc_undo":    "[CANCELAR]",
         "btn_scene":      "[ESCENA]",
+        "btn_copy":       "[COPIAR]",
         "cfg_opacity":    "opacidad",
         "cfg_font":       "fuente",
         "cfg_lang":       "idioma",
@@ -1055,7 +1057,6 @@ _st = {
     "opacity":       _cfg_saved.get("opacity",   0.88),  # expanded window alpha
     "font_size":     _cfg_saved.get("font_size", 13.0),
     "lang":          _cfg_saved.get("lang",      _detect_system_lang()),
-    "hotkey_copy":   _cfg_saved.get("hotkey_copy", "ctrl"),
     "theme":         _cfg_saved.get("theme",     "emerald"),
     "scenarios":     load_scenarios(),
     "active_sc":     None,     # index of currently-applied scenario, or None
@@ -2401,16 +2402,8 @@ class _EditorPanel(AppKit.NSPanel):
 
 
 def _copy_mod_flags():
-    """Return NSEventModifierFlag mask for the configured copy-to-clipboard hotkey."""
-    CTRL  = AppKit.NSEventModifierFlagControl
-    CMD   = AppKit.NSEventModifierFlagCommand
-    SHIFT = AppKit.NSEventModifierFlagShift
-    return {
-        "ctrl":       CTRL,
-        "cmd":        CMD,
-        "ctrl+shift": CTRL | SHIFT,
-        "cmd+shift":  CMD | SHIFT,
-    }.get(_st.get("hotkey_copy", "ctrl"), CTRL)
+    """Cmd+Enter copies to clipboard (hardcoded)."""
+    return AppKit.NSEventModifierFlagCommand
 
 
 class TerminalTextView(AppKit.NSTextView):
@@ -3407,15 +3400,10 @@ class BtnTarget(AppKit.NSObject):
             sc_idx = (_sc_edit_refs or {}).get("sc_idx")
             _show_sc_editor(sc_idx)
 
-    def cfgHotkeyCopy_(self, sender):
-        options = ["ctrl", "cmd", "ctrl+shift", "cmd+shift"]
-        tag = int(sender.tag())
-        if 0 <= tag < len(options):
-            _st["hotkey_copy"] = options[tag]
-            _save_settings()
-        # Rebuild panel to update button colors (keep window position — immediately reopening)
-        _close_cfg_panel_rebuild()
-        _toggle_cfg_panel()
+
+    def hushCopyText_(self, sender):
+        if _on_copy_cb:
+            _on_copy_cb()
 
     def cfgProviders_(self, sender):
         _toggle_providers_panel()
@@ -3920,8 +3908,10 @@ _prev_app_name = ""      # локализованное имя prev_app (для 
 _undo_sc_btn   = None    # кнопка ↩ возврата к оригиналу (показывается когда сценарий активен)
 _sc_action_v    = None   # 2-button panel: shown when scenario result is active
 _sc_send_btn2   = None   # "Отправить" in 2-button panel
+_sc_copy_btn2   = None   # "Копировать" in 2-button panel
 _sc_cancel_btn2 = None   # "Отменить" in 2-button panel
 _action_row_v      = None   # 4-button panel: normal ready state (hidden when empty)
+_action_copy_btn   = None   # [КОПИРОВАТЬ] in 4-button action row
 _action_hist_btn   = None   # [ИСТ] — history (replaces header history button)
 _action_cancel_btn = None   # [ОТМЕНИТЬ] — close overlay (or undo scenario)
 _action_scene_btn  = None   # [СЦЕНАРИЙ] — toggle scenario picker
@@ -6084,11 +6074,9 @@ def _toggle_cfg_panel():
     fn_x = MARGIN + op_w + BOX_G
     la_x = fn_x + fn_w + BOX_G
 
-    # Middle row: hotkey (left half) | themes 2×4 (right half)
-    hk_w  = inner_w // 2 - BOX_G // 2
-    th_w  = inner_w - hk_w - BOX_G
-    hk_x  = MARGIN
-    th_x  = MARGIN + hk_w + BOX_G
+    # Middle row: themes 2×4 full width (hotkey configurator removed — Cmd+Enter hardcoded)
+    th_w  = inner_w
+    th_x  = MARGIN
 
     scenarios = _st.get("scenarios", [])
     n_sc      = len(scenarios)
@@ -6192,41 +6180,7 @@ def _toggle_cfg_panel():
         lb.setAction_(BtnTarget.cfgLang_)
         la_cv.addSubview_(lb)
 
-    # ── HOTKEY FIELDSET (left half of middle row) ─────────────────────────────────
-    hk_cv, hk_cw, hk_ch = _fieldset(hk_x, hk_th_y, hk_w, HK_TH_H, _T("cfg_hotkey"))
-    HOT_COPY_OPTIONS = ["ctrl", "cmd", "ctrl+shift", "cmd+shift"]
-    HOT_COPY_LABELS  = ["[^]", "[⌘]", "[^⇧]", "[⌘⇧]"]
-    HOT_COPY_TIPS    = ["Control", "Command", "Control + Shift", "Command + Shift"]
-    cur_hk    = _st.get("hotkey_copy", "ctrl")
-    HK_GAP    = 5                                         # gap between buttons
-    HK_EDGE   = 4                                         # left/right margin
-    HK_BTN_H  = max(26, hk_ch - 10)                      # fill available height
-    HK_BTN_W  = max(38, (hk_cw - 2 * HK_EDGE - 3 * HK_GAP) // 4)
-    hk_start_x = (hk_cw - (4 * HK_BTN_W + 3 * HK_GAP)) // 2
-    hk_btn_y   = (hk_ch - HK_BTN_H) // 2
-    for i, (hk_val, hk_lbl, hk_tip) in enumerate(zip(HOT_COPY_OPTIONS, HOT_COPY_LABELS, HOT_COPY_TIPS)):
-        active = (hk_val == cur_hk)
-        color  = C_CYAN if active else C_GREEN_DIM
-        sz     = 12 if active else 10
-        hb = _mkbtn(hk_lbl, color=color, size=sz)
-        hb.setWantsLayer_(True)
-        lay = hb.layer()
-        lay.setCornerRadius_(4.0)
-        if active:
-            lay.setBorderWidth_(1.5)
-            lay.setBorderColor_(C_CYAN.CGColor())
-            lay.setBackgroundColor_(_rgba(0.45, 0.45, 0.45, 0.22).CGColor())
-        else:
-            lay.setBorderWidth_(0.5)
-            lay.setBorderColor_(_rgba(0.50, 0.50, 0.50, 0.28).CGColor())
-        hb.setFrame_(AppKit.NSMakeRect(hk_start_x + i * (HK_BTN_W + HK_GAP), hk_btn_y, HK_BTN_W, HK_BTN_H))
-        hb.setTag_(i)
-        hb.setTarget_(_btn_t)
-        hb.setAction_(BtnTarget.cfgHotkeyCopy_)
-        hb.setToolTip_(f"Мастер-клавиша: {hk_tip}")
-        hk_cv.addSubview_(hb)
-
-    # ── THEME FIELDSET (right half, 2 rows × 4 squares: светлые / тёмные) ─────────
+    # ── THEME FIELDSET (full width, 2 rows × 4 squares: светлые / тёмные) ───────────
     th_cv, th_cw, th_ch = _fieldset(th_x, hk_th_y, th_w, HK_TH_H, _T("cfg_theme"))
     cur_theme  = _st.get("theme", "emerald")
     n_light    = _N_LIGHT                      # 4 light themes (top row)
@@ -7525,43 +7479,49 @@ def init(on_scenario_callback, on_history_callback=None,
     # Check model availability in background — colors scenario buttons appropriately
     _start_sc_avail_check()
 
-    # ── 3-button action row: Cancel | Scene | Send (hidden when empty) ───────────
-    # History moved to permanent corner button — leaves right side clear
-    global _action_row_v, _action_hist_btn, _action_cancel_btn, _action_scene_btn, _action_send_btn
+    # ── 4-button action row: Cancel | Scene | Copy | Send (hidden when empty) ────────
+    global _action_row_v, _action_hist_btn, _action_cancel_btn, _action_scene_btn, _action_send_btn, _action_copy_btn
     _action_row_v = AppKit.NSView.alloc().initWithFrame_(
         AppKit.NSMakeRect(0, 0, W, BTN_H))
     _action_row_v.setAutoresizingMask_(AppKit.NSViewWidthSizable | AppKit.NSViewMaxYMargin)
     _action_row_v.setHidden_(True)
     _action_hist_btn = None   # now permanently at bottom-right corner
 
-    # Three buttons fit within x=0..404, leaving right 36px for the corner history icon
-    ACT3_AVAIL = CFG_H_X - 4 * 8    # 410 - 32 = 378px for 3 buttons
-    ACT3_W = ACT3_AVAIL // 3        # = 126px each
-    ACT3_H = 28
-    ACT3_Y = (BTN_H - ACT3_H) // 2
+    # Four buttons within x=0..CFG_H_X (410), leaving right 36px for corner history icon
+    ACT4_AVAIL = CFG_H_X - 5 * 8    # 410 - 40 = 370px for 4 buttons
+    ACT4_W = ACT4_AVAIL // 4        # = 92px each
+    ACT4_H = 28
+    ACT4_Y = (BTN_H - ACT4_H) // 2
 
-    _action_cancel_btn = _mkbtn(_T("btn_sc_undo"), color=C_IDLE, size=12)
-    _action_cancel_btn.setFrame_(AppKit.NSMakeRect(8, ACT3_Y, ACT3_W, ACT3_H))
+    _action_cancel_btn = _mkbtn(_T("btn_sc_undo"), color=C_IDLE, size=11)
+    _action_cancel_btn.setFrame_(AppKit.NSMakeRect(8, ACT4_Y, ACT4_W, ACT4_H))
     _action_cancel_btn.setTarget_(_btn_t)
     _action_cancel_btn.setAction_(BtnTarget.actionCancel_)
     _action_row_v.addSubview_(_action_cancel_btn)
 
-    _action_scene_btn = _mkbtn(_T("btn_scene"), color=C_YEL, size=12)
-    _action_scene_btn.setFrame_(AppKit.NSMakeRect(8 + ACT3_W + 8, ACT3_Y, ACT3_W, ACT3_H))
+    _action_scene_btn = _mkbtn(_T("btn_scene"), color=C_YEL, size=11)
+    _action_scene_btn.setFrame_(AppKit.NSMakeRect(8 + ACT4_W + 8, ACT4_Y, ACT4_W, ACT4_H))
     _action_scene_btn.setTarget_(_btn_t)
     _action_scene_btn.setAction_(BtnTarget.actionScene_)
     _action_row_v.addSubview_(_action_scene_btn)
 
-    _action_send_btn = _mkbtn(_T("btn_sc_accept"), color=C_GREEN_BR, size=12)
-    _action_send_btn.setFrame_(AppKit.NSMakeRect(8 + 2*(ACT3_W + 8), ACT3_Y, ACT3_W, ACT3_H))
+    _action_copy_btn = _mkbtn(_T("btn_copy"), color=C_CYAN, size=11)
+    _action_copy_btn.setFrame_(AppKit.NSMakeRect(8 + 2*(ACT4_W + 8), ACT4_Y, ACT4_W, ACT4_H))
+    _action_copy_btn.setTarget_(_btn_t)
+    _action_copy_btn.setAction_(BtnTarget.hushCopyText_)
+    _action_copy_btn.setToolTip_("⌘+Enter — скопировать в буфер")
+    _action_row_v.addSubview_(_action_copy_btn)
+
+    _action_send_btn = _mkbtn(_T("btn_sc_accept"), color=C_GREEN_BR, size=11)
+    _action_send_btn.setFrame_(AppKit.NSMakeRect(8 + 3*(ACT4_W + 8), ACT4_Y, ACT4_W, ACT4_H))
     _action_send_btn.setTarget_(_btn_t)
     _action_send_btn.setAction_(BtnTarget.send_)
     _action_row_v.addSubview_(_action_send_btn)
 
     _pill.addSubview_(_action_row_v)
 
-    # ── 2-button result panel (shown when scenario result is active) ──────────────
-    global _sc_action_v, _sc_send_btn2, _sc_cancel_btn2
+    # ── 3-button result panel: Undo | Copy | Send (shown when scenario result is active) ──
+    global _sc_action_v, _sc_send_btn2, _sc_cancel_btn2, _sc_copy_btn2
     _sc_action_v = AppKit.NSView.alloc().initWithFrame_(
         AppKit.NSMakeRect(0, 0, W, BTN_H))
     _sc_action_v.setAutoresizingMask_(AppKit.NSViewWidthSizable | AppKit.NSViewMaxYMargin)
@@ -7569,7 +7529,7 @@ def init(on_scenario_callback, on_history_callback=None,
 
     ACT_BTN_H = 28
     ACT_BTN_Y = (BTN_H - ACT_BTN_H) // 2
-    ACT_BTN_W = (W - 3 * 8) // 2   # two equal buttons with 8px margins and gap
+    ACT_BTN_W = (W - 4 * 8) // 3   # three equal buttons with 8px margins and gaps
 
     _sc_cancel_btn2 = _mkbtn(_T("btn_sc_undo"), color=C_CYAN, size=12)
     _sc_cancel_btn2.setFrame_(AppKit.NSMakeRect(8, ACT_BTN_Y, ACT_BTN_W, ACT_BTN_H))
@@ -7577,8 +7537,15 @@ def init(on_scenario_callback, on_history_callback=None,
     _sc_cancel_btn2.setAction_(BtnTarget.undoScenario_)
     _sc_action_v.addSubview_(_sc_cancel_btn2)
 
+    _sc_copy_btn2 = _mkbtn(_T("btn_copy"), color=C_CYAN, size=12)
+    _sc_copy_btn2.setFrame_(AppKit.NSMakeRect(8 + ACT_BTN_W + 8, ACT_BTN_Y, ACT_BTN_W, ACT_BTN_H))
+    _sc_copy_btn2.setTarget_(_btn_t)
+    _sc_copy_btn2.setAction_(BtnTarget.hushCopyText_)
+    _sc_copy_btn2.setToolTip_("⌘+Enter — скопировать в буфер")
+    _sc_action_v.addSubview_(_sc_copy_btn2)
+
     _sc_send_btn2 = _mkbtn(_T("btn_sc_accept"), color=C_GREEN_BR, size=12)
-    _sc_send_btn2.setFrame_(AppKit.NSMakeRect(8 + ACT_BTN_W + 8, ACT_BTN_Y, ACT_BTN_W, ACT_BTN_H))
+    _sc_send_btn2.setFrame_(AppKit.NSMakeRect(8 + 2*(ACT_BTN_W + 8), ACT_BTN_Y, ACT_BTN_W, ACT_BTN_H))
     _sc_send_btn2.setTarget_(_btn_t)
     _sc_send_btn2.setAction_(BtnTarget.send_)
     _sc_action_v.addSubview_(_sc_send_btn2)
