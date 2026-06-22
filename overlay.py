@@ -1667,36 +1667,49 @@ class _WalletView(AppKit.NSView):
 
 
 def _draw_wf_bars(bars, peaks, bounds, bar_w=3.0, gap=2.5):
-    """Draw equalizer bars with peak-hold dots and idle breathing animation.
-    bar_w and gap are fixed in points; number of bars is computed from width."""
+    """Draw equalizer bars when active; smooth sine-wave line when idle."""
     b     = bounds
     w, h  = b.size.width, b.size.height
     n_src = len(bars)
-    # Fit as many bars as possible into available width
-    n     = max(4, int((w + gap) / (bar_w + gap)))
-    r     = bar_w / 2
 
     # Total signal energy — drives idle vs active look
     energy = sum(bars) / max(1, n_src)
     active = energy > 0.015
 
+    if not active:
+        # Idle: continuous sine wave line scrolling left → right
+        cy     = h / 2.0
+        amp_px = h * 0.38          # 38% of height — clearly visible
+        STEPS  = max(80, int(w))   # smooth enough at any width
+        path   = AppKit.NSBezierPath.bezierPath()
+        path.setLineWidth_(1.5)
+        path.setLineCapStyle_(AppKit.NSRoundLineCapStyle)
+        for s in range(STEPS + 1):
+            px    = s * w / STEPS
+            phase = (px / w) * 2.0 * math.pi * 2.0 - _wf_t * 1.0
+            py    = cy + amp_px * math.sin(phase)
+            pt    = AppKit.NSMakePoint(px, py)
+            if s == 0:
+                path.moveToPoint_(pt)
+            else:
+                path.lineToPoint_(pt)
+        C_IDLE.set()
+        path.stroke()
+        return
+
+    # Active (recording): bar equalizer with peak-hold dots
+    n       = max(4, int((w + gap) / (bar_w + gap)))
+    r       = bar_w / 2
     total_w = n * bar_w + (n - 1) * gap
-    x0      = (w - total_w) / 2   # center the group
+    x0      = (w - total_w) / 2
 
     for i in range(n):
         src_i = int(i * n_src / n)
         amp   = bars[src_i]
         peak  = peaks[src_i] if peaks else 0.0
 
-        if active:
-            bh    = max(2.0, amp * h * 0.90)
-            color = C_BAR_ON if amp > 0.05 else C_BAR_OFF
-        else:
-            # Idle: smooth sine wave scrolling left→right like a snake
-            phase = i * (2.0 * math.pi * 1.5 / max(n, 1)) - _wf_t * 1.2
-            amp   = 0.50 + 0.42 * math.sin(phase)
-            bh    = max(1.5, amp * h)
-            color = C_IDLE
+        bh    = max(2.0, amp * h * 0.90)
+        color = C_BAR_ON if amp > 0.05 else C_BAR_OFF
 
         x = x0 + i * (bar_w + gap)
         y = (h - bh) / 2
@@ -1706,7 +1719,7 @@ def _draw_wf_bars(bars, peaks, bounds, bar_w=3.0, gap=2.5):
         p.fill()
 
         # Peak-hold dot: 2px bright mark above the bar
-        if active and peak > 0.08:
+        if peak > 0.08:
             dot_h = max(1.5, bar_w * 0.5)
             dot_y = (h - peak * h * 0.90) / 2 - dot_h - 1
             if dot_y > 0:
