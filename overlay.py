@@ -4763,7 +4763,9 @@ def _layout_header_wf():
     """Measure app name width, position label, then stretch EQ to fill remaining space.
     Must run on main thread."""
     ICON_END  = STS_X + 22 + 4    # icon right edge + inner gap = 36
-    RIGHT_END = CFG_H_X - _HDR_GAP  # left edge of gear icon minus gap
+    # Compute gear-icon left edge from actual window width (handles expanded mode)
+    cw        = int(_win.frame().size.width) if _win else W
+    RIGHT_END = cw - CFG_H_W - 6 - _HDR_GAP
 
     font  = _mono(11)
     d     = {AppKit.NSFontAttributeName: font}
@@ -6201,7 +6203,7 @@ def _toggle_cfg_panel():
         _close_cfg_panel()
         return
 
-    pw = int(_win.frame().size.width)
+    pw = W   # panels always use the normal (non-expanded) width
 
     # ── Layout constants ─────────────────────────────────────────────────────────
     MARGIN    = 10        # panel left/right margin
@@ -7931,8 +7933,7 @@ def _toggle_providers_panel():
     except Exception:
         pass
 
-    mf     = _win.frame()
-    PW     = int(mf.size.width)
+    PW     = W   # panels always use the normal (non-expanded) width
     MARGIN = 12
     FW     = PW - MARGIN * 2
     LBL_H  = 13
