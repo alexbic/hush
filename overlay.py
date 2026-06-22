@@ -2186,6 +2186,13 @@ class DragPanel(AppKit.NSPanel):
         _LD = 1; _LU = 2; _LDRAG = 6; _THRESH2 = 25.0   # 5 px threshold
         t = event.type()
         if t == _LD:
+            # Double-click anywhere in the header bar → toggle expand
+            if event.clickCount() == 2:
+                loc = event.locationInWindow()
+                wh  = self.frame().size.height
+                if loc.y >= wh - HDR_H:
+                    _main(_toggle_expand)
+                    return
             self._wd_s = AppKit.NSEvent.mouseLocation()
             self._wd_o = self.frame().origin
             self._wd_a = False
@@ -2275,18 +2282,20 @@ class _DropPanel(AppKit.NSPanel):
         if t == _LD:
             self._wd_s  = AppKit.NSEvent.mouseLocation()
             self._wd_a  = False
-            if is_cluster_anchor or in_cluster:
+            if is_cluster_anchor:
                 self._wd_o = self.frame().origin
+            elif in_cluster:
+                # Track cfg's position — dragging any cluster panel moves the whole cluster
+                cfg_ref = globals().get("_cfg_panel")
+                self._wd_o = cfg_ref.frame().origin if cfg_ref else self.frame().origin
             elif is_attached and w:
                 self._wd_o = w.frame().origin
             else:
                 self._wd_o = self.frame().origin
-            # Remember if click landed on a button — needed to suppress action after drag
             cv = self.contentView()
             hit = cv.hitTest_(event.locationInWindow()) if cv else None
             self._wd_on_btn = isinstance(hit, AppKit.NSButton)
         elif t == _LDRAG and getattr(self, '_wd_s', None) is not None and self._wd_o is not None:
-            # Drag works from ANY point in the panel (no _wd_on_btn block)
             cur = AppKit.NSEvent.mouseLocation()
             dx  = cur.x - self._wd_s.x
             dy  = cur.y - self._wd_s.y
@@ -2296,7 +2305,11 @@ class _DropPanel(AppKit.NSPanel):
                     self.setFrameOrigin_(AppKit.NSMakePoint(self._wd_o.x + dx, self._wd_o.y + dy))
                     _reposition_cluster()
                 elif in_cluster:
-                    self.setFrameOrigin_(AppKit.NSMakePoint(self._wd_o.x + dx, self._wd_o.y + dy))
+                    # Move cfg, then reposition all cluster panels together
+                    cfg_ref = globals().get("_cfg_panel")
+                    if cfg_ref:
+                        cfg_ref.setFrameOrigin_(AppKit.NSMakePoint(self._wd_o.x + dx, self._wd_o.y + dy))
+                        _reposition_cluster()
                 elif is_attached and w:
                     new_x = self._wd_o.x + dx
                     new_y = self._wd_o.y + dy
@@ -2311,10 +2324,8 @@ class _DropPanel(AppKit.NSPanel):
             on_btn     = getattr(self, '_wd_on_btn', False)
             self._wd_s = None; self._wd_a = False; self._wd_on_btn = False
             if did_drag:
-                if is_cluster_anchor:
+                if is_cluster_anchor or in_cluster:
                     _update_cluster_offsets()
-                elif in_cluster:
-                    pass  # rubber-band: cluster offsets unchanged — cfg drag snaps panel back
                 elif is_attached:
                     try: _magnet_save()
                     except Exception: pass
@@ -2325,7 +2336,7 @@ class _DropPanel(AppKit.NSPanel):
                     try: _repel_from_others(self)
                     except Exception: pass
                 if on_btn:
-                    return  # drag cancelled button click — suppress action, skip super
+                    return
         objc.super(_DropPanel, self).sendEvent_(event)
 
 
@@ -2373,22 +2384,33 @@ class _EditorPanel(AppKit.NSPanel):
         t = event.type()
         w   = globals().get("_win")
         key = getattr(self, '_panel_key', None)
-        is_attached = _magnet_on.get(key, False) if key else False
+        is_attached   = _magnet_on.get(key, False) if key else False
+        in_cluster    = _cluster_mode  # providers/editor are never the anchor
         if t == _LD:
             self._wd_s  = AppKit.NSEvent.mouseLocation()
-            self._wd_o  = w.frame().origin if (is_attached and w) else self.frame().origin
             self._wd_a  = False
+            if in_cluster:
+                cfg_ref = globals().get("_cfg_panel")
+                self._wd_o = cfg_ref.frame().origin if cfg_ref else self.frame().origin
+            elif is_attached and w:
+                self._wd_o = w.frame().origin
+            else:
+                self._wd_o = self.frame().origin
             cv = self.contentView()
             hit = cv.hitTest_(event.locationInWindow()) if cv else None
             self._wd_on_btn = isinstance(hit, AppKit.NSButton)
         elif t == _LDRAG and getattr(self, '_wd_s', None) is not None and self._wd_o is not None:
-            # Drag works from ANY point in the panel
             cur = AppKit.NSEvent.mouseLocation()
             dx  = cur.x - self._wd_s.x
             dy  = cur.y - self._wd_s.y
             if self._wd_a or dx*dx + dy*dy > _THRESH2:
                 self._wd_a = True
-                if is_attached and w:
+                if in_cluster:
+                    cfg_ref = globals().get("_cfg_panel")
+                    if cfg_ref:
+                        cfg_ref.setFrameOrigin_(AppKit.NSMakePoint(self._wd_o.x + dx, self._wd_o.y + dy))
+                        _reposition_cluster()
+                elif is_attached and w:
                     new_x = self._wd_o.x + dx
                     new_y = self._wd_o.y + dy
                     try: _snap_attached_panels_live(new_x, new_y)
@@ -2402,14 +2424,17 @@ class _EditorPanel(AppKit.NSPanel):
             on_btn   = getattr(self, '_wd_on_btn', False)
             self._wd_s = None; self._wd_a = False; self._wd_on_btn = False
             if did_drag:
-                if key:
-                    try: _update_panel_drag_end(key, self)
-                    except Exception: pass
-                if not is_attached:
-                    try: _repel_from_others(self)
-                    except Exception: pass
+                if in_cluster:
+                    _update_cluster_offsets()
+                else:
+                    if key:
+                        try: _update_panel_drag_end(key, self)
+                        except Exception: pass
+                    if not is_attached:
+                        try: _repel_from_others(self)
+                        except Exception: pass
                 if on_btn:
-                    return  # drag cancelled button click — suppress action, skip super
+                    return
         objc.super(_EditorPanel, self).sendEvent_(event)
 
     def performKeyEquivalent_(self, event):
