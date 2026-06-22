@@ -318,6 +318,11 @@ STRINGS = {
             "— S.T.F.U. —\n"
             "Speak · Transcribe · Format · Use"
         ),
+        "menu_open":    "Открыть HUSH",
+        "menu_about":   "О приложении",
+        "menu_login":   "Запускать при входе в систему",
+        "menu_quit":    "Завершить HUSH",
+        "menu_tooltip": "HUSH — голосовой ввод",
     },
     "en": {
         "idle":        "> waiting",
@@ -370,6 +375,11 @@ STRINGS = {
             "— S.T.F.U. —\n"
             "Speak · Transcribe · Format · Use"
         ),
+        "menu_open":    "Open HUSH",
+        "menu_about":   "About HUSH",
+        "menu_login":   "Launch at Login",
+        "menu_quit":    "Quit HUSH",
+        "menu_tooltip": "HUSH — voice input",
     },
     "es": {
         "idle":        "> esperando",
@@ -422,10 +432,31 @@ STRINGS = {
             "— S.T.F.U. —\n"
             "Speak · Transcribe · Format · Use"
         ),
+        "menu_open":    "Abrir HUSH",
+        "menu_about":   "Acerca de HUSH",
+        "menu_login":   "Iniciar al arrancar",
+        "menu_quit":    "Salir de HUSH",
+        "menu_tooltip": "HUSH — entrada de voz",
     },
 }
 
 LANGS = ["ru", "en", "es"]   # order in config panel (top → bottom)
+
+
+def _detect_system_lang() -> str:
+    """Map macOS preferred language to one of the supported LANGS."""
+    try:
+        pref = AppKit.NSLocale.preferredLanguages()
+        if pref:
+            code = str(pref[0]).split("-")[0].lower()
+            if code == "ru":
+                return "ru"
+            if code in ("es", "ca", "gl", "eu"):
+                return "es"
+    except Exception:
+        pass
+    return "en"
+
 
 def _T(key: str) -> str:
     return STRINGS.get(_st.get("lang", "ru"), STRINGS["ru"]).get(key, key)
@@ -1023,7 +1054,7 @@ _st = {
     "text":          "",       # accumulated session text
     "opacity":       _cfg_saved.get("opacity",   0.88),  # expanded window alpha
     "font_size":     _cfg_saved.get("font_size", 13.0),
-    "lang":          _cfg_saved.get("lang",      "ru"),
+    "lang":          _cfg_saved.get("lang",      _detect_system_lang()),
     "hotkey_copy":   _cfg_saved.get("hotkey_copy", "ctrl"),
     "theme":         _cfg_saved.get("theme",     "emerald"),
     "scenarios":     load_scenarios(),
@@ -3367,6 +3398,7 @@ class BtnTarget(AppKit.NSObject):
         _save_settings()
         _refresh_status_label()
         _refresh_scenario_colors()
+        _refresh_menu_titles()
         # Rebuild config panel with new lang (keep window position — immediately reopening)
         _close_cfg_panel_rebuild()
         _toggle_cfg_panel()
@@ -5075,8 +5107,20 @@ def _toggle_launch_at_login():
             f.write(plist)
 
 
+_menu_items = {}   # {key: NSMenuItem} for live language refresh
+
+
+def _refresh_menu_titles():
+    """Update status bar menu item titles to match current language."""
+    for key, item in _menu_items.items():
+        item.setTitle_(_T(key))
+    btn = _status_bar_item.button() if _status_bar_item else None
+    if btn:
+        btn.setToolTip_(_T("menu_tooltip"))
+
+
 def _setup_status_bar():
-    """Create macOS menu bar status item with About and Quit."""
+    """Create macOS menu bar status item with localised menu."""
     global _status_bar_item
     bar = AppKit.NSStatusBar.systemStatusBar()
     _status_bar_item = bar.statusItemWithLength_(AppKit.NSSquareStatusItemLength)
@@ -5091,41 +5135,50 @@ def _setup_status_bar():
         else:
             btn.setTitle_("H")
             btn.setFont_(_mono(13, True))
-        btn.setToolTip_("HUSH — голосовой ввод")
+        btn.setToolTip_(_T("menu_tooltip"))
     menu = AppKit.NSMenu.alloc().init()
+
     open_item = AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-        "Открыть HUSH", "openHush:", "")
+        _T("menu_open"), "openHush:", "")
     open_item.setTarget_(_btn_t)
     # Show ⇧⌥ right-aligned on same line (native macOS shortcut display)
-    # U+2325 = ⌥ option symbol as the "key"; Shift modifier adds ⇧ prefix → displays "⇧⌥"
     open_item.setKeyEquivalent_("⌥")
     open_item.setKeyEquivalentModifierMask_(AppKit.NSEventModifierFlagShift)
     menu.addItem_(open_item)
+    _menu_items["menu_open"] = open_item
+
     menu.addItem_(AppKit.NSMenuItem.separatorItem())
+
     about_item = AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-        "О приложении", "showAbout:", "")
+        _T("menu_about"), "showAbout:", "")
     about_item.setTarget_(_btn_t)
     menu.addItem_(about_item)
+    _menu_items["menu_about"] = about_item
+
     menu.addItem_(AppKit.NSMenuItem.separatorItem())
+
     login_item = AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-        "Запускать при входе в систему", "toggleLaunchAtLogin:", "")
+        _T("menu_login"), "toggleLaunchAtLogin:", "")
     login_item.setTarget_(_btn_t)
     login_item.setState_(1 if _is_launch_at_login() else 0)
     menu.addItem_(login_item)
-    _btn_t._login_menu_item = login_item   # keep reference for updates
+    _menu_items["menu_login"] = login_item
+    _btn_t._login_menu_item = login_item
+
     menu.addItem_(AppKit.NSMenuItem.separatorItem())
+
     quit_item = AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-        "Завершить HUSH", "quitApp:", "")
+        _T("menu_quit"), "quitApp:", "")
     quit_item.setTarget_(_btn_t)
     menu.addItem_(quit_item)
+    _menu_items["menu_quit"] = quit_item
+
     menu.setDelegate_(_btn_t)   # menuNeedsUpdate_ refreshes checkmark on open
     _status_bar_item.setMenu_(menu)
-    # macOS 14+: NSStatusItem.visible persists and may default to hidden in some contexts
     try:
         _status_bar_item.setVisible_(True)
     except Exception:
         pass
-    pass
 
 
 def _show_about_view():
