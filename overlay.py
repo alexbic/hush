@@ -1692,11 +1692,11 @@ def _draw_wf_bars(bars, peaks, bounds, bar_w=3.0, gap=2.5):
             bh    = max(2.0, amp * h * 0.90)
             color = C_BAR_ON if amp > 0.05 else C_BAR_OFF
         else:
-            # Idle breathing: gentle sine wave rippling across bars
-            phase = _wf_t * 2.5 + i * 0.55
-            idle  = 0.10 + 0.08 * math.sin(phase)
-            bh    = max(2.0, idle * h)
-            color = C_BAR_OFF
+            # Idle: smooth sine wave scrolling left→right like a snake
+            phase = i * (2.0 * math.pi * 1.5 / max(n, 1)) - _wf_t * 1.2
+            amp   = 0.50 + 0.42 * math.sin(phase)
+            bh    = max(1.5, amp * h)
+            color = C_IDLE
 
         x = x0 + i * (bar_w + gap)
         y = (h - bh) / 2
