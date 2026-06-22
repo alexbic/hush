@@ -1052,6 +1052,20 @@ def _setup_keepalive():
         0.25, tgt, _KATgt.ping_, None, True
     )
 
+
+def _start_provider_monitor():
+    """Background thread: re-probe providers every 30s while any are unavailable."""
+    import threading, time
+
+    def _loop():
+        while True:
+            time.sleep(30)
+            if any(v is False for v in provider_config._status.values()):
+                provider_config.probe_all()
+
+    threading.Thread(target=_loop, daemon=True, name="hush-provider-monitor").start()
+
+
 # ── Workspace observer — динамический трекинг целевого приложения ─────────────
 
 class _AppObserver(AppKit.NSObject):
@@ -1199,6 +1213,7 @@ class _AppDelegate(AppKit.NSObject):
             lambda: AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(
                 overlay.update_provider_status))
         provider_config.probe_all()
+        _start_provider_monitor()
         transcriber.warm_up()
         print("Voice Input запущен. Right ⌥ — запись, Right ⌥ × 2 — история. Ctrl+C — выход.")
 

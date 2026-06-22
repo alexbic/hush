@@ -1293,6 +1293,12 @@ def _apply_theme_to_all_windows():
             history = on_hist()
             _show_hist_panel(history)
 
+    # Providers panel — rebuild if open (text fields + buttons have baked-in colours)
+    prov = globals().get("_prov_panel")
+    if prov and hasattr(prov, "isVisible") and prov.isVisible():
+        prov.orderOut_(None)
+        _toggle_providers_panel()
+
     # Recursively redraw all subviews — needed for panels with deep view hierarchies
     def _redisplay_tree(v):
         v.setNeedsDisplay_(True)
@@ -1333,7 +1339,7 @@ def _apply_all_panels_alpha():
     win = globals().get("_win")
     if win:
         win.setAlphaValue_(alpha)
-    for key in ("_cfg_panel", "_hist_panel", "_sc_editor_panel", "_about_panel"):
+    for key in ("_cfg_panel", "_hist_panel", "_sc_editor_panel", "_about_panel", "_prov_panel"):
         p = globals().get(key)
         if p and hasattr(p, "isVisible") and p.isVisible():
             p.setAlphaValue_(alpha)
@@ -7734,6 +7740,12 @@ def _toggle_providers_panel():
         return
 
     _close_providers_panel()
+    # Re-probe on every open so status dots reflect current state immediately
+    try:
+        import provider_config as _pc_mod
+        _pc_mod.probe_all()
+    except Exception:
+        pass
 
     mf     = _win.frame()
     PW     = int(mf.size.width)
