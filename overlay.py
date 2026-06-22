@@ -3544,9 +3544,19 @@ class BtnTarget(AppKit.NSObject):
         import subprocess
         subprocess.Popen(["open", "https://pay.alexbic.net/?mode=donate"])
 
+    def aboutDocs_(self, sender):
+        import subprocess
+        lang = _st.get("lang", "ru")
+        urls = {
+            "ru": "https://github.com/alexbic/hush/blob/main/README_RU.md",
+            "es": "https://github.com/alexbic/hush/blob/main/README_ES.md",
+        }
+        url = urls.get(lang, "https://github.com/alexbic/hush/blob/main/README.md")
+        subprocess.Popen(["open", url])
+
     def aboutGithub_(self, sender):
         import subprocess
-        subprocess.Popen(["open", "https://github.com/alexbic"])
+        subprocess.Popen(["open", "https://github.com/alexbic/hush"])
 
     def aboutSite_(self, sender):
         import subprocess
@@ -5550,17 +5560,29 @@ def _show_about_view():
     # ── Second row from bottom: github link (centered) ────────────────────────
     GH_Y = PAD_B + ROW_H + GAP
     GH_W = 200
-    gh_btn = _mklinkbtn("[ github.com/alexbic ]", color=C_TEXT, size=10)
+    gh_btn = _mklinkbtn("[ github.com/alexbic/hush ]", color=C_TEXT, size=10)
     gh_btn.setFrame_(AppKit.NSMakeRect((AW - GH_W) / 2, GH_Y, GH_W, ROW_H))
     gh_btn.setAutoresizingMask_(AppKit.NSViewMinXMargin | AppKit.NSViewMaxXMargin | AppKit.NSViewMaxYMargin)
     gh_btn.setTarget_(_btn_t)
     gh_btn.setAction_(BtnTarget.aboutGithub_)
     bg.addSubview_(gh_btn)
 
-    # ── Third row: copyright + author (centered) → link to site ──────────────
-    CR_Y = GH_Y + ROW_H + GAP
+    # ── Third row: docs link (language-aware) ────────────────────────────────
+    DC_Y = GH_Y + ROW_H + GAP
+    DC_W = 200
+    doc_labels = {"ru": "[ Инструкция ]", "es": "[ Instrucciones ]"}
+    doc_label  = doc_labels.get(lang, "[ Documentation ]")
+    dc_btn = _mklinkbtn(doc_label, color=C_GREEN, size=10)
+    dc_btn.setFrame_(AppKit.NSMakeRect((AW - DC_W) / 2, DC_Y, DC_W, ROW_H))
+    dc_btn.setAutoresizingMask_(AppKit.NSViewMinXMargin | AppKit.NSViewMaxXMargin | AppKit.NSViewMaxYMargin)
+    dc_btn.setTarget_(_btn_t)
+    dc_btn.setAction_(BtnTarget.aboutDocs_)
+    bg.addSubview_(dc_btn)
+
+    # ── Fourth row: copyright + author (centered) → link to site ─────────────
+    CR_Y = DC_Y + ROW_H + GAP
     CR_W = 320
-    cr_btn = _mklinkbtn("© 2026 Alexander Bikmukhametov", color=C_GREEN, size=10)
+    cr_btn = _mklinkbtn("© 2026 Alexander Bikmukhametov", color=C_GREEN_DIM, size=10)
     cr_btn.setFrame_(AppKit.NSMakeRect((AW - CR_W) / 2, CR_Y, CR_W, ROW_H))
     cr_btn.setAutoresizingMask_(AppKit.NSViewMinXMargin | AppKit.NSViewMaxXMargin | AppKit.NSViewMaxYMargin)
     cr_btn.setTarget_(_btn_t)
