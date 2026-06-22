@@ -4,6 +4,7 @@ Session window: opens on hotkey press, accumulates text, closes on [×] or PASTE
 Branch: ui/terminal-green
 """
 import re
+import sys
 import math
 import threading
 import time
@@ -14,10 +15,11 @@ import AppKit
 import objc
 import html2text as _html2text
 import markdown as _markdown
+import provider_config as _pc
 
 # ── Scenarios ─────────────────────────────────────────────────────────────────
 
-SCENARIOS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scenarios.json")
+SCENARIOS_FILE = os.path.expanduser("~/.config/hush/scenarios.json")
 
 def _html_to_md(html: str) -> str:
     h = _html2text.HTML2Text()
@@ -74,27 +76,43 @@ def _md_to_raw_attrs(md_text: str):
 
 
 def _md_to_styled_attrs(md_text: str):
-    """Render Markdown to NSAttributedString with terminal color scheme."""
+    """Render Markdown to NSAttributedString with theme-aware colors."""
     try:
         html_body = _markdown.markdown(
             md_text,
             extensions=["fenced_code", "tables", "nl2br"]
         )
         fs = _st.get("font_size", 12)
+
+        def _c(col):
+            if hasattr(col, 'redComponent'):
+                return "#{:02X}{:02X}{:02X}".format(
+                    int(col.redComponent()   * 255),
+                    int(col.greenComponent() * 255),
+                    int(col.blueComponent()  * 255))
+            return "#{:02X}{:02X}{:02X}".format(
+                int(col[0]*255), int(col[1]*255), int(col[2]*255))
+
+        tx  = _c(C_TEXT)
+        acc = _c(C_GREEN)
+        dim = _c(C_GREEN_DIM)
+
         styled = (
             '<html><head><meta charset="utf-8"><style>'
-            f'body{{font-family:"SF Mono",monospace;font-size:{fs}px;'
-            f'color:#54FF54;background:transparent;margin:0;padding:0;}}'
-            f'h1{{font-size:{fs+4}px;color:#FFFFFF;font-weight:bold;margin:4px 0;}}'
-            f'h2{{font-size:{fs+2}px;color:#CCFFCC;font-weight:bold;margin:3px 0;}}'
-            f'h3{{font-size:{fs+1}px;color:#AAFFAA;font-weight:bold;margin:2px 0;}}'
-            'strong{color:#AAFFAA;font-weight:bold;}'
-            'em{color:#55FFFF;font-style:italic;}'
-            'code{color:#FFFF88;font-family:"SF Mono",monospace;}'
-            'pre{color:#FFFF88;padding:4px;border-left:2px solid #2ECC71;}'
-            'a{color:#55AAFF;text-decoration:none;}'
+            f'body{{font-family:"-apple-system","SF Pro Text","Helvetica Neue",sans-serif;'
+            f'font-size:{fs}px;font-weight:300;'
+            f'color:{tx};background:transparent;margin:0;padding:0;}}'
+            f'h1{{font-size:{fs+3}px;color:{tx};font-weight:600;margin:4px 0;}}'
+            f'h2{{font-size:{fs+1}px;color:{tx};font-weight:500;margin:3px 0;}}'
+            f'h3{{font-size:{fs}px;color:{tx};font-weight:500;margin:2px 0;}}'
+            f'strong{{color:{tx};font-weight:600;}}'
+            f'em{{color:{acc};font-style:italic;font-weight:300;}}'
+            f'code{{color:{dim};font-family:"SF Mono","Menlo",monospace;font-size:{fs-1}px;}}'
+            f'pre{{color:{dim};font-family:"SF Mono","Menlo",monospace;font-size:{fs-1}px;'
+            f'padding:4px;border-left:2px solid {acc};}}'
+            f'a{{color:{acc};text-decoration:none;}}'
             'li{margin:1px 0;}p{margin:2px 0;}'
-            'hr{border:none;border-top:1px solid #336633;}'
+            f'hr{{border:none;border-top:1px solid {dim};}}'
             f'</style></head><body>{html_body}</body></html>'
         )
         ns_data = AppKit.NSData.dataWithBytes_length_(
@@ -201,7 +219,7 @@ def _model_available(model_str: str) -> bool:
 
 # ── Settings persistence ───────────────────────────────────────────────────────
 
-SETTINGS_FILE = os.path.expanduser("~/.config/voice-input/settings.json")
+SETTINGS_FILE = os.path.expanduser("~/.config/hush/settings.json")
 
 def _load_settings() -> dict:
     try:
@@ -228,13 +246,16 @@ def _save_settings():
     try:
         os.makedirs(os.path.dirname(SETTINGS_FILE), exist_ok=True)
         data = {
-            "opacity":      _st["opacity"],
-            "font_size":    _st["font_size"],
-            "lang":         _st.get("lang", "ru"),
-            "hotkey_copy":  _st.get("hotkey_copy", "ctrl"),
-            "theme":        _st.get("theme", "emerald"),
-            "silent_pos":   _cfg_saved.get("silent_pos", {}),
-            "win_pos":      _cfg_saved.get("win_pos", {}),
+            "opacity":       _st["opacity"],
+            "font_size":     _st["font_size"],
+            "lang":          _st.get("lang", "ru"),
+            "theme":         _st.get("theme", "emerald"),
+            "silent_pos":    _cfg_saved.get("silent_pos", {}),
+            "win_pos":       _cfg_saved.get("win_pos", {}),
+            "magnet_on":     _cfg_saved.get("magnet_on",     {}),
+            "magnet_offset": _cfg_saved.get("magnet_offset", {}),
+            "magnet_free":   _cfg_saved.get("magnet_free",   {}),
+            "panels_open":   _cfg_saved.get("panels_open",   {}),
         }
         with open(SETTINGS_FILE, "w") as f:
             json.dump(data, f)
@@ -261,6 +282,7 @@ STRINGS = {
         "btn_hist":      "[ИСТ]",
         "btn_cfg":       "⚙",
         "cfg_scenarios": "> сценарии",
+        "btn_close":     "[ЗАКРЫТЬ]",
         "btn_quit":      "[ВЫХОД]",
         "btn_save":      "[СОХР]",
         "btn_cancel":    "[ОТМН]",
@@ -270,19 +292,21 @@ STRINGS = {
         "btn_sc_delete":  "[УДАЛИТЬ]",
         "delete_confirm": "удалить сценарий?",
         "sc_silent":      "тихий режим",
+        "sc_full_default": "full mode по умолч.",
         "hotkey":         "> буфер ↩",
         "btn_sc_accept":  "[ОТПРАВИТЬ]",
         "btn_sc_undo":    "[ОТМЕНИТЬ]",
         "btn_scene":      "[СЦЕНАРИЙ]",
+        "btn_copy":       "[КОПИРОВАТЬ]",
         "cfg_opacity":    "прозрачность",
         "cfg_font":       "шрифт",
         "cfg_lang":       "язык",
         "cfg_hotkey":     "мастер-клавиша",
         "cfg_theme":      "цвет",
         "cfg_scenes":     "сценарии",
-        "hist_mixed":     "все",
-        "hist_sessions":  "сессии",
-        "hist_blocks":    "блоки",
+        "hist_mixed":     "ВСЕ",
+        "hist_sessions":  "СЕССИИ",
+        "hist_blocks":    "БЛОКИ",
         "about_body": (
             "HUSH\n"
             "Hear · Understand · Shape · Hand back\n"
@@ -295,6 +319,11 @@ STRINGS = {
             "— S.T.F.U. —\n"
             "Speak · Transcribe · Format · Use"
         ),
+        "menu_open":    "Открыть HUSH",
+        "menu_about":   "О приложении",
+        "menu_login":   "Запускать при входе в систему",
+        "menu_quit":    "Завершить HUSH",
+        "menu_tooltip": "HUSH — голосовой ввод",
     },
     "en": {
         "idle":        "> waiting",
@@ -313,6 +342,7 @@ STRINGS = {
         "btn_hist":      "[HIST]",
         "btn_cfg":       "⚙",
         "cfg_scenarios": "> scenarios",
+        "btn_close":     "[CLOSE]",
         "btn_quit":      "[QUIT]",
         "btn_save":      "[SAVE]",
         "btn_cancel":    "[CNCL]",
@@ -322,19 +352,21 @@ STRINGS = {
         "btn_sc_delete":  "[DELETE]",
         "delete_confirm": "delete scenario?",
         "sc_silent":      "silent mode",
+        "sc_full_default": "full mode default",
         "hotkey":         "> copy ↩",
         "btn_sc_accept":  "[SEND]",
         "btn_sc_undo":    "[CANCEL]",
         "btn_scene":      "[SCENE]",
+        "btn_copy":       "[COPY]",
         "cfg_opacity":    "opacity",
         "cfg_font":       "font",
         "cfg_lang":       "language",
         "cfg_hotkey":     "modifier key",
         "cfg_theme":      "color",
         "cfg_scenes":     "scenarios",
-        "hist_mixed":     "all",
-        "hist_sessions":  "sessions",
-        "hist_blocks":    "blocks",
+        "hist_mixed":     "ALL",
+        "hist_sessions":  "SESSIONS",
+        "hist_blocks":    "BLOCKS",
         "about_body": (
             "HUSH\n"
             "Hear · Understand · Shape · Hand back\n"
@@ -346,6 +378,11 @@ STRINGS = {
             "— S.T.F.U. —\n"
             "Speak · Transcribe · Format · Use"
         ),
+        "menu_open":    "Open HUSH",
+        "menu_about":   "About HUSH",
+        "menu_login":   "Launch at Login",
+        "menu_quit":    "Quit HUSH",
+        "menu_tooltip": "HUSH — voice input",
     },
     "es": {
         "idle":        "> esperando",
@@ -364,6 +401,7 @@ STRINGS = {
         "btn_hist":      "[HIST]",
         "btn_cfg":       "⚙",
         "cfg_scenarios": "> escenarios",
+        "btn_close":     "[CERRAR]",
         "btn_quit":      "[SALIR]",
         "btn_save":      "[GUAR]",
         "btn_cancel":    "[CNCL]",
@@ -373,19 +411,21 @@ STRINGS = {
         "btn_sc_delete":  "[BORRAR]",
         "delete_confirm": "¿borrar escenario?",
         "sc_silent":      "modo silencioso",
+        "sc_full_default": "full mode defecto",
         "hotkey":         "> copia ↩",
         "btn_sc_accept":  "[ENVIAR]",
         "btn_sc_undo":    "[CANCELAR]",
         "btn_scene":      "[ESCENA]",
+        "btn_copy":       "[COPIAR]",
         "cfg_opacity":    "opacidad",
         "cfg_font":       "fuente",
         "cfg_lang":       "idioma",
         "cfg_hotkey":     "tecla mod.",
         "cfg_theme":      "color",
         "cfg_scenes":     "escenarios",
-        "hist_mixed":     "todo",
-        "hist_sessions":  "sesiones",
-        "hist_blocks":    "bloques",
+        "hist_mixed":     "TODO",
+        "hist_sessions":  "SESIONES",
+        "hist_blocks":    "BLOQUES",
         "about_body": (
             "HUSH\n"
             "Hear · Understand · Shape · Hand back\n"
@@ -397,10 +437,31 @@ STRINGS = {
             "— S.T.F.U. —\n"
             "Speak · Transcribe · Format · Use"
         ),
+        "menu_open":    "Abrir HUSH",
+        "menu_about":   "Acerca de HUSH",
+        "menu_login":   "Iniciar al arrancar",
+        "menu_quit":    "Salir de HUSH",
+        "menu_tooltip": "HUSH — entrada de voz",
     },
 }
 
 LANGS = ["ru", "en", "es"]   # order in config panel (top → bottom)
+
+
+def _detect_system_lang() -> str:
+    """Map macOS preferred language to one of the supported LANGS."""
+    try:
+        pref = AppKit.NSLocale.preferredLanguages()
+        if pref:
+            code = str(pref[0]).split("-")[0].lower()
+            if code == "ru":
+                return "ru"
+            if code in ("es", "ca", "gl", "eu"):
+                return "es"
+    except Exception:
+        pass
+    return "en"
+
 
 def _T(key: str) -> str:
     return STRINGS.get(_st.get("lang", "ru"), STRINGS["ru"]).get(key, key)
@@ -475,16 +536,17 @@ def _win_default_pos():
     return int(x), int(y)
 
 def _win_load_pos():
-    """Load saved main window position; validate against visible area; fall back to default."""
+    """Load saved main window position; validate against any screen; fall back to default."""
     key   = _screen_key()
     saved = _cfg_saved.get("win_pos", {}).get(key)
     if saved:
         sx, sy = saved["x"], saved["y"]
-        vis = AppKit.NSScreen.mainScreen().visibleFrame()
-        in_x = vis.origin.x <= sx and sx + W <= vis.origin.x + vis.size.width
-        in_y = vis.origin.y <= sy and sy + H <= vis.origin.y + vis.size.height
-        if in_x and in_y:
-            return int(sx), int(sy)
+        for screen in AppKit.NSScreen.screens():
+            vis  = screen.visibleFrame()
+            in_x = vis.origin.x <= sx and sx + W <= vis.origin.x + vis.size.width
+            in_y = vis.origin.y <= sy and sy + H <= vis.origin.y + vis.size.height
+            if in_x and in_y:
+                return int(sx), int(sy)
     return _win_default_pos()
 
 def _win_save_pos():
@@ -497,6 +559,507 @@ def _win_save_pos():
     _save_settings()
 
 
+# ── Magnet window system ───────────────────────────────────────────────────────
+
+_PANEL_GAP = 10
+
+def _repel_from_others(panel):
+    """Push panel away from overlapping windows (anti-overlap)."""
+    others = [p for p in (_win, _cfg_panel, _prov_panel, _sc_editor_panel)
+              if p is not None and p is not panel and p.isVisible()]
+    if not others:
+        return
+    fr = panel.frame()
+    x, y, w, h = fr.origin.x, fr.origin.y, fr.size.width, fr.size.height
+    for _ in range(8):
+        moved = False
+        for other in others:
+            of = other.frame()
+            ox, oy, ow, oh = of.origin.x, of.origin.y, of.size.width, of.size.height
+            G = _PANEL_GAP
+            h_left  = x + w + G - ox
+            h_right = ox + ow + G - x
+            v_top   = y + h + G - oy
+            v_bot   = oy + oh + G - y
+            if h_left > 0 and h_right > 0 and v_top > 0 and v_bot > 0:
+                candidates = [
+                    (h_right,  0),
+                    (-h_left,  0),
+                    (0,  v_bot),
+                    (0, -v_top),
+                ]
+                dx, dy = min(candidates, key=lambda c: c[0]**2 + c[1]**2)
+                x += dx; y += dy; moved = True
+        if not moved:
+            break
+    panel.setFrameOrigin_(AppKit.NSMakePoint(x, y))
+
+
+_MAGNET_KEYS    = ["cfg", "hist", "editor", "providers"]  # tag=index
+_MAGNET_DEFAULT = {"cfg": True, "hist": True, "editor": True, "providers": True}
+_magnet_on      = dict(_MAGNET_DEFAULT)
+_magnet_offset  = {}   # {key: (dx, dy)} from _win origin when ON
+_magnet_free_pos = {}  # {key: (x, y)} saved free position when OFF
+_snap_ts        = {}   # {key: monotonic()} — timestamp of last snap (oscillation guard)
+_magnet_btns    = {}   # {key: NSButton} for UI updates
+
+# ── Cluster mode (expanded window) ────────────────────────────────────────────
+_cluster_mode     = False   # True while main window is in expanded state
+_cluster_offsets  = {}      # {key: (dx, dy)} from _cfg_panel origin
+_cluster_was_open = set()   # panel keys visible BEFORE expand (to restore on collapse)
+_cluster_cfg_auto = False   # True if cfg was auto-opened as cluster anchor
+
+
+def _magnet_save():
+    _cfg_saved["magnet_on"]     = dict(_magnet_on)
+    _cfg_saved["magnet_offset"] = {k: list(v) for k, v in _magnet_offset.items()}
+    _cfg_saved["magnet_free"]   = {k: list(v) for k, v in _magnet_free_pos.items()}
+    _save_settings()
+
+def _magnet_load():
+    global _magnet_on, _magnet_offset, _magnet_free_pos
+    loaded = _cfg_saved.get("magnet_on", {})
+    _magnet_on = {k: loaded.get(k, _MAGNET_DEFAULT.get(k, False)) for k in _MAGNET_DEFAULT}
+    raw = _cfg_saved.get("magnet_offset", {})
+    _magnet_offset = {k: tuple(v) for k, v in raw.items()}
+    raw = _cfg_saved.get("magnet_free", {})
+    _magnet_free_pos = {k: tuple(v) for k, v in raw.items()}
+
+def _panel_by_key(key):
+    return {"cfg":       globals().get("_cfg_panel"),
+            "hist":      globals().get("_hist_panel"),
+            "editor":    globals().get("_sc_editor_panel"),
+            "providers": globals().get("_prov_panel")}.get(key)
+
+def _toggle_magnet(key):
+    panel  = _panel_by_key(key)
+    was_on = _magnet_on.get(key, False)
+    if was_on:
+        if panel:
+            try:
+                pf = panel.frame()
+                _magnet_free_pos[key] = (pf.origin.x, pf.origin.y)
+            except Exception:
+                pass
+        _magnet_on[key] = False
+        if key in _magnet_free_pos and panel:
+            fx, fy = _magnet_free_pos[key]
+            try:
+                panel.setFrameOrigin_(AppKit.NSMakePoint(fx, fy))
+            except Exception:
+                pass
+    else:
+        win = globals().get("_win")
+        if panel and win:
+            try:
+                pf = panel.frame()
+                wf = win.frame()
+                _magnet_offset[key] = (pf.origin.x - wf.origin.x, pf.origin.y - wf.origin.y)
+            except Exception:
+                pass
+        _magnet_on[key] = True
+    _magnet_save()
+    _update_magnet_btn(key)
+
+def _update_magnet_btn(key):
+    btn = _magnet_btns.get(key)
+    if not btn:
+        return
+    try:
+        is_on = _magnet_on.get(key, False)
+        btn.setAlphaValue_(1.0 if is_on else 0.35)
+    except Exception:
+        pass
+
+_SNAP_GAP = 6   # gap between panels in a chain
+
+
+def _panel_side(key, ww, wh, pw, ph):
+    """Return which side ("left","right","top","bottom") a magneted panel is on."""
+    if key not in _magnet_offset:
+        return None
+    dx, dy = _magnet_offset[key]
+    if abs(dx) >= abs(dy):
+        return "left" if dx <= 0 else "right"
+    return "top" if dy >= 0 else "bottom"
+
+
+_OPP = {"left": "right", "right": "left", "top": "bottom", "bottom": "top"}
+
+
+def _all_screens_bounds():
+    """Union of all connected screens' visible frames → (x, y, x2, y2).
+    Used ONLY for the main window drag clamp so it can travel between screens."""
+    scrs = AppKit.NSScreen.screens() or [AppKit.NSScreen.mainScreen()]
+    x  = min(int(s.visibleFrame().origin.x) for s in scrs)
+    y  = min(int(s.visibleFrame().origin.y) for s in scrs)
+    x2 = max(int(s.visibleFrame().origin.x + s.visibleFrame().size.width)  for s in scrs)
+    y2 = max(int(s.visibleFrame().origin.y + s.visibleFrame().size.height) for s in scrs)
+    return x, y, x2, y2
+
+
+def _screen_bounds_at(cx, cy):
+    """Visible bounds of the single screen whose area contains point (cx, cy).
+    Panels use this — their world is the current screen only, NOT the union.
+    Falls back to the screen with the most overlap, then mainScreen."""
+    for s in (AppKit.NSScreen.screens() or [AppKit.NSScreen.mainScreen()]):
+        f = s.visibleFrame()
+        if (f.origin.x <= cx < f.origin.x + f.size.width and
+                f.origin.y <= cy < f.origin.y + f.size.height):
+            return (int(f.origin.x), int(f.origin.y),
+                    int(f.origin.x + f.size.width), int(f.origin.y + f.size.height))
+    # Centre is between screens — let macOS pick the most-overlapped one
+    win = globals().get("_win")
+    s = (win.screen() if win else None) or AppKit.NSScreen.mainScreen()
+    f = s.visibleFrame()
+    return (int(f.origin.x), int(f.origin.y),
+            int(f.origin.x + f.size.width), int(f.origin.y + f.size.height))
+
+
+_MAGNET_PANEL_GLOBALS = {
+    "cfg":       "_cfg_panel",
+    "hist":      "_hist_panel",
+    "editor":    "_sc_editor_panel",
+    "providers": "_prov_panel",
+}
+
+# ── Grid-based panel placement ────────────────────────────────────────────────
+#
+# Each cell is identified by (col, row) relative to the main window:
+#   col=0, row=0  — main window's own position (always reserved)
+#   col < 0  → left columns;   col > 0  → right columns
+#   row > 0  → above rows;     row < 0  → below rows
+#
+# Default preferred cells:
+#   cfg       → (0, +1)  above-center
+#   hist      → (0, -1)  below-center
+#   providers → (-1, 0)  left
+#   editor    → (+1, 0)  right
+#
+# When the preferred cell is occupied or off-screen, we assign the nearest
+# free cell by Euclidean distance from (pref_col, pref_row).  No overlaps,
+# no exceeding screen bounds, fully adaptive to any resolution / orientation.
+
+_PANEL_PREF_CELL = {
+    "cfg":       (0,  1),
+    "hist":      (0, -1),
+    "providers": (-1, 0),
+    "editor":    ( 1, 0),
+}
+
+
+def _cell_to_pos(col, row, wx, wy, ww, wh, pw, ph):
+    """Absolute (nx, ny) of grid cell (col, row) relative to main window."""
+    G = _SNAP_GAP
+    if col == 0:
+        nx = wx
+    elif col < 0:
+        nx = wx + col * (pw + G)           # col=-1 → wx-(pw+G)
+    else:
+        nx = wx + ww + G + (col - 1) * (pw + G)  # col=+1 → wx+ww+G
+    if row == 0:
+        ny = wy
+    elif row < 0:
+        ny = wy + row * (ph + G)           # row=-1 → wy-(ph+G)
+    else:
+        ny = wy + wh + G + (row - 1) * (ph + G)  # row=+1 → wy+wh+G
+    return int(nx), int(ny)
+
+
+def _pos_to_cell(nx, ny, wx, wy, ww, wh, pw, ph):
+    """Nearest grid cell (col, row) for absolute position (nx, ny)."""
+    G = _SNAP_GAP
+    half_cw = (pw + G) / 2
+    half_ch = (ph + G) / 2
+    # Horizontal
+    if abs(nx - wx) < half_cw:
+        col = 0
+    elif nx < wx:
+        col = -max(1, round((wx - nx) / (pw + G)))
+    else:
+        col = max(1, round((nx - wx - ww - G) / (pw + G)) + 1)
+    # Vertical
+    if abs(ny - wy) < half_ch:
+        row = 0
+    elif ny < wy:
+        row = -max(1, round((wy - ny) / (ph + G)))
+    else:
+        row = max(1, round((ny - wy - wh - G) / (ph + G)) + 1)
+    return col, row
+
+
+def _valid_grid_cells(wx, wy, ww, wh, pw, ph, vx, vy, vx2, vy2):
+    """All (col, row) cells around the main window.
+
+    Always includes at least 1 cell on every side so panels can always be
+    placed — even when the screen is too small for a perfect cross layout.
+    Cells that don't fully fit on-screen are still returned; _assign_cell
+    scores them by how much they overflow so on-screen cells win first.
+    """
+    G = _SNAP_GAP
+    max_left  = max(1, int((wx - vx        - G) // (pw + G)))
+    max_right = max(1, int((vx2 - wx - ww  - G) // (pw + G)))
+    max_above = max(1, int((vy2 - wy - wh  - G) // (ph + G)))
+    max_below = max(1, int((wy - vy        - G) // (ph + G)))
+    cells = []
+    for col in range(-max_left, max_right + 1):
+        for row in range(-max_below, max_above + 1):
+            if col == 0 and row == 0:
+                continue
+            cells.append((col, row))
+    return cells
+
+
+def _occupied_cells(excl_key, wx, wy, ww, wh, pw, ph):
+    """Set of (col, row) occupied by visible magnetic panels (excl_key excluded)."""
+    occ = set()
+    for k in _MAGNET_KEYS:
+        if k == excl_key or not _magnet_on.get(k, False) or k not in _magnet_offset:
+            continue
+        p = globals().get(_MAGNET_PANEL_GLOBALS.get(k, ""))
+        if p is None or not p.isVisible():
+            continue
+        dx, dy = _magnet_offset[k]
+        occ.add(_pos_to_cell(wx + dx, wy + dy, wx, wy, ww, wh, pw, ph))
+    return occ
+
+
+def _assign_cell(key, wx, wy, ww, wh, pw, ph, vx, vy, vx2, vy2):
+    """Find the best free cell for `key`.  Returns (col, row, nx, ny) or None.
+
+    Scoring (lower = better):
+      0. axis_group  — prefer same axis as pref (horizontal panel stays in
+                       row=0; vertical panel stays in col=0).  Cross-axis
+                       cells are a last resort.
+      1. off_screen  — total pixels the panel would extend outside screen
+                       bounds.  Fully on-screen cells always beat clipped ones.
+      2. dist        — Euclidean distance² from preferred cell (tie-break).
+    """
+    if key in _magnet_offset:
+        dx, dy = _magnet_offset[key]
+        pref = _pos_to_cell(wx + dx, wy + dy, wx, wy, ww, wh, pw, ph)
+    else:
+        pref = _PANEL_PREF_CELL.get(key, (0, -1))
+
+    valid    = _valid_grid_cells(wx, wy, ww, wh, pw, ph, vx, vy, vx2, vy2)
+    occupied = _occupied_cells(key, wx, wy, ww, wh, pw, ph)
+    free     = [c for c in valid if c not in occupied]
+
+    if not free:
+        return None
+
+    pc, pr = pref
+
+    def _score(c):
+        col, row = c
+        nx, ny = _cell_to_pos(col, row, wx, wy, ww, wh, pw, ph)
+        # Pixels outside screen bounds
+        off = (max(0, vx - nx) + max(0, nx + pw - vx2) +
+               max(0, vy - ny) + max(0, ny + ph - vy2))
+        # Axis penalty: cross-axis cells cost ~1/4 panel size.
+        # If the on-axis cell overflows by more than this, cross-axis wins.
+        if pr == 0 and pc != 0:           # pref is horizontal (left/right row)
+            axis_pen = 0 if row == 0 else pw // 4
+        elif pc == 0 and pr != 0:         # pref is vertical (above/below col)
+            axis_pen = 0 if col == 0 else ph // 4
+        else:
+            axis_pen = 0
+        dist = (col - pc) ** 2 + (row - pr) ** 2
+        return (off + axis_pen, dist)
+
+    best = min(free, key=_score)
+    nx, ny = _cell_to_pos(best[0], best[1], wx, wy, ww, wh, pw, ph)
+    return best[0], best[1], nx, ny
+
+
+# Keep for callers that still pass perp (ignored now — all panels same height)
+def _first_free_slot_on_side(side, excl_key, wx, wy, ww, wh, pw, ph, perp=0):
+    """Legacy shim: returns first free slot on `side` using grid system."""
+    G = _SNAP_GAP
+    vx, vy, vx2, vy2 = _screen_bounds_at(wx + ww / 2, wy + wh / 2)
+    result = _assign_cell(excl_key, wx, wy, ww, wh, pw, ph, vx, vy, vx2, vy2)
+    if result is None:
+        # Absolute fallback: adjacent to preferred side, clamped
+        if side == "top":    return wx, wy + wh + G
+        if side == "bottom": return wx, wy - ph - G
+        if side == "right":  return wx + ww + G, wy
+        return wx - pw - G, wy
+    _, _, nx, ny = result
+    return nx, ny
+
+
+def _snap_attached_panels_live(new_wx, new_wy):
+    """During main-window drag: reassign each visible magnetic panel to the
+    best free grid cell on the current screen.  Uses the cell-based grid so
+    panels never overlap and always fit within screen bounds."""
+    if _cluster_mode:
+        return   # panels are clustered around cfg, not attached to _win
+    win = globals().get("_win")
+    if not win:
+        return
+    mf = win.frame()
+    ww, wh = mf.size.width, mf.size.height
+    vx, vy, vx2, vy2 = _screen_bounds_at(new_wx + ww / 2, new_wy + wh / 2)
+    MARGIN = 20
+    import time as _time
+    now = _time.monotonic()
+    _SNAP_COOLDOWN_S = 0.4
+
+    # Collect panels that are off-screen at new_wx/new_wy
+    candidates = []
+    for key, pname in [("cfg","_cfg_panel"), ("hist","_hist_panel"),
+                        ("editor","_sc_editor_panel"), ("providers","_prov_panel")]:
+        if not _magnet_on.get(key, False) or key not in _magnet_offset:
+            continue
+        p = globals().get(pname)
+        if not p:
+            continue
+        try:
+            if not p.isVisible():
+                continue
+            pf = p.frame()
+            pw, ph = pf.size.width, pf.size.height
+        except Exception:
+            continue
+        dx, dy = _magnet_offset[key]
+        px, py = new_wx + dx, new_wy + dy
+        # Off-screen on either axis
+        off = (px < vx - MARGIN or px + pw > vx2 + MARGIN or
+               py < vy - MARGIN or py + ph > vy2 + MARGIN)
+        if not off:
+            continue
+        dist = abs(dx) + abs(dy)
+        candidates.append((dist, key, pw, ph))
+
+    # Reassign closest-first so earlier panels claim preferred cells first
+    candidates.sort()
+    for _, key, pw, ph in candidates:
+        if now - _snap_ts.get(key, 0.0) < _SNAP_COOLDOWN_S:
+            continue
+        result = _assign_cell(key, new_wx, new_wy, ww, wh, pw, ph, vx, vy, vx2, vy2)
+        if result is None:
+            continue
+        _col, _row, nx, ny = result
+        _snap_ts[key] = now
+        _magnet_offset[key] = (nx - new_wx, ny - new_wy)
+
+
+def _smart_snap_panel(key, panel):
+    """On mouseUp: handle panel position after drag.
+
+    Magnetic panels (magnet ON): if off-screen, reassign to nearest free grid
+    cell so there are no overlaps.
+    Free panels (magnet OFF): only clamp to screen — no grid assignment, the
+    user placed it intentionally.
+    """
+    win = globals().get("_win")
+    if not win or not panel:
+        return
+    pf = panel.frame()
+    mf = win.frame()
+    px, py = int(pf.origin.x), int(pf.origin.y)
+    pw, ph = int(pf.size.width), int(pf.size.height)
+    wx, wy = int(mf.origin.x), int(mf.origin.y)
+    ww, wh = int(mf.size.width), int(mf.size.height)
+    vx, vy, vx2, vy2 = _screen_bounds_at(wx + ww / 2, wy + wh / 2)
+    MARGIN = 20
+
+    off = (px < vx - MARGIN or px + pw > vx2 + MARGIN or
+           py < vy - MARGIN or py + ph > vy2 + MARGIN)
+    if not off:
+        return
+
+    if not _magnet_on.get(key, False):
+        # Free panel: just clamp to screen, respect user's drag position
+        nx = max(vx, min(px, vx2 - pw))
+        ny = max(vy, min(py, vy2 - ph))
+        _magnet_free_pos[key] = (nx, ny)
+        panel.setFrameOrigin_(AppKit.NSMakePoint(nx, ny))
+        _magnet_save()
+        return
+
+    # Magnetic panel: find nearest free grid cell
+    result = _assign_cell(key, wx, wy, ww, wh, pw, ph, vx, vy, vx2, vy2)
+    if result is None:
+        return
+    _col, _row, nx, ny = result
+    nx = max(vx, min(nx, vx2 - pw))
+    ny = max(vy, min(ny, vy2 - ph))
+    _magnet_offset[key] = (nx - wx, ny - wy)
+    panel.setFrameOrigin_(AppKit.NSMakePoint(nx, ny))
+    _magnet_save()
+
+
+def _update_panel_drag_end(key, panel):
+    win = globals().get("_win")
+    if not panel or not win:
+        return
+    try:
+        pf = panel.frame()
+        if _magnet_on.get(key, False):
+            wf = win.frame()
+            _magnet_offset[key] = (pf.origin.x - wf.origin.x, pf.origin.y - wf.origin.y)
+        else:
+            _magnet_free_pos[key] = (pf.origin.x, pf.origin.y)
+        _magnet_save()
+    except Exception:
+        pass
+    # Snap panel to opposite side if it went off-screen
+    try:
+        _smart_snap_panel(key, panel)
+    except Exception:
+        pass
+
+def _calc_panel_pos(key, wx, wy, ww, wh, pw, ph):
+    """Return (px, py) for placing a panel.
+
+    Magnetic panels: calls _assign_cell which always returns a cell
+    (_valid_grid_cells now guarantees ≥1 cell per side).  Panels may
+    extend slightly off-screen — that's better than overlapping each other.
+
+    Free panels (magnet OFF): use saved _magnet_free_pos, clamped to screen.
+    """
+    vx, vy, vx2, vy2 = _screen_bounds_at(wx + ww / 2, wy + wh / 2)
+    if _magnet_on.get(key, True):
+        result = _assign_cell(key, wx, wy, ww, wh, pw, ph, vx, vy, vx2, vy2)
+        if result:
+            _, _, nx, ny = result
+            _magnet_offset[key] = (nx - wx, ny - wy)
+            return int(nx), int(ny)
+        # Extremely rare (all cells occupied by other panels of this key?)
+        # Just return current stored offset clamped to screen
+        dx, dy = _magnet_offset.get(key, (0, 0))
+        return int(max(vx, min(wx + dx, vx2 - pw))), int(max(vy, min(wy + dy, vy2 - ph)))
+    else:
+        if key in _magnet_free_pos:
+            px, py = _magnet_free_pos[key]
+            px = max(vx, min(int(px), vx2 - pw))
+            py = max(vy, min(int(py), vy2 - ph))
+        else:
+            # First time free: try to place via grid, save as free pos
+            result = _assign_cell(key, wx, wy, ww, wh, pw, ph, vx, vy, vx2, vy2)
+            if result:
+                _, _, px, py = result
+            else:
+                px, py = int(wx), int(wy)
+            _magnet_free_pos[key] = (px, py)
+        return int(px), int(py)
+
+
+def _mkmagnet_btn(key, cv, x, y, w=22, h=22):
+    is_on = _magnet_on.get(key, False)
+    btn   = _mkbtn("🧲", color=AppKit.NSColor.whiteColor(), size=13)
+    btn.setFrame_(AppKit.NSMakeRect(x, y, w, h))
+    btn.setAlphaValue_(1.0 if is_on else 0.35)
+    btn.setTag_(_MAGNET_KEYS.index(key))
+    btn.setTarget_(_btn_t)
+    btn.setAction_(BtnTarget.panelMagnet_)
+    btn.setToolTip_("Прикрепить к главному окну" if not is_on else "Открепить от главного окна")
+    cv.addSubview_(btn)
+    _magnet_btns[key] = btn
+    return btn
+
+
 _WIN_ALPHA = 1.0    # pill (silent mode) is always fully opaque
 
 _st = {
@@ -504,8 +1067,7 @@ _st = {
     "text":          "",       # accumulated session text
     "opacity":       _cfg_saved.get("opacity",   0.88),  # expanded window alpha
     "font_size":     _cfg_saved.get("font_size", 13.0),
-    "lang":          _cfg_saved.get("lang",      "ru"),
-    "hotkey_copy":   _cfg_saved.get("hotkey_copy", "ctrl"),
+    "lang":          _cfg_saved.get("lang",      _detect_system_lang()),
     "theme":         _cfg_saved.get("theme",     "emerald"),
     "scenarios":     load_scenarios(),
     "active_sc":     None,     # index of currently-applied scenario, or None
@@ -529,26 +1091,36 @@ _hist_ctrl = None  # strong ref to _HistCtrl — prevents GC while panel is open
 
 # ── Waveform ──────────────────────────────────────────────────────────────────
 
-_wf_lock = threading.Lock()
-_WF_N    = 30
-_wf_bars = [0.0] * _WF_N
+_wf_lock  = threading.Lock()
+_WF_N     = 24
+_wf_bars  = [0.0] * _WF_N   # current display height (smoothed)
+_wf_peaks = [0.0] * _WF_N   # peak-hold per bar
+_wf_t     = 0.0              # idle animation phase (incremented by timer)
 
 def update_waveform(chunk_float32):
-    """Called from recorder callback with raw audio chunk."""
-    n   = _WF_N
-    sz  = max(1, len(chunk_float32) // n)
+    """Called from audio callback with raw float32 PCM."""
+    n  = _WF_N
+    sz = max(1, len(chunk_float32) // n)
     new = []
     for i in range(n):
         seg = chunk_float32[i*sz : (i+1)*sz]
-        v   = min(1.0, (max(abs(x) for x in seg) if len(seg) > 0 else 0.0) * 8.0)
+        v   = min(1.0, (float(max(abs(x) for x in seg)) if len(seg) > 0 else 0.0) * 32.0)
         new.append(v)
     with _wf_lock:
-        # Smooth decay: take max of new value and old*0.55
-        _wf_bars[:] = [max(nv, ov * 0.55) for nv, ov in zip(new, _wf_bars)]
+        for i, nv in enumerate(new):
+            ov = _wf_bars[i]
+            # Fast attack, slow gravity decay
+            _wf_bars[i]  = nv if nv > ov else ov * 0.60
+            # Peak hold: jump up instantly, fall slowly
+            if nv >= _wf_peaks[i]:
+                _wf_peaks[i] = nv
+            else:
+                _wf_peaks[i] = max(0.0, _wf_peaks[i] - 0.018)
 
 def _clear_waveform():
     with _wf_lock:
-        _wf_bars[:] = [0.0] * _WF_N
+        _wf_bars[:]  = [0.0] * _WF_N
+        _wf_peaks[:] = [0.0] * _WF_N
 
 # ── Sound pool ────────────────────────────────────────────────────────────────
 
@@ -590,6 +1162,8 @@ C_TEXT       = _rgba(0.33, 1.00, 0.33)
 C_IDLE       = _rgba(0.00, 0.72, 0.00)       # idle = bright enough to read on dark bg
 C_REC        = _rgba(1.00, 0.33, 0.33)
 C_YEL        = _rgba(1.00, 0.85, 0.00)
+C_AMBER_DIM  = _rgba(0.90, 0.60, 0.10)   # full_default scenario normal state
+C_AMBER_BR   = _rgba(1.00, 0.80, 0.30)   # full_default scenario active state
 C_PINK       = _rgba(1.00, 0.25, 0.60)   # recognition EQ — same in window and silent
 C_CYAN       = _rgba(0.33, 1.00, 1.00)
 C_BAR_ON     = _rgba(0.33, 1.00, 0.33)
@@ -762,20 +1336,27 @@ def _apply_theme_to_all_windows():
             history = on_hist()
             _show_hist_panel(history)
 
-    # TerminalView content views of other panels — drawRect_ reads C_* globals
-    for key in ("_cfg_panel", "_hist_panel", "_sc_editor_panel", "_about_panel"):
-        p = globals().get(key)
-        if p and hasattr(p, "isVisible") and p.isVisible():
-            cv = p.contentView()
-            if cv:
-                cv.setNeedsDisplay_(True)
+    # Providers panel — rebuild if open (text fields + buttons have baked-in colours)
+    prov = globals().get("_prov_panel")
+    if prov and hasattr(prov, "isVisible") and prov.isVisible():
+        prov.orderOut_(None)
+        _toggle_providers_panel()
 
-    # Silent mode windows — _SilentBgView and waveform read C_* globals in drawRect_
+    # Recursively redraw all subviews — needed for panels with deep view hierarchies
     def _redisplay_tree(v):
         v.setNeedsDisplay_(True)
         for sub in list(v.subviews()):
             _redisplay_tree(sub)
 
+    # All secondary panels — drawRect_ reads C_* globals; recurse for nested views
+    for key in ("_cfg_panel", "_hist_panel", "_sc_editor_panel", "_about_panel"):
+        p = globals().get(key)
+        if p and hasattr(p, "isVisible") and p.isVisible():
+            cv = p.contentView()
+            if cv:
+                _redisplay_tree(cv)
+
+    # Silent mode windows
     for key in ("_silent_win",):
         sw = globals().get(key)
         if sw and hasattr(sw, "contentView"):
@@ -783,13 +1364,25 @@ def _apply_theme_to_all_windows():
             if cv:
                 _redisplay_tree(cv)
 
+    # Re-render rich blocks with new theme colors
+    for _b in list(globals().get("_rich_blocks", [])):
+        try:
+            _b._rendered = _md_to_styled_attrs(_b._md_text)
+            if _b._inner_tv and not getattr(_b, "_md_mode", False):
+                _b._inner_tv.textStorage().setAttributedString_(_b._rendered)
+        except Exception:
+            pass
+    # Update magnet button colors
+    for _mkey in list(_magnet_btns):
+        _update_magnet_btn(_mkey)
+
 def _apply_all_panels_alpha():
     """Apply _st['opacity'] to _win and all open panels. Silent strip (_silent_win) is excluded."""
     alpha = _st.get("opacity", 0.88)
     win = globals().get("_win")
     if win:
         win.setAlphaValue_(alpha)
-    for key in ("_cfg_panel", "_hist_panel", "_sc_editor_panel", "_about_panel"):
+    for key in ("_cfg_panel", "_hist_panel", "_sc_editor_panel", "_about_panel", "_prov_panel"):
         p = globals().get(key)
         if p and hasattr(p, "isVisible") and p.isVisible():
             p.setAlphaValue_(alpha)
@@ -1093,15 +1686,17 @@ class _WalletView(AppKit.NSView):
         H  = float(self._VH)
         full = AppKit.NSMakeRect(0, 0, W, H)
 
-        # ── Layer 1: white bg — only this animates ────────────────────────────
-        bg_y = H * self._BOT_CROP
-        bg_h = H * (1.0 - self._TOP_CROP - self._BOT_CROP)
-        bg_w = self._BG_W_CLOSED + (self._BG_W_OPEN - self._BG_W_CLOSED) * f
-        bg_x = W - bg_w   # right-aligned
-        bg_path = AppKit.NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
-            AppKit.NSMakeRect(bg_x, bg_y, bg_w, bg_h), 8, 8)
-        AppKit.NSColor.whiteColor().setFill()
-        bg_path.fill()
+        # ── Layer 1: white bg — only on dark themes, only this animates ─────────
+        bg_lum = (C_BG[0] + C_BG[1] + C_BG[2]) / 3
+        if bg_lum < 0.5:   # dark theme — wallet needs white backdrop for contrast
+            bg_y = H * self._BOT_CROP
+            bg_h = H * (1.0 - self._TOP_CROP - self._BOT_CROP)
+            bg_w = self._BG_W_CLOSED + (self._BG_W_OPEN - self._BG_W_CLOSED) * f
+            bg_x = W - bg_w   # right-aligned
+            bg_path = AppKit.NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
+                AppKit.NSMakeRect(bg_x, bg_y, bg_w, bg_h), 8, 8)
+            AppKit.NSColor.whiteColor().setFill()
+            bg_path.fill()
 
         # ── Layer 2: closed wallet — static, full view, fades out ────────────
         if self._img_close:
@@ -1114,54 +1709,96 @@ class _WalletView(AppKit.NSView):
                 full, AppKit.NSZeroRect, AppKit.NSCompositeSourceOver, f)
 
 
+def _draw_wf_bars(bars, peaks, bounds, bar_w=3.0, gap=2.5):
+    """Draw equalizer bars when active; smooth sine-wave line when idle."""
+    b     = bounds
+    w, h  = b.size.width, b.size.height
+    n_src = len(bars)
+
+    # Total signal energy — drives idle vs active look
+    energy = sum(bars) / max(1, n_src)
+    active = energy > 0.015
+
+    if not active:
+        # Idle: continuous sine wave line scrolling left → right
+        cy     = h / 2.0
+        amp_px = h * 0.38          # 38% of height — clearly visible
+        STEPS  = max(80, int(w))   # smooth enough at any width
+        path   = AppKit.NSBezierPath.bezierPath()
+        path.setLineWidth_(1.5)
+        path.setLineCapStyle_(AppKit.NSRoundLineCapStyle)
+        for s in range(STEPS + 1):
+            px    = s * w / STEPS
+            phase = (px / w) * 2.0 * math.pi * 4.0 - _wf_t * 1.0
+            py    = cy + amp_px * math.sin(phase)
+            pt    = AppKit.NSMakePoint(px, py)
+            if s == 0:
+                path.moveToPoint_(pt)
+            else:
+                path.lineToPoint_(pt)
+        C_IDLE.set()
+        path.stroke()
+        return
+
+    # Active (recording): bar equalizer with peak-hold dots
+    n       = max(4, int((w + gap) / (bar_w + gap)))
+    r       = bar_w / 2
+    total_w = n * bar_w + (n - 1) * gap
+    x0      = (w - total_w) / 2
+
+    for i in range(n):
+        src_i = int(i * n_src / n)
+        amp   = bars[src_i]
+        peak  = peaks[src_i] if peaks else 0.0
+
+        bh    = max(2.0, amp * h * 0.90)
+        color = C_BAR_ON if amp > 0.05 else C_BAR_OFF
+
+        x = x0 + i * (bar_w + gap)
+        y = (h - bh) / 2
+        p = AppKit.NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
+            AppKit.NSMakeRect(x, y, bar_w, bh), r, r)
+        color.set()
+        p.fill()
+
+        # Peak-hold dot: 2px bright mark above the bar
+        if peak > 0.08:
+            dot_h = max(1.5, bar_w * 0.5)
+            dot_y = (h - peak * h * 0.90) / 2 - dot_h - 1
+            if dot_y > 0:
+                dp = AppKit.NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
+                    AppKit.NSMakeRect(x, dot_y, bar_w, dot_h), r * 0.5, r * 0.5)
+                C_BAR_ON.colorWithAlphaComponent_(0.85).set()
+                dp.fill()
+
+
 class WaveformView(AppKit.NSView):
-    """Animated equalizer bars."""
+    """Reactive equalizer bars with peak-hold and idle breathing."""
 
     def drawRect_(self, rect):
         with _wf_lock:
-            bars = list(_wf_bars)
-        b     = self.bounds()
-        n     = len(bars)
-        slot  = b.size.width / n
-        bar_w = max(1.5, slot * 0.38)
-        for i, amp in enumerate(bars):
-            x  = i * slot + (slot - bar_w) / 2
-            bh = max(2.0, amp * b.size.height)
-            y  = (b.size.height - bh) / 2
-            rc = AppKit.NSMakeRect(x, y, bar_w, bh)
-            p  = AppKit.NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
-                rc, bar_w / 2, bar_w / 2)
-            (C_BAR_ON if amp > 0.04 else C_BAR_OFF).set()
-            p.fill()
+            bars  = list(_wf_bars)
+            peaks = list(_wf_peaks)
+        _draw_wf_bars(bars, peaks, self.bounds(), bar_w=3.0, gap=2.5)
 
 
 class _SilentWaveformView(AppKit.NSView):
-    """Compact equalizer for silent strip — fewer, wider bars sampled from _wf_bars."""
-    _N = 16   # number of bars to display
+    """Compact equalizer for silent strip — same bar size, fewer bars fit."""
 
     def drawRect_(self, rect):
         with _wf_lock:
-            src = list(_wf_bars)
-        b     = self.bounds()
-        n_src = len(src)
-        n     = self._N
-        slot  = b.size.width / n
-        bar_w = max(3.0, slot * 0.52)
-        for i in range(n):
-            amp = src[int(i * n_src / n)]
-            bh  = max(2.0, amp * b.size.height * 0.88)
-            x   = i * slot + (slot - bar_w) / 2
-            y   = (b.size.height - bh) / 2
-            p   = AppKit.NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
-                AppKit.NSMakeRect(x, y, bar_w, bh), bar_w / 2, bar_w / 2)
-            (C_BAR_ON if amp > 0.04 else C_BAR_OFF).set()
-            p.fill()
+            bars  = list(_wf_bars)
+            peaks = list(_wf_peaks)
+        _draw_wf_bars(bars, peaks, self.bounds(), bar_w=3.5, gap=2.5)
 
 
 # Module-level equalizer animation state
-_eq_t       = 0.0   # scan position 0→1→0 (for scan mode)
-_eq_dir     = 1     # scan direction: +1 or -1
-_eq_pulse_t = 0.0   # pulse position 0→1 repeating (for pulse-from-center mode)
+_eq_t             = 0.0   # scan position 0→1→0 (for scan mode)
+_eq_dir           = 1     # scan direction: +1 or -1
+_eq_pulse_t       = 0.0   # pulse position 0→1 repeating (for pulse-from-center mode)
+_eq_countdown_t   = 0.0   # countdown fill 0→1 (for countdown mode)
+_eq_countdown_start = 0.0 # time.time() when countdown started (0 = inactive)
+_eq_countdown_dur   = 2.0 # countdown duration in seconds
 
 class EqBarsView(AppKit.NSView):
     """Equal-height equalizer bars with animated highlight.
@@ -1181,38 +1818,51 @@ class EqBarsView(AppKit.NSView):
         b    = self.bounds()
         w, h = b.size.width, b.size.height
         col  = self._col if self._col else _rgba(1.0, 0.3, 0.7, 1.0)
-        bar_w = 2.5
-        gap_t = 3.5
-        n = max(6, int((w + gap_t) / (bar_w + gap_t)))
-        gap = (w - n * bar_w) / max(1, n - 1)
-        PI2 = math.pi * 2
+        bar_w = 3.0
+        gap   = 2.5
+        n     = max(4, int((w + gap) / (bar_w + gap)))
+        total = n * bar_w + (n - 1) * gap
+        x0    = (w - total) / 2   # center group
+        PI2   = math.pi * 2
 
         for i in range(n):
             fi = i / max(1, n - 1)   # 0.0 → 1.0 across bars
 
             if self._mode == 0:
-                # Gaussian peak slides left → right → left (accordion).
-                # _eq_t: 0→1→0, peak_pos: 0.12→0.88→0.12
+                # Gaussian peak slides left → right → left
                 peak_pos = 0.12 + 0.76 * _eq_t
-                sigma    = 0.20
+                sigma    = 0.18
                 dist     = fi - peak_pos
-                h_factor = 0.05 + 0.95 * math.exp(-(dist * dist) / (2 * sigma * sigma))
-                alpha    = 0.30 + 0.70 * h_factor
+                h_factor = 0.06 + 0.94 * math.exp(-(dist * dist) / (2 * sigma * sigma))
+                alpha    = 0.25 + 0.75 * h_factor
+                bar_col  = col
+            elif self._mode == 1:
+                # Ripple spreads outward from center
+                center    = 0.5
+                dc        = abs(fi - center) * 2.0
+                sigma_env = 0.65
+                envelope  = math.exp(-(dc * dc) / (2 * sigma_env * sigma_env))
+                ripple    = 0.5 + 0.5 * math.sin(PI2 * (dc * 1.5 - _eq_pulse_t))
+                h_factor  = max(0.05, envelope * (0.20 + 0.80 * ripple))
+                alpha     = 0.20 + 0.80 * envelope
+                bar_col   = col
             else:
-                # Gaussian envelope fixed at center; ripple spreads outward from center.
-                center = 0.5
-                dc = abs(fi - center) * 2.0          # 0=center, 1=edge
-                sigma_env = 0.60
-                envelope = math.exp(-(dc * dc) / (2 * sigma_env * sigma_env))
-                ripple   = 0.5 + 0.5 * math.sin(PI2 * (dc * 1.5 - _eq_pulse_t))
-                h_factor = max(0.04, envelope * (0.18 + 0.82 * ripple))
-                alpha    = 0.25 + 0.75 * envelope
+                # Countdown fill: bars fill left→right with green→red gradient
+                filled   = fi <= _eq_countdown_t
+                rr       = min(1.0, fi * 2.0)          # 0→1 as bar fills
+                gg       = max(0.0, 1.0 - fi * 1.4)    # 1→0 fading to red
+                bar_col  = _rgba(rr, gg, 0.05, 1.0)
+                h_factor = 0.80 if filled else 0.30
+                alpha    = 0.95 if filled else 0.15
 
-            bar_h = max(1.0, h_factor * h)
-            y = (h - bar_h) / 2          # vertically centered
-            x = i * (bar_w + gap)
-            col.colorWithAlphaComponent_(alpha).set()
-            AppKit.NSBezierPath.fillRect_(AppKit.NSMakeRect(x, y, bar_w, bar_h))
+            bar_h = max(2.0, h_factor * h)
+            x     = x0 + i * (bar_w + gap)
+            y     = (h - bar_h) / 2
+            r     = bar_w / 2
+            p     = AppKit.NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
+                AppKit.NSMakeRect(x, y, bar_w, bar_h), r, r)
+            bar_col.colorWithAlphaComponent_(alpha).set()
+            p.fill()
 
 
 class _SilentBgView(AppKit.NSView):
@@ -1264,27 +1914,27 @@ class _HoverOverlayView(AppKit.NSView):
         AppKit.NSColor.clearColor().set()
         AppKit.NSRectFill(rect)
         b = self.bounds()
-        hovered = getattr(self, '_hover_active', False)
-        bg_alpha = 0.95 if hovered else 0.88
-        p = AppKit.NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
-            b, min(b.size.height / 2, 14.0), min(b.size.height / 2, 14.0))
-        _rgba(0.05, 0.05, 0.05, bg_alpha).set()
+        TOP_PAD  = 8   # top inset so overlay doesn't kiss the separator
+        bg_rect  = AppKit.NSMakeRect(0, 0, b.size.width, b.size.height - TOP_PAD)
+        r        = min(bg_rect.size.height / 2, 12.0)
+        p = AppKit.NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(bg_rect, r, r)
+        _rgba(0.05, 0.07, 0.05, 0.92).set()
         p.fill()
         hint = getattr(self, '_hint', None)
         if hint:
             ps = AppKit.NSMutableParagraphStyle.alloc().init()
             ps.setAlignment_(AppKit.NSTextAlignmentCenter)
-            sz   = getattr(self, '_hint_size', 11)
-            bold = getattr(self, '_hint_bold', False)
-            astr = AppKit.NSAttributedString.alloc().initWithString_attributes_(
+            sz    = 14
+            astr  = AppKit.NSAttributedString.alloc().initWithString_attributes_(
                 hint, {
-                    AppKit.NSFontAttributeName:            _mono(sz, bold),
-                    AppKit.NSForegroundColorAttributeName: _rgba(0.95, 0.15, 0.15, 1.0),
+                    AppKit.NSFontAttributeName:            _mono(sz),    # light mono
+                    AppKit.NSForegroundColorAttributeName: C_TEXT,       # scheme text color
                     AppKit.NSParagraphStyleAttributeName:  ps,
                 })
-            text_h = sz + 6
-            astr.drawInRect_(AppKit.NSMakeRect(
-                0, (b.size.height - text_h) / 2, b.size.width, text_h))
+            text_h = sz + 4
+            # center within the padded background rect
+            cy = (bg_rect.size.height - text_h) / 2
+            astr.drawInRect_(AppKit.NSMakeRect(8, cy, b.size.width - 16, text_h))
 
     def mouseDown_(self, event):
         fn = _proc_interrupt_fn if getattr(self, '_is_main', False) else _silent_interrupt_fn
@@ -1301,16 +1951,10 @@ class _SilentContentView(AppKit.NSView):
     def mouseEntered_(self, event):
         if _silent_hover_v:
             _silent_hover_v.setHidden_(False)
-            # Dim EQ bars so they appear "blurred" behind the overlay
-            if _silent_eq_v:
-                _silent_eq_v.setAlphaValue_(0.15)
 
     def mouseExited_(self, event):
         if _silent_hover_v:
             _silent_hover_v.setHidden_(True)
-            # Restore EQ bars
-            if _silent_eq_v:
-                _silent_eq_v.setAlphaValue_(1.0)
 
     def updateTrackingAreas(self):
         for a in list(self.trackingAreas()):
@@ -1341,6 +1985,59 @@ class _DotSep(AppKit.NSView):
             AppKit.NSMakeRect(cx - r, cy - r, r * 2, r * 2))
         _rgba(0.33, 1.00, 0.33, 0.88).set()
         path.fill()
+
+
+class _HistItemView(AppKit.NSView):
+    """History row: draws text, click fires action, drag moves cluster.
+    Unlike NSButton, doesn't start a blocking nextEventMatchingMask_ loop in mouseDown_,
+    so mouseDragged_ events reach _DropPanel.sendEvent_ normally for cluster dragging."""
+
+    _astr   = None   # NSAttributedString to draw
+    _rep    = None   # representedObject (item dict)
+    _target = None
+    _action = None
+    _ds     = None   # drag start (NSPoint), set in mouseDown_
+    _da     = False  # did drag exceed threshold
+
+    def isOpaque(self): return False
+    def acceptsFirstMouse_(self, event): return True
+
+    def drawRect_(self, rect):
+        if self._astr:
+            b = self.bounds()
+            self._astr.drawInRect_(b)
+
+    # Compatibility shims matching NSButton API used in _build_hist_docview
+    def setAttributedTitle_(self, s):
+        self._astr = s
+        self.setNeedsDisplay_(True)
+
+    def setRepresentedObject_(self, o): self._rep = o
+    def representedObject(self):        return self._rep
+    def setTarget_(self, t):            self._target = t
+    def setAction_(self, a):            self._action = a
+    def setBordered_(self, v):          pass  # no-op; NSView has no border
+
+    def mouseDown_(self, event):
+        self._ds = AppKit.NSEvent.mouseLocation()
+        self._da = False
+        # No super() call → no blocking tracking loop → drag events reach window
+
+    def mouseDragged_(self, event):
+        if self._ds is None:
+            return
+        cur = AppKit.NSEvent.mouseLocation()
+        dx  = cur.x - self._ds.x
+        dy  = cur.y - self._ds.y
+        if self._da or dx * dx + dy * dy > 100.0:
+            self._da = True
+
+    def mouseUp_(self, event):
+        was_drag = self._da
+        self._ds = None
+        self._da = False
+        if not was_drag and self._target and self._action:
+            self._target.performSelector_withObject_(self._action, self)
 
 
 class _HoverBtn(AppKit.NSButton):
@@ -1423,8 +2120,6 @@ class _HistCtrl(AppKit.NSObject):
     def delete_(self, sender):
         ids = [self._items[i]["id"] for i in sorted(self._sel)
                if 0 <= i < len(self._items)]
-        if _hist_panel and _hist_panel.isVisible():
-            _hist_panel.orderOut_(None)
         if ids and self._on_delete:
             self._on_delete(ids)   # main.py removes by UUID, calls refresh_hist_panel
 
@@ -1438,8 +2133,6 @@ class _HistCtrl(AppKit.NSObject):
         items_sel = self._selected_items()
         combined  = "\n\n".join(item["full"] for item in items_sel)
         loaded_id = items_sel[0]["id"] if len(items_sel) == 1 else None
-        if _hist_panel and _hist_panel.isVisible():
-            _hist_panel.orderOut_(None)
         if combined:
             _load_history_combined(combined, loaded_id=loaded_id)
 
@@ -1463,8 +2156,6 @@ class _HistCtrl(AppKit.NSObject):
         new_id = None
         if getattr(self, '_on_merge', None):
             new_id = self._on_merge(combined, source_ids)
-        if _hist_panel and _hist_panel.isVisible():
-            _hist_panel.orderOut_(None)
         _add_rich_block(combined, hist_id=new_id)
 
     def histAppend_(self, sender):
@@ -1472,8 +2163,6 @@ class _HistCtrl(AppKit.NSObject):
         Sessions are expanded into their individual blocks.
         """
         items_sel = self._selected_items()
-        if _hist_panel and _hist_panel.isVisible():
-            _hist_panel.orderOut_(None)
         for item in items_sel:
             if item.get("type") == "session":
                 block_texts = item.get("blocks_text") or []
@@ -1542,6 +2231,13 @@ class DragPanel(AppKit.NSPanel):
         _LD = 1; _LU = 2; _LDRAG = 6; _THRESH2 = 25.0   # 5 px threshold
         t = event.type()
         if t == _LD:
+            # Double-click anywhere in the header bar → toggle expand
+            if event.clickCount() == 2:
+                loc = event.locationInWindow()
+                wh  = self.frame().size.height
+                if loc.y >= wh - HDR_H:
+                    _main(_toggle_expand)
+                    return
             self._wd_s = AppKit.NSEvent.mouseLocation()
             self._wd_o = self.frame().origin
             self._wd_a = False
@@ -1551,15 +2247,45 @@ class DragPanel(AppKit.NSPanel):
             dy  = cur.y - self._wd_s.y
             if self._wd_a or dx*dx + dy*dy > _THRESH2:
                 self._wd_a = True
-                self.setFrameOrigin_(AppKit.NSMakePoint(self._wd_o.x + dx, self._wd_o.y + dy))
+                new_x = self._wd_o.x + dx
+                new_y = self._wd_o.y + dy
+                # Hard-clamp main window within union of all screens — no going past edges
+                try:
+                    wf          = self.frame()
+                    ww_, wh_    = wf.size.width, wf.size.height
+                    x1, y1, x2, y2 = _all_screens_bounds()
+                    new_x = max(x1, min(new_x, x2 - ww_))
+                    new_y = max(y1, min(new_y, y2 - wh_))
+                except Exception:
+                    pass
+                try: _snap_attached_panels_live(new_x, new_y)
+                except Exception: pass
+                self.setFrameOrigin_(AppKit.NSMakePoint(new_x, new_y))
                 _reposition_attached_panels()
         elif t == _LU:
+            did_drag = getattr(self, '_wd_a', False)
             self._wd_s = None; self._wd_a = False
+            if did_drag:
+                for _key, _pname in [("cfg",       "_cfg_panel"),
+                                      ("hist",      "_hist_panel"),
+                                      ("editor",    "_sc_editor_panel"),
+                                      ("providers", "_prov_panel")]:
+                    _p = globals().get(_pname)
+                    if _p and _p.isVisible():
+                        try:
+                            if _magnet_on.get(_key, False):
+                                _smart_snap_panel(_key, _p)
+                            else:
+                                _repel_from_others(_p)
+                        except Exception:
+                            pass
+                try: _magnet_save()
+                except Exception: pass
         objc.super(DragPanel, self).sendEvent_(event)
 
 
 class _SilentPanel(AppKit.NSPanel):
-    """Thin header-strip panel for silent mode — draggable, Escape to dismiss."""
+    """Thin header-strip panel for silent mode — draggable, Escape or click to dismiss."""
     def canBecomeKeyWindow(self): return True
 
     def cancelOperation_(self, sender):
@@ -1589,23 +2315,73 @@ class _DropPanel(AppKit.NSPanel):
             _main(lambda: hide(force=True))
 
     def sendEvent_(self, event):
-        _LD = 1; _LU = 2; _LDRAG = 6; _THRESH2 = 25.0
+        _LD = 1; _LU = 2; _LDRAG = 6; _THRESH2 = 100.0
         t = event.type()
-        w = globals().get("_win")
+        w   = globals().get("_win")
+        key = getattr(self, '_panel_key', None)
+        is_attached = _magnet_on.get(key, True) if key else True
+        is_cluster_anchor = (_cluster_mode and
+                             key == "cfg" and
+                             globals().get("_cfg_panel") is self)
+        in_cluster = _cluster_mode and not is_cluster_anchor
         if t == _LD:
-            self._wd_s = AppKit.NSEvent.mouseLocation()
-            self._wd_o = w.frame().origin if w else None
-            self._wd_a = False
-        elif t == _LDRAG and getattr(self, '_wd_s', None) is not None and w and self._wd_o is not None:
+            self._wd_s  = AppKit.NSEvent.mouseLocation()
+            self._wd_a  = False
+            if is_cluster_anchor:
+                self._wd_o = self.frame().origin
+            elif in_cluster:
+                # Track cfg's position — dragging any cluster panel moves the whole cluster
+                cfg_ref = globals().get("_cfg_panel")
+                self._wd_o = cfg_ref.frame().origin if cfg_ref else self.frame().origin
+            elif is_attached and w:
+                self._wd_o = w.frame().origin
+            else:
+                self._wd_o = self.frame().origin
+            cv = self.contentView()
+            hit = cv.hitTest_(event.locationInWindow()) if cv else None
+            self._wd_on_btn = isinstance(hit, AppKit.NSButton)
+        elif t == _LDRAG and getattr(self, '_wd_s', None) is not None and self._wd_o is not None:
             cur = AppKit.NSEvent.mouseLocation()
             dx  = cur.x - self._wd_s.x
             dy  = cur.y - self._wd_s.y
             if self._wd_a or dx*dx + dy*dy > _THRESH2:
                 self._wd_a = True
-                w.setFrameOrigin_(AppKit.NSMakePoint(self._wd_o.x + dx, self._wd_o.y + dy))
-                _reposition_attached_panels()
+                if is_cluster_anchor:
+                    self.setFrameOrigin_(AppKit.NSMakePoint(self._wd_o.x + dx, self._wd_o.y + dy))
+                    _reposition_cluster()
+                elif in_cluster:
+                    # Move cfg, then reposition all cluster panels together
+                    cfg_ref = globals().get("_cfg_panel")
+                    if cfg_ref:
+                        cfg_ref.setFrameOrigin_(AppKit.NSMakePoint(self._wd_o.x + dx, self._wd_o.y + dy))
+                        _reposition_cluster()
+                elif is_attached and w:
+                    new_x = self._wd_o.x + dx
+                    new_y = self._wd_o.y + dy
+                    try: _snap_attached_panels_live(new_x, new_y)
+                    except Exception: pass
+                    w.setFrameOrigin_(AppKit.NSMakePoint(new_x, new_y))
+                    _reposition_attached_panels()
+                else:
+                    self.setFrameOrigin_(AppKit.NSMakePoint(self._wd_o.x + dx, self._wd_o.y + dy))
         elif t == _LU:
-            self._wd_s = None; self._wd_a = False
+            did_drag   = getattr(self, '_wd_a', False)
+            on_btn     = getattr(self, '_wd_on_btn', False)
+            self._wd_s = None; self._wd_a = False; self._wd_on_btn = False
+            if did_drag:
+                if is_cluster_anchor or in_cluster:
+                    _update_cluster_offsets()
+                elif is_attached:
+                    try: _magnet_save()
+                    except Exception: pass
+                else:
+                    if key:
+                        try: _update_panel_drag_end(key, self)
+                        except Exception: pass
+                    try: _repel_from_others(self)
+                    except Exception: pass
+                if on_btn:
+                    return
         objc.super(_DropPanel, self).sendEvent_(event)
 
 
@@ -1649,21 +2425,61 @@ class _EditorPanel(AppKit.NSPanel):
         _main(lambda: _maybe_close_editor(pending_fn=None))
 
     def sendEvent_(self, event):
-        _LD = 1; _LU = 2; _LDRAG = 6; _THRESH2 = 25.0
+        _LD = 1; _LU = 2; _LDRAG = 6; _THRESH2 = 100.0
         t = event.type()
+        w   = globals().get("_win")
+        key = getattr(self, '_panel_key', None)
+        is_attached   = _magnet_on.get(key, False) if key else False
+        in_cluster    = _cluster_mode  # providers/editor are never the anchor
         if t == _LD:
-            self._wd_s = AppKit.NSEvent.mouseLocation()
-            self._wd_o = self.frame().origin
-            self._wd_a = False
-        elif t == _LDRAG and getattr(self, '_wd_s', None) is not None:
+            self._wd_s  = AppKit.NSEvent.mouseLocation()
+            self._wd_a  = False
+            if in_cluster:
+                cfg_ref = globals().get("_cfg_panel")
+                self._wd_o = cfg_ref.frame().origin if cfg_ref else self.frame().origin
+            elif is_attached and w:
+                self._wd_o = w.frame().origin
+            else:
+                self._wd_o = self.frame().origin
+            cv = self.contentView()
+            hit = cv.hitTest_(event.locationInWindow()) if cv else None
+            self._wd_on_btn = isinstance(hit, AppKit.NSButton)
+        elif t == _LDRAG and getattr(self, '_wd_s', None) is not None and self._wd_o is not None:
             cur = AppKit.NSEvent.mouseLocation()
             dx  = cur.x - self._wd_s.x
             dy  = cur.y - self._wd_s.y
             if self._wd_a or dx*dx + dy*dy > _THRESH2:
                 self._wd_a = True
-                self.setFrameOrigin_(AppKit.NSMakePoint(self._wd_o.x + dx, self._wd_o.y + dy))
+                if in_cluster:
+                    cfg_ref = globals().get("_cfg_panel")
+                    if cfg_ref:
+                        cfg_ref.setFrameOrigin_(AppKit.NSMakePoint(self._wd_o.x + dx, self._wd_o.y + dy))
+                        _reposition_cluster()
+                elif is_attached and w:
+                    new_x = self._wd_o.x + dx
+                    new_y = self._wd_o.y + dy
+                    try: _snap_attached_panels_live(new_x, new_y)
+                    except Exception: pass
+                    w.setFrameOrigin_(AppKit.NSMakePoint(new_x, new_y))
+                    _reposition_attached_panels()
+                else:
+                    self.setFrameOrigin_(AppKit.NSMakePoint(self._wd_o.x + dx, self._wd_o.y + dy))
         elif t == _LU:
-            self._wd_s = None; self._wd_a = False
+            did_drag = getattr(self, '_wd_a', False)
+            on_btn   = getattr(self, '_wd_on_btn', False)
+            self._wd_s = None; self._wd_a = False; self._wd_on_btn = False
+            if did_drag:
+                if in_cluster:
+                    _update_cluster_offsets()
+                else:
+                    if key:
+                        try: _update_panel_drag_end(key, self)
+                        except Exception: pass
+                    if not is_attached:
+                        try: _repel_from_others(self)
+                        except Exception: pass
+                if on_btn:
+                    return
         objc.super(_EditorPanel, self).sendEvent_(event)
 
     def performKeyEquivalent_(self, event):
@@ -1690,16 +2506,8 @@ class _EditorPanel(AppKit.NSPanel):
 
 
 def _copy_mod_flags():
-    """Return NSEventModifierFlag mask for the configured copy-to-clipboard hotkey."""
-    CTRL  = AppKit.NSEventModifierFlagControl
-    CMD   = AppKit.NSEventModifierFlagCommand
-    SHIFT = AppKit.NSEventModifierFlagShift
-    return {
-        "ctrl":       CTRL,
-        "cmd":        CMD,
-        "ctrl+shift": CTRL | SHIFT,
-        "cmd+shift":  CMD | SHIFT,
-    }.get(_st.get("hotkey_copy", "ctrl"), CTRL)
+    """Cmd+Enter copies to clipboard (hardcoded)."""
+    return AppKit.NSEventModifierFlagCommand
 
 
 class TerminalTextView(AppKit.NSTextView):
@@ -1739,9 +2547,8 @@ class TerminalTextView(AppKit.NSTextView):
             if _on_copy_cb:
                 _on_copy_cb()
         elif kc == ENTER and mods == SHIFT:
-            # Shift+Enter → paste stripping MD markers (plain text)
             if _on_paste_cb:
-                _on_paste_cb()
+                _on_paste_cb()   # always raw, no full_default
         elif kc == ENTER and not mods:
             # Plain Enter → finalize manually typed text into a block
             if _tv and str(_tv.string()).strip():
@@ -1914,6 +2721,26 @@ class _ThinGreenScroller(AppKit.NSScroller):
         pass  # transparent track — no white background
 
 
+class _ThinAccentScroller(AppKit.NSScroller):
+    """4px knob in current theme accent color (C_GREEN_BR), transparent track.
+    Used for accumulation scroll view to match active color scheme."""
+
+    def drawKnob(self):
+        r = self.rectForPart_(getattr(AppKit, 'NSScrollerKnob', 2))
+        if r.size.width <= 0 or r.size.height <= 0:
+            return
+        bar_w = 4.0
+        bx = r.origin.x + r.size.width - bar_w - 2   # 2px from right edge
+        ir = AppKit.NSMakeRect(bx, r.origin.y + 4, bar_w, max(6, r.size.height - 8))
+        path = AppKit.NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
+            ir, 2.0, 2.0)
+        C_GREEN_BR.colorWithAlphaComponent_(0.70).set()
+        path.fill()
+
+    def drawKnobSlotInRect_highlight_(self, slotRect, highlighted):
+        pass  # transparent track
+
+
 # ── Rich text block view ──────────────────────────────────────────────────────
 
 _RICH_LIGHT_BG  = AppKit.NSColor.colorWithSRGBRed_green_blue_alpha_(0.96, 0.97, 0.96, 1.0)
@@ -2028,7 +2855,7 @@ class _BlockTV(AppKit.NSTextView):
             if _on_copy_cb: _on_copy_cb()
             return
         elif kc == ENTER and mods == SHIFT:
-            if _on_paste_cb: _on_paste_cb()
+            if _on_paste_cb: _on_paste_cb()   # always raw
             return
 
         objc.super(_BlockTV, self).keyDown_(event)
@@ -2561,36 +3388,27 @@ def _finalize_tv_to_block(add_to_history=False):
 # ── ObjC action targets ───────────────────────────────────────────────────────
 
 class BtnTarget(AppKit.NSObject):
-    @staticmethod
-    def _editor_active() -> bool:
-        """Return True and refocus editor if scenario editor is open."""
-        if _editing_scenario and _sc_editor_panel and _sc_editor_panel.isVisible():
-            _sc_editor_panel.makeKeyAndOrderFront_(None)
-            return True
-        return False
-
     def scenario_(self, sender):
-        if self._editor_active(): return
         idx = int(sender.tag())
         sc  = _st["scenarios"]
         if _on_scenario_cb and 0 <= idx < len(sc):
             _on_scenario_cb(sc[idx], idx)
 
     def close_(self, sender):
-        if self._editor_active(): return
         hide(force=True)
 
     def actionCancel_(self, sender):
-        """Smart cancel: undo scenario if active, otherwise close overlay."""
-        if self._editor_active(): return
+        """Smart cancel: undo scenario if active, stay in window after interrupt, else close."""
         if _st.get("active_sc") is not None:
             self.undoScenario_(sender)
+        elif _st.get("post_interrupt"):
+            _st["post_interrupt"] = False
+            _refresh_scenario_colors()
         else:
             hide(force=True)
 
     def actionScene_(self, sender):
         """Toggle scenario picker in bottom row."""
-        if self._editor_active(): return
         _st["sc_picker"] = not _st.get("sc_picker", False)
         def _():
             if _win:
@@ -2599,7 +3417,7 @@ class BtnTarget(AppKit.NSObject):
         _main(_)
 
     def history_(self, sender):
-        if self._editor_active(): return
+
         # Corner button (tag=9): distinguish single vs double click without opening
         # history on the first click of a double-click.
         if callable(getattr(sender, 'tag', None)) and sender.tag() == 9:
@@ -2677,6 +3495,7 @@ class BtnTarget(AppKit.NSObject):
         _save_settings()
         _refresh_status_label()
         _refresh_scenario_colors()
+        _refresh_menu_titles()
         # Rebuild config panel with new lang (keep window position — immediately reopening)
         _close_cfg_panel_rebuild()
         _toggle_cfg_panel()
@@ -2685,15 +3504,31 @@ class BtnTarget(AppKit.NSObject):
             sc_idx = (_sc_edit_refs or {}).get("sc_idx")
             _show_sc_editor(sc_idx)
 
-    def cfgHotkeyCopy_(self, sender):
-        options = ["ctrl", "cmd", "ctrl+shift", "cmd+shift"]
-        tag = int(sender.tag())
-        if 0 <= tag < len(options):
-            _st["hotkey_copy"] = options[tag]
-            _save_settings()
-        # Rebuild panel to update button colors (keep window position — immediately reopening)
-        _close_cfg_panel_rebuild()
-        _toggle_cfg_panel()
+
+    def hushCopyText_(self, sender):
+        if _on_copy_cb:
+            _on_copy_cb()
+
+    def histClose_(self, sender):
+        if _hist_panel and _hist_panel.isVisible():
+            _hist_panel.orderOut_(None)
+
+    def cfgProviders_(self, sender):
+        _toggle_providers_panel()
+
+    def scProviderChanged_(self, sender):
+        pop_prov  = (_sc_edit_refs or {}).get("pop_provider")
+        pop_model = (_sc_edit_refs or {}).get("pop_model")
+        if not pop_prov or not pop_model:
+            return
+        pid = pop_prov.titleOfSelectedItem() or ""
+        _populate_model_popup(pop_model, pid)
+
+    def hushResetPanels_(self, sender):
+        _main(lambda: _reset_panels_layout())
+
+    def hushDefaultCross_(self, sender):
+        _main(lambda: _reset_to_cross_layout())
 
     def cfgInfo_(self, sender):
         """Toggle About card as standalone centered panel."""
@@ -2709,9 +3544,19 @@ class BtnTarget(AppKit.NSObject):
         import subprocess
         subprocess.Popen(["open", "https://pay.alexbic.net/?mode=donate"])
 
+    def aboutDocs_(self, sender):
+        import subprocess
+        lang = _st.get("lang", "ru")
+        urls = {
+            "ru": "https://github.com/alexbic/hush/blob/main/README_RU.md",
+            "es": "https://github.com/alexbic/hush/blob/main/README_ES.md",
+        }
+        url = urls.get(lang, "https://github.com/alexbic/hush/blob/main/README.md")
+        subprocess.Popen(["open", url])
+
     def aboutGithub_(self, sender):
         import subprocess
-        subprocess.Popen(["open", "https://github.com/alexbic"])
+        subprocess.Popen(["open", "https://github.com/alexbic/hush"])
 
     def aboutSite_(self, sender):
         import subprocess
@@ -2721,9 +3566,33 @@ class BtnTarget(AppKit.NSObject):
         """Status-bar menu: always show About card."""
         _main(_show_about_view)
 
+    def openHush_(self, sender):
+        """Status-bar menu: open main HUSH window (same as double Option press)."""
+        show_recording()
+        AppKit.NSApp.activateIgnoringOtherApps_(True)
+
+    def toggleLaunchAtLogin_(self, sender):
+        """Status-bar menu: toggle Launch at Login via LaunchAgent plist."""
+        _toggle_launch_at_login()
+        state = 1 if _is_launch_at_login() else 0
+        sender.setState_(state)
+        item = getattr(self, '_login_menu_item', None)
+        if item:
+            item.setState_(state)
+
+    def menuNeedsUpdate_(self, menu):
+        """NSMenuDelegate: refresh checkmark before menu opens."""
+        item = getattr(self, '_login_menu_item', None)
+        if item:
+            item.setState_(1 if _is_launch_at_login() else 0)
+
     def quitApp_(self, sender):
         """Status-bar menu: quit the application."""
         AppKit.NSApp.terminate_(None)
+
+    def retryStatusVisible_(self, timer):
+        """No-op: kept for compatibility; status bar fix is in C launcher."""
+        pass
 
     def cfgTheme_(self, sender):
         themes = [tm[0] for tm in _THEME_META]
@@ -2737,6 +3606,41 @@ class BtnTarget(AppKit.NSObject):
         _close_cfg_panel()
         _win_save_pos()
         AppKit.NSApplication.sharedApplication().terminate_(None)
+
+    def provClose_(self, sender):
+        _close_providers_panel()
+
+    def panelMagnet_(self, sender):
+        tag = sender.tag()
+        if 0 <= tag < len(_MAGNET_KEYS):
+            _main(lambda t=tag: _toggle_magnet(_MAGNET_KEYS[t]))
+
+    def provSave_(self, sender):
+        """Save all provider fields to providers.json and re-probe."""
+        refs = _prov_field_refs or {}
+        changed_ollama = False
+        if "ollama_url" in refs:
+            new_url = refs["ollama_url"].stringValue().strip()
+            if new_url != _pc.get("ollama", "base_url"):
+                _pc.set_field("ollama", "base_url", new_url)
+                changed_ollama = True
+        for pid in ("anthropic", "openai", "glm"):
+            key = f"{pid}_key"
+            if key in refs:
+                _pc.set_field(pid, "api_key", refs[key].stringValue().strip())
+        if "openai_base" in refs:
+            _pc.set_field("openai", "base_url",
+                          refs["openai_base"].stringValue().strip() or "https://api.openai.com/v1")
+        if "glm_base" in refs:
+            _pc.set_field("glm", "base_url",
+                          refs["glm_base"].stringValue().strip() or "https://api.z.ai/api/paas/v4")
+        _close_providers_panel()
+        # Re-probe after UI closes (refs are cleared)
+        if changed_ollama:
+            _pc.probe_ollama()
+        else:
+            import threading as _th
+            _th.Thread(target=_pc._probe_cloud, daemon=True).start()
 
     def cfgScResetOne_(self, sender):
         """Restore default scenario fields to factory defaults (without saving)."""
@@ -2752,7 +3656,7 @@ class BtnTarget(AppKit.NSObject):
             refs["tf_es"].setStringValue_(label.get("es", ""))
         else:
             refs["tf_en"].setStringValue_(str(label)[:6])
-        refs["tf_model"].setStringValue_(default_sc.get("model", "") or "")
+        _reset_sc_model_popups(default_sc.get("model", "") or "")
         refs["tv_prompt"].setString_(default_sc.get("prompt", ""))
 
     def cfgScEdit_(self, sender):
@@ -2771,14 +3675,22 @@ class BtnTarget(AppKit.NSObject):
             if sc_idx < len(scenarios):
                 lbl = _sc_label_for(scenarios[sc_idx], _st.get("lang", "ru"))
                 sc  = scenarios[sc_idx]
-                if sc.get("silent"):
+                is_fd  = bool(sc.get("full_default"))
+                is_sil = bool(sc.get("silent"))
+                if is_fd or is_sil:
                     ps = AppKit.NSMutableParagraphStyle.alloc().init()
                     ps.setAlignment_(AppKit.NSTextAlignmentCenter)
                     mstr = AppKit.NSMutableAttributedString.alloc().init()
                     a = {AppKit.NSFontAttributeName: _mono(9),
                          AppKit.NSForegroundColorAttributeName: C_CYAN,
                          AppKit.NSParagraphStyleAttributeName: ps}
-                    for part in ("·", lbl, "·"):
+                    parts = []
+                    if is_fd:  parts.append("[")
+                    if is_sil: parts.append("·")
+                    parts.append(lbl)
+                    if is_sil: parts.append("·")
+                    if is_fd:  parts.append("]")
+                    for part in parts:
                         mstr.appendAttributedString_(
                             AppKit.NSAttributedString.alloc().initWithString_attributes_(part, a))
                     sender.setAttributedTitle_(mstr)
@@ -2873,19 +3785,27 @@ class BtnTarget(AppKit.NSObject):
             chk_prefix + _T("sc_silent"), size=10, color=color,
             align=AppKit.NSTextAlignmentLeft))
 
+    def cfgScToggleFullDefault_(self, sender):
+        """Toggle 'default full mode scenario' (radio — only one allowed)."""
+        new_val = not _sc_edit_refs.get("full_default", False)
+        _sc_edit_refs["full_default"] = new_val
+        chk_prefix = "[✓] " if new_val else "[ ] "
+        color = C_GREEN_BR if new_val else C_GREEN_DIM
+        sender.setAttributedTitle_(_atitle(
+            chk_prefix + _T("sc_full_default"), size=10, color=color,
+            align=AppKit.NSTextAlignmentLeft))
+
     def silentInterrupt_(self, sender):
         fn = _silent_interrupt_fn
         if fn:
             fn()
 
     def expand_(self, sender):
-        if self._editor_active(): return
         _main(_toggle_expand)
 
     def send_(self, sender):
-        if self._editor_active(): return
         if _on_paste_cb:
-            _on_paste_cb()   # [↵] always pastes as raw (strip MD)
+            _on_paste_cb(mode="shift_enter")   # [Отправить] — apply full_default if set
 
     def scPrev_(self, sender):
         global _sc_page
@@ -3011,14 +3931,27 @@ def _style_tf(tf, placeholder=""):
         cell.setPlaceholderAttributedString_(pa)
 
 def _main(fn):
-    AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(fn)
+    def _safe():
+        try:
+            fn()
+        except Exception:
+            import traceback, time
+            tb = traceback.format_exc()
+            print(tb, flush=True)
+            try:
+                with open("/tmp/hush_main_err.log", "a") as _f:
+                    _f.write(f"[{time.strftime('%H:%M:%S')}]\n{tb}\n")
+            except Exception:
+                pass
+    AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(_safe)
 
 # ── Layout constants ──────────────────────────────────────────────────────────
 
 W        = 440
 W_EXP    = 640   # expanded width
-H        = 340   # normal window height
+H        = 358   # window height — same for main and all auxiliary panels
 H_EXP    = 680   # expanded height
+H_PANEL  = H     # alias: auxiliary panels use same height as main window
 
 # Header (top): ONE line — status + waveform + [CFG][↵][□][×] all on same row
 HDR_H    = 40
@@ -3093,8 +4026,10 @@ _prev_app_name = ""      # локализованное имя prev_app (для 
 _undo_sc_btn   = None    # кнопка ↩ возврата к оригиналу (показывается когда сценарий активен)
 _sc_action_v    = None   # 2-button panel: shown when scenario result is active
 _sc_send_btn2   = None   # "Отправить" in 2-button panel
+_sc_copy_btn2   = None   # "Копировать" in 2-button panel
 _sc_cancel_btn2 = None   # "Отменить" in 2-button panel
 _action_row_v      = None   # 4-button panel: normal ready state (hidden when empty)
+_action_copy_btn   = None   # [КОПИРОВАТЬ] in 4-button action row
 _action_hist_btn   = None   # [ИСТ] — history (replaces header history button)
 _action_cancel_btn = None   # [ОТМЕНИТЬ] — close overlay (or undo scenario)
 _action_scene_btn  = None   # [СЦЕНАРИЙ] — toggle scenario picker
@@ -3123,15 +4058,19 @@ _sc_avail         = {}      # {sc_idx: bool} cached model availability for main 
 _float_target     = None    # which _RichBlockView the float bar controls
 
 _about_panel        = None   # standalone NSPanel for About card (centered on screen)
+_prov_panel         = None   # drop panel for provider/API-key configuration
+_prov_field_refs    = {}     # {"ollama_url": tf, "ollama_model": combo, "anthropic_key": tf, ...}
+_prov_dot_refs      = {}     # {"ollama": NSTextField dot, ...}
 _status_bar_item    = None   # NSStatusItem for macOS menu bar
 _hist_panel       = None   # drop panel for history
 _hist_panel_side  = None   # "below" | "right" | "left" — current placement
 _hist_filter      = "blocks"   # "mixed" | "sessions" | "blocks" — active tab
 _cfg_panel        = None   # drop panel for settings (stays open during editing)
-_pre_cfg_win_y    = None   # main window Y saved before cfg panel shifts it down
+_pre_cfg_win_y    = None   # (legacy, unused — panels no longer shift main window)
+_panels_reset_open = False  # True after 🎯 press opens all; second press closes all
 _sc_editor_panel  = None   # scenario editor panel (covers main window while editing)
 _editing_scenario = False  # True while scenario editor is open
-_sc_edit_refs    = {}     # {tf_ru/en/es, tf_model, tv_prompt, sc_idx, original}
+_sc_edit_refs    = {}     # {tf_ru/en/es, pop_provider, pop_model, tv_prompt, sc_idx, original}
 _sc_edit_pending = None   # callable: what to do after editor is closed (save or discard)
 _sc_cfg_buttons  = {}    # sc_idx → NSButton in current cfg panel (for color sync)
 
@@ -3155,7 +4094,11 @@ _silent_target_app   = None   # NSRunningApplication for paste target
 _silent_app_icon_v   = None   # _AppIconView (shown for non-Python apps)
 _silent_hover_v      = None   # _HoverOverlayView (LLM state only)
 _silent_interrupt_fn = None   # callable; called on interrupt click
-_silent_text_v       = None   # NSTextField with recognized text (processing card)
+_silent_text_v       = None   # NSTextField (accumulation) or NSTextField (processing card)
+_silent_scroll_v     = None   # unused slot (kept for legacy reset in hide)
+_silent_block_count  = 0      # unused slot (kept for legacy reset in hide)
+_silent_strip_win_h  = 0      # initial window height (strip only) — set on first accumulation call
+_silent_sep_y        = 0      # y-coordinate of separator (fixed relative to strip top)
 _silent_saved_cx     = None   # saved window center X (persists across rebuilds)
 _silent_saved_sy     = None   # saved window bottom Y (persists across rebuilds)
 
@@ -3566,9 +4509,192 @@ def _update_cursor_pos():
     _cur_view.setNeedsDisplay_(True)
 
 
+def _reposition_cluster():
+    """Move cluster panels to track _cfg_panel (expanded mode anchor)."""
+    cfg = globals().get("_cfg_panel")
+    if not cfg or not cfg.isVisible():
+        return
+    cf  = cfg.frame()
+    cx, cy = int(cf.origin.x), int(cf.origin.y)
+    for key, pname in [("hist", "_hist_panel"),
+                       ("providers", "_prov_panel"),
+                       ("editor", "_sc_editor_panel")]:
+        if key not in _cluster_offsets:
+            continue
+        panel = globals().get(pname)
+        if not panel or not panel.isVisible():
+            continue
+        dx, dy = _cluster_offsets[key]
+        try:
+            panel.setFrameOrigin_(AppKit.NSMakePoint(cx + dx, cy + dy))
+        except Exception:
+            pass
+
+
+def _update_cluster_offsets():
+    """Recalculate cluster offsets after a cluster panel is individually dragged."""
+    cfg = globals().get("_cfg_panel")
+    if not cfg or not cfg.isVisible():
+        return
+    cf  = cfg.frame()
+    cx, cy = int(cf.origin.x), int(cf.origin.y)
+    for key, pname in [("hist", "_hist_panel"),
+                       ("providers", "_prov_panel"),
+                       ("editor", "_sc_editor_panel")]:
+        panel = globals().get(pname)
+        if panel and panel.isVisible():
+            pf = panel.frame()
+            _cluster_offsets[key] = (int(pf.origin.x) - cx, int(pf.origin.y) - cy)
+
+
+def _cluster_anchor_pos():
+    """Compute cfg anchor position so the 2×2 cluster doesn't overlap the expanded window.
+
+    The cluster occupies 2 columns: cfg/providers on left, hist/editor on right.
+    Total cluster width = 2*W + GAP. We must clear the FULL cluster width from
+    the main window edge, not just one panel width.
+    Uses _win's own screen to stay on the same monitor.
+    """
+    GAP       = _SNAP_GAP
+    CW        = 2 * W + GAP   # total cluster width (2 columns of 440px + gap)
+    if not _win:
+        return 50, 400
+    wf = _win.frame()
+    wx, wy = int(wf.origin.x), int(wf.origin.y)
+    ww, wh = int(wf.size.width), int(wf.size.height)
+
+    # Align cluster top with main window top
+    cy = wy + wh - H_PANEL
+
+    screen = _win.screen() or AppKit.NSScreen.mainScreen()
+    sf     = screen.visibleFrame() if screen else None
+    if sf:
+        sx, sy = int(sf.origin.x), int(sf.origin.y)
+        sw, sh = int(sf.size.width), int(sf.size.height)
+
+        cx_left  = wx - CW - GAP          # fully left of main window
+        cx_right = wx + ww + GAP          # fully right of main window
+
+        left_ok  = cx_left  >= sx
+        right_ok = cx_right + CW <= sx + sw
+
+        if left_ok:
+            cx = cx_left
+        elif right_ok:
+            cx = cx_right
+        else:
+            # Neither side fits perfectly — pick whichever overflows less
+            left_over  = max(0, sx - cx_left)
+            right_over = max(0, cx_right + CW - (sx + sw))
+            cx = cx_left if left_over <= right_over else cx_right
+
+        # Clamp so at least cfg (left column) stays on screen
+        cx = max(sx, min(cx, sx + sw - W))
+        # Clamp vertical so cluster doesn't go off-screen top or bottom
+        cy = max(sy + H_PANEL + GAP, min(cy, sy + sh - H_PANEL))
+    else:
+        cx = wx - CW - GAP
+
+    return cx, cy
+
+
+def _apply_cluster_offsets(cfg_panel, offsets):
+    """Move cfg to its anchor pos, then move each panel by its (dx, dy) offset from cfg."""
+    cx, cy = _cluster_anchor_pos()
+    cf = cfg_panel.frame()
+    cfg_panel.setFrameOrigin_(AppKit.NSMakePoint(cx, cy))
+    panel_map = {"hist": "_hist_panel", "providers": "_prov_panel", "editor": "_sc_editor_panel"}
+    for key, (dx, dy) in offsets.items():
+        p = globals().get(panel_map.get(key, ""))
+        if p and p.isVisible():
+            p.setFrameOrigin_(AppKit.NSMakePoint(cx + dx, cy + dy))
+
+
+def _cluster_grid_offsets(visible_keys):
+    """Compute tight 2×2 grid offsets (relative to cfg at 0,0) for visible panels.
+
+    Grid:
+        [cfg ][hist ]   ← top row (dy=0)
+        [prov][edit ]   ← bottom row (dy = -(H+GAP))
+    cfg is always top-left; other panels fill remaining slots left-to-right, top-to-bottom.
+    """
+    GAP = _SNAP_GAP
+    # Slot positions (col, row) in the grid — col 0/1, row 0/1
+    SLOTS = [
+        ("cfg",       0, 0),
+        ("hist",      1, 0),
+        ("providers", 0, 1),
+        ("editor",    1, 1),
+    ]
+    offsets = {}
+    for key, col, row in SLOTS:
+        if key == "cfg":
+            continue
+        if key not in visible_keys:
+            continue
+        dx =  col * (W + GAP)
+        dy = -row * (H_PANEL + GAP)   # macOS: down = lower y
+        offsets[key] = (dx, dy)
+    return offsets
+
+
+def _enter_cluster_mode():
+    """Gather all open panels into a compact 2×2 grid to the left of the expanded window."""
+    global _cluster_mode, _cluster_offsets, _cluster_was_open, _cluster_cfg_auto
+
+    _cluster_was_open = set()
+    for key, pname in [("hist", "_hist_panel"),
+                       ("providers", "_prov_panel"),
+                       ("editor", "_sc_editor_panel")]:
+        p = globals().get(pname)
+        if p and p.isVisible():
+            _cluster_was_open.add(key)
+
+    # Cfg is always the cluster anchor — open it if needed
+    _cluster_cfg_auto = not (globals().get("_cfg_panel") and _cfg_panel.isVisible())
+    if _cluster_cfg_auto:
+        _toggle_cfg_panel()
+
+    cfg = globals().get("_cfg_panel")
+    if not cfg or not cfg.isVisible():
+        return
+
+    _cluster_offsets = _cluster_grid_offsets(_cluster_was_open | {"cfg"})
+    _apply_cluster_offsets(cfg, _cluster_offsets)
+    _cluster_mode = True
+
+
+def _exit_cluster_mode():
+    """Restore panels from cluster back to _win attachment."""
+    global _cluster_mode, _cluster_offsets
+
+    _cluster_mode = False
+    _cluster_offsets = {}
+
+    # Close panels that weren't open before expand
+    for key, pname, close_fn in [
+        ("hist",      "_hist_panel",      lambda: _hist_panel.orderOut_(None) if _hist_panel else None),
+        ("providers", "_prov_panel",      _close_providers_panel),
+        ("editor",    "_sc_editor_panel", _close_editor_now),
+    ]:
+        if key not in _cluster_was_open:
+            panel = globals().get(pname)
+            if panel and panel.isVisible():
+                try:
+                    close_fn()
+                except Exception:
+                    pass
+
+    # Close cfg if it was auto-opened as anchor
+    if _cluster_cfg_auto:
+        _close_cfg_panel()
+
+    # Restore _win-relative positioning for panels that were open
+    _reposition_attached_panels()
+
+
 def _toggle_expand():
     global _expanded, _font_size_saved
-    _close_all_panels()   # close history/cfg before resize
     if not _expanded:
         _expanded = True
         _font_size_saved = _st["font_size"]
@@ -3583,7 +4709,9 @@ def _toggle_expand():
             _expand_btn.setAttributedTitle_(_atitle("[─]", size=12, color=C_GREEN_DIM))
         if _win:
             _win.setAlphaValue_(_st["opacity"])
+        _main(_enter_cluster_mode)
     else:
+        _exit_cluster_mode()
         _expanded = False
         if _font_size_saved is not None:
             _st["font_size"] = _font_size_saved
@@ -3704,15 +4832,19 @@ def _refresh_scenario_colors():
         sc_idx = int(btn.tag())
         sc     = scs[sc_idx] if 0 <= sc_idx < len(scs) else {}
         label  = _sc_label(sc)
-        avail  = _sc_avail.get(sc_idx, True)   # True until checked
+        is_fd  = bool(sc.get("full_default"))
+        is_sil = bool(sc.get("silent"))
+        if is_fd and is_sil: label = "[·" + label + "·]"
+        elif is_fd:           label = "[" + label + "]"
+        avail  = _sc_avail.get(sc_idx, True)
         if sc_idx == _proc_sc_idx:
-            color = C_YEL                       # currently processing → yellow
+            color = C_YEL
         elif not avail:
-            color = C_REC                       # model unreachable → red
+            color = C_REC
         elif sc_idx == active_sc:
-            color = C_GREEN_BR                  # result shown → bright green
+            color = C_GREEN_BR
         else:
-            color = C_GREEN_DIM                 # normal
+            color = C_GREEN_DIM
         btn.setAttributedTitle_(_atitle(label, size=11, color=color))
 
 
@@ -3746,12 +4878,12 @@ def _end_processing():
     if _cfg_hdr_btn: _cfg_hdr_btn.setHidden_(False)
     if _proc_sc_lbl: _proc_sc_lbl.setHidden_(True)
 
-    # Restore waveform; EQ back to its rest slot (centered)
+    # Restore waveform; recompute adaptive EQ width
     if _wf:
         _wf.setHidden_(False)
     if _proc_eq_v:
-        _proc_eq_v.setFrame_(AppKit.NSMakeRect(EQ_CTR_X, HDR_ITEM_Y, EQ_CTR_W, HDR_ITEM_H))
         _proc_eq_v.setHidden_(True)
+    _layout_header_wf()
 
     _stop_timer()
 
@@ -3778,25 +4910,45 @@ def set_undo_scenario_callback(fn):
     _on_undo_sc_cb = fn
 
 
-_HDR_GAP = 8          # symmetric gap: between name and WF, and between WF and right buttons
+_HDR_GAP = 8          # gap between app name and EQ, and between EQ and gear icon
+
+
+def _live_hdr_item_y() -> int:
+    """Return HDR_ITEM_Y based on actual current window height (correct in expanded mode)."""
+    h = int(_win.frame().size.height) if _win else H
+    return (h - HDR_H) + (HDR_H - HDR_ITEM_H) // 2
+
 
 def _layout_header_wf():
-    """Measure app name width and reposition label. Waveform stays at fixed centered position.
+    """Measure app name width, position label, then stretch EQ to fill remaining space.
     Must run on main thread."""
-    ICON_END = STS_X + 22 + 4    # icon right edge (10+22) + inner gap = 36
-    font     = _mono(11)
-    d        = {AppKit.NSFontAttributeName: font}
-    name     = _prev_app_name or ""
-    raw_w    = int(AppKit.NSString.stringWithString_(name).sizeWithAttributes_(d).width) if name else 0
-    name_w   = raw_w + 6          # small padding around text
+    ICON_END  = STS_X + 22 + 4    # icon right edge + inner gap = 36
+    # Compute gear-icon left edge from actual window width (handles expanded mode)
+    cw        = int(_win.frame().size.width) if _win else W
+    RIGHT_END = cw - CFG_H_W - 6 - _HDR_GAP
 
-    # Clamp: name must not overlap the fixed EQ start
-    max_name = EQ_CTR_X - _HDR_GAP - ICON_END
+    font  = _mono(11)
+    d     = {AppKit.NSFontAttributeName: font}
+    name  = _prev_app_name or ""
+    raw_w = int(AppKit.NSString.stringWithString_(name).sizeWithAttributes_(d).width) if name else 0
+    name_w = raw_w + 6
+
+    # Name can take up to half the available space
+    max_name = (RIGHT_END - ICON_END - _HDR_GAP) // 2
     name_w   = max(0, min(name_w, max_name))
     name_end = ICON_END + name_w
 
+    iy = _live_hdr_item_y()
     if _proc_app_lbl:
-        _proc_app_lbl.setFrame_(AppKit.NSMakeRect(ICON_END, HDR_ITEM_Y - 2, name_w, HDR_ITEM_H))
+        _proc_app_lbl.setFrame_(AppKit.NSMakeRect(ICON_END, iy - 2, name_w, HDR_ITEM_H))
+
+    # EQ fills all remaining space: from name_end+gap to gear icon
+    eq_x = name_end + _HDR_GAP
+    eq_w = max(40, RIGHT_END - eq_x)
+    if _wf:
+        _wf.setFrame_(AppKit.NSMakeRect(eq_x, iy, eq_w, HDR_ITEM_H))
+    if _proc_eq_v:
+        _proc_eq_v.setFrame_(AppKit.NSMakeRect(eq_x, iy, eq_w, HDR_ITEM_H))
 
     return name_end
 
@@ -3825,7 +4977,7 @@ def _hide_target_app_header():
         _lbl.setHidden_(False)
     # Reset waveform to fixed centered position
     if _wf:
-        _wf.setFrame_(AppKit.NSMakeRect(EQ_CTR_X, HDR_ITEM_Y, EQ_CTR_W, HDR_ITEM_H))
+        _layout_header_wf()
 
 
 def set_prev_app_icon(app):
@@ -3949,37 +5101,152 @@ def _hist_side_origin(pw, ph):
 
 
 def _reposition_attached_panels():
-    """Move cfg and hist panels to stay attached to main window (called on drag)."""
-    if not _win:
+    """Move magnetically-attached panels to track _win position."""
+    if _cluster_mode:
+        return   # expanded mode: panels cluster around cfg, not _win
+    win = globals().get("_win")
+    if not win:
         return
-    mf  = _win.frame()
-    gap = 6
+    mf  = win.frame()
+    wo  = mf.origin
+    ww  = int(mf.size.width)
+    wh  = int(mf.size.height)
+    GAP = _SNAP_GAP
+    _default_offset = {
+        "cfg":       (0,        wh + 4),
+        "hist":      (0,       -(H_PANEL + GAP)),
+        "editor":    (ww + GAP, 0),
+        "providers": (-(ww + GAP), 0),
+    }
+    for key, panel_name in [("cfg",       "_cfg_panel"),
+                              ("hist",      "_hist_panel"),
+                              ("editor",    "_sc_editor_panel"),
+                              ("providers", "_prov_panel")]:
+        if not _magnet_on.get(key, False):
+            continue
+        panel = globals().get(panel_name)
+        if not panel:
+            continue
+        try:
+            if not panel.isVisible():
+                continue
+            ph = int(panel.frame().size.height)
+        except Exception:
+            continue
+        if key in _magnet_offset:
+            dx, dy = _magnet_offset[key]
+        else:
+            dx, dy = _default_offset.get(key, (0, 0))
+            _magnet_offset[key] = (dx, dy)
+        nx, ny = int(wo.x + dx), int(wo.y + dy)
+        try:
+            panel.setFrameOrigin_(AppKit.NSMakePoint(nx, ny))
+        except Exception:
+            pass
+
+
+def _reset_panels_layout():
+    """🎯 toggle: first press shows all panels at their SAVED positions; second press hides all."""
+    global _panels_reset_open
+
+    if _panels_reset_open:
+        _panels_reset_open = False
+        _close_editor_now()
+        _close_providers_panel()
+        if _hist_panel and _hist_panel.isVisible():
+            _hist_panel.orderOut_(None)
+            _cfg_saved.setdefault("panels_open", {})["hist"] = False
+            _save_settings()
+        _close_cfg_panel()
+        return
+
+    _panels_reset_open = True
+    win = globals().get("_win")
+    if not win:
+        return
+    # Show panels at wherever their saved offsets put them (no reset of offsets)
+    if not (_cfg_panel and _cfg_panel.isVisible()):
+        _toggle_cfg_panel()
+    if not (_prov_panel and _prov_panel.isVisible()):
+        _toggle_providers_panel()
+    sc_list = _st.get("scenarios", [])
+    if sc_list and not (_sc_editor_panel and _sc_editor_panel.isVisible()):
+        _show_sc_editor_impl(0)
+    history = _on_history_cb() if _on_history_cb else []
+    if not (_hist_panel and _hist_panel.isVisible()):
+        _show_hist_panel(history)
+    _reposition_attached_panels()
+
+
+def _reset_to_cross_layout():
+    """[🔄] Reset panel layout.
+    In expanded mode → 2×2 compact grid (panels gather as a square).
+    In normal mode   → classic cross around main window, all magnets ON.
+    """
+    global _magnet_on, _magnet_offset, _magnet_free_pos, _panels_reset_open, _cluster_mode, _cluster_offsets
+
+    if globals().get("_expanded"):
+        # ── Expanded / cluster mode: gather panels into 2×2 grid ──────────────
+        # Ensure cfg is open (cluster anchor)
+        if not (_cfg_panel and _cfg_panel.isVisible()):
+            _toggle_cfg_panel()
+        # Open all panels that make sense to show
+        if not (_hist_panel and _hist_panel.isVisible()):
+            history = _on_history_cb() if _on_history_cb else []
+            _show_hist_panel(history)
+        if not (_prov_panel and _prov_panel.isVisible()):
+            _toggle_providers_panel()
+        sc_list = _st.get("scenarios", [])
+        if sc_list and not (_sc_editor_panel and _sc_editor_panel.isVisible()):
+            _show_sc_editor_impl(0)
+
+        cfg = globals().get("_cfg_panel")
+        if cfg and cfg.isVisible():
+            visible_keys = set()
+            for k, pn in [("hist","_hist_panel"),("providers","_prov_panel"),("editor","_sc_editor_panel")]:
+                p = globals().get(pn)
+                if p and p.isVisible():
+                    visible_keys.add(k)
+            _cluster_offsets = _cluster_grid_offsets(visible_keys | {"cfg"})
+            _apply_cluster_offsets(cfg, _cluster_offsets)
+            _cluster_mode = True
+        return
+
+    # ── Normal mode: classic cross, all magnets ON ─────────────────────────────
+    _cluster_mode    = False
+    _cluster_offsets = {}
+    _panels_reset_open = True
+    _magnet_on       = {k: True for k in _MAGNET_KEYS}
+    _magnet_free_pos = {}
+    for k in _MAGNET_KEYS:
+        _update_magnet_btn(k)
+    win = globals().get("_win")
+    if not win:
+        _magnet_save()
+        return
+    mf = win.frame()
+    ww = int(mf.size.width)
+    wh = int(mf.size.height)
+    G  = _SNAP_GAP
+    _magnet_offset = {
+        "cfg":       (0,         wh + 4),
+        "hist":      (0,        -(H_PANEL + G)),
+        "editor":    (ww + G,    0),
+        "providers": (-(ww + G), 0),
+    }
+    _magnet_save()
     if _cfg_panel and _cfg_panel.isVisible():
-        pf      = _cfg_panel.frame()
-        CFG_GAP = 4
-        px = mf.origin.x + mf.size.width - pf.size.width
-        py = mf.origin.y + mf.size.height + CFG_GAP
-        _cfg_panel.setFrameOrigin_(AppKit.NSMakePoint(px, py))
-    if _hist_panel and _hist_panel.isVisible():
-        pf   = _hist_panel.frame()
-        side = _hist_panel_side
-        if side == "below":
-            px = mf.origin.x + mf.size.width - pf.size.width
-            py = mf.origin.y - pf.size.height - gap
-            screen = AppKit.NSScreen.mainScreen()
-            vis    = screen.visibleFrame() if screen else None
-            if vis and py < vis.origin.y:
-                _hist_panel.orderOut_(None)   # dragged too close to screen bottom
-            else:
-                _hist_panel.setFrameOrigin_(AppKit.NSMakePoint(px, py))
-        elif side == "right":
-            px = mf.origin.x + mf.size.width + gap
-            py = mf.origin.y
-            _hist_panel.setFrameOrigin_(AppKit.NSMakePoint(px, py))
-        elif side == "left":
-            px = mf.origin.x - pf.size.width - gap
-            py = mf.origin.y
-            _hist_panel.setFrameOrigin_(AppKit.NSMakePoint(px, py))
+        _close_cfg_panel_rebuild()
+    _toggle_cfg_panel()
+    if not (_prov_panel and _prov_panel.isVisible()):
+        _toggle_providers_panel()
+    sc_list = _st.get("scenarios", [])
+    if sc_list and not (_sc_editor_panel and _sc_editor_panel.isVisible()):
+        _show_sc_editor_impl(0)
+    history = _on_history_cb() if _on_history_cb else []
+    if not (_hist_panel and _hist_panel.isVisible()):
+        _show_hist_panel(history)
+    _reposition_attached_panels()
 
 
 def _restore_overlay_after_panel():
@@ -4075,10 +5342,9 @@ def _build_hist_docview(ctrl, scroll_w, scroll_h, CHK_W, CHK_R):
                     AppKit.NSParagraphStyleAttributeName:  ps,
                 }, AppKit.NSMakeRange(len(display), len(raw_str) - len(display)))
 
-            item_btn = AppKit.NSButton.alloc().init()
-            item_btn.setBordered_(False)
+            item_btn = _HistItemView.alloc().initWithFrame_(
+                AppKit.NSMakeRect(ITEM_X, row_y + 1, ITEM_W, DP_HIST_ITEM_H - 2))
             item_btn.setAttributedTitle_(ns_str)
-            item_btn.setFrame_(AppKit.NSMakeRect(ITEM_X, row_y + 1, ITEM_W, DP_HIST_ITEM_H - 2))
             if is_session:
                 rep = {"id": item["id"], "full": full,
                        "type": "session",
@@ -4127,8 +5393,67 @@ def _rebuild_hist_scroll(ctrl):
         ctrl._all_btn.setHidden_(len(ctrl._items) == 0)
 
 
+_LAUNCH_AGENT_LABEL = "net.alexbic.hush"
+_LAUNCH_AGENT_PLIST = os.path.expanduser(
+    f"~/Library/LaunchAgents/{_LAUNCH_AGENT_LABEL}.plist")
+
+def _is_launch_at_login():
+    return os.path.exists(_LAUNCH_AGENT_PLIST)
+
+def _toggle_launch_at_login():
+    import subprocess
+    if _is_launch_at_login():
+        subprocess.call(["launchctl", "unload", _LAUNCH_AGENT_PLIST],
+                        stderr=subprocess.DEVNULL)
+        try:
+            os.remove(_LAUNCH_AGENT_PLIST)
+        except OSError:
+            pass
+    else:
+        python = sys.executable
+        script = os.path.abspath(os.path.join(os.path.dirname(__file__), "main.py"))
+        plist = f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>{_LAUNCH_AGENT_LABEL}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{python}</string>
+        <string>{script}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <false/>
+    <key>StandardOutPath</key>
+    <string>{os.path.expanduser("~/Library/Logs/hush.log")}</string>
+    <key>StandardErrorPath</key>
+    <string>{os.path.expanduser("~/Library/Logs/hush.log")}</string>
+</dict>
+</plist>
+"""
+        os.makedirs(os.path.dirname(_LAUNCH_AGENT_PLIST), exist_ok=True)
+        with open(_LAUNCH_AGENT_PLIST, "w") as f:
+            f.write(plist)
+
+
+_menu_items = {}   # {key: NSMenuItem} for live language refresh
+
+
+def _refresh_menu_titles():
+    """Update status bar menu item titles to match current language."""
+    for key, item in _menu_items.items():
+        item.setTitle_(_T(key))
+    btn = _status_bar_item.button() if _status_bar_item else None
+    if btn:
+        btn.setToolTip_(_T("menu_tooltip"))
+
+
 def _setup_status_bar():
-    """Create macOS menu bar status item with About and Quit."""
+    """Create macOS menu bar status item with localised menu."""
     global _status_bar_item
     bar = AppKit.NSStatusBar.systemStatusBar()
     _status_bar_item = bar.statusItemWithLength_(AppKit.NSSquareStatusItemLength)
@@ -4143,18 +5468,90 @@ def _setup_status_bar():
         else:
             btn.setTitle_("H")
             btn.setFont_(_mono(13, True))
-        btn.setToolTip_("HUSH — голосовой ввод")
+        btn.setToolTip_(_T("menu_tooltip"))
     menu = AppKit.NSMenu.alloc().init()
+
+    open_item = AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+        _T("menu_open"), "openHush:", "")
+    open_item.setTarget_(_btn_t)
+    # Show ⇧⌥ right-aligned on same line (native macOS shortcut display)
+    open_item.setKeyEquivalent_("⌥")
+    open_item.setKeyEquivalentModifierMask_(AppKit.NSEventModifierFlagShift)
+    menu.addItem_(open_item)
+    _menu_items["menu_open"] = open_item
+
+    menu.addItem_(AppKit.NSMenuItem.separatorItem())
+
     about_item = AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-        "О приложении", "showAbout:", "")
+        _T("menu_about"), "showAbout:", "")
     about_item.setTarget_(_btn_t)
     menu.addItem_(about_item)
+    _menu_items["menu_about"] = about_item
+
     menu.addItem_(AppKit.NSMenuItem.separatorItem())
+
+    login_item = AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+        _T("menu_login"), "toggleLaunchAtLogin:", "")
+    login_item.setTarget_(_btn_t)
+    login_item.setState_(1 if _is_launch_at_login() else 0)
+    menu.addItem_(login_item)
+    _menu_items["menu_login"] = login_item
+    _btn_t._login_menu_item = login_item
+
+    menu.addItem_(AppKit.NSMenuItem.separatorItem())
+
     quit_item = AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-        "Завершить HUSH", "quitApp:", "")
+        _T("menu_quit"), "quitApp:", "")
     quit_item.setTarget_(_btn_t)
     menu.addItem_(quit_item)
+    _menu_items["menu_quit"] = quit_item
+
+    menu.setDelegate_(_btn_t)   # menuNeedsUpdate_ refreshes checkmark on open
     _status_bar_item.setMenu_(menu)
+    try:
+        _status_bar_item.setVisible_(True)
+    except Exception:
+        pass
+
+
+class _GithubIconView(AppKit.NSView):
+    """GitHub link icon button for About panel, same footprint as _WalletView."""
+    _URL  = "https://github.com/alexbic/hush"
+    _img  = None
+
+    def acceptsFirstMouse_(self, _e): return True
+    def isOpaque(self): return False
+
+    def mouseUp_(self, _event):
+        import subprocess
+        subprocess.Popen(["open", self._URL])
+
+    def drawRect_(self, _rect):
+        w = self.bounds().size.width
+        h = self.bounds().size.height
+
+        if self.__class__._img is None:
+            img_path = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)), "github-mark.png")
+            self.__class__._img = AppKit.NSImage.alloc().initWithContentsOfFile_(img_path)
+
+        ns_img = self.__class__._img
+        if ns_img:
+            icon_pt = min(w, h) * 0.68
+            ix = (w - icon_pt) / 2
+            iy = (h - icon_pt) / 2
+            ns_img.drawInRect_fromRect_operation_fraction_respectFlipped_hints_(
+                AppKit.NSMakeRect(ix, iy, icon_pt, icon_pt),
+                AppKit.NSZeroRect,
+                AppKit.NSCompositingOperationSourceOver,
+                1.0, True, None,
+            )
+        else:
+            C_GREEN_DIM.setStroke()
+            path = AppKit.NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
+                AppKit.NSMakeRect(0.5, 0.5, w - 1, h - 1), 5, 5)
+            path.setLineWidth_(1.0)
+            path.stroke()
 
 
 def _show_about_view():
@@ -4164,8 +5561,8 @@ def _show_about_view():
     _hide_about_view()
 
     AW, AH = 560, 480
+    PAD    = 16
 
-    # Center on main screen
     sf = AppKit.NSScreen.mainScreen().frame()
     px = sf.origin.x + (sf.size.width  - AW) / 2
     py = sf.origin.y + (sf.size.height - AH) / 2
@@ -4181,67 +5578,107 @@ def _show_about_view():
     ap.setHasShadow_(True)
     ap.setHidesOnDeactivate_(False)
 
-    # Click-anywhere-to-close background
     bg = _AboutBgView.alloc().initWithFrame_(AppKit.NSMakeRect(0, 0, AW, AH))
     bg.setAutoresizingMask_(AppKit.NSViewWidthSizable | AppKit.NSViewHeightSizable)
     ap.setContentView_(bg)
 
-    PAD_X  = 20    # horizontal padding
-    PAD_B  = 12    # bottom padding
-    GAP    = 6     # gap between footer rows
-    ROW_H  = 20    # copyright / github row height
-
     lang = _st.get("lang", "ru")
 
-    # ── Top-right corner: wallet donate (closed → open on hover) ─────────────
-    W_W, W_H = _WalletView._VW, _WalletView._VH
+    # ── Bottom row: GitHub icon (left) · Copyright (center) · Wallet (right) ──
+    ICON_W, ICON_H = _WalletView._VW, _WalletView._VH  # 90 × 68
+
+    gh_icon = _GithubIconView.alloc().initWithFrame_(
+        AppKit.NSMakeRect(PAD, PAD, ICON_W, ICON_H))
+    gh_icon.setAutoresizingMask_(AppKit.NSViewMaxXMargin | AppKit.NSViewMaxYMargin)
+    bg.addSubview_(gh_icon)
+
     wallet_v = _WalletView.alloc().initWithFrame_(
-        AppKit.NSMakeRect(AW - W_W - PAD_X, AH - W_H - 8, W_W, W_H))
-    wallet_v.setAutoresizingMask_(AppKit.NSViewMinXMargin | AppKit.NSViewMinYMargin)
+        AppKit.NSMakeRect(AW - PAD - ICON_W, PAD, ICON_W, ICON_H))
+    wallet_v.setAutoresizingMask_(AppKit.NSViewMinXMargin | AppKit.NSViewMaxYMargin)
     bg.addSubview_(wallet_v)
 
-    # ── Second row from bottom: github link (centered) ────────────────────────
-    GH_Y = PAD_B + ROW_H + GAP
-    GH_W = 200
-    gh_btn = _mklinkbtn("[ github.com/alexbic ]", color=C_GREEN_DIM, size=10)
-    gh_btn.setFrame_(AppKit.NSMakeRect((AW - GH_W) / 2, GH_Y, GH_W, ROW_H))
-    gh_btn.setAutoresizingMask_(AppKit.NSViewMinXMargin | AppKit.NSViewMaxXMargin | AppKit.NSViewMaxYMargin)
-    gh_btn.setTarget_(_btn_t)
-    gh_btn.setAction_(BtnTarget.aboutGithub_)
-    bg.addSubview_(gh_btn)
-
-    # ── Third row: copyright + author (centered) → link to site ──────────────
-    CR_Y = GH_Y + ROW_H + GAP
-    CR_W = 320
-    cr_btn = _mklinkbtn("© 2026 Alexander Bikmukhametov", color=C_IDLE, size=10)
-    cr_btn.setFrame_(AppKit.NSMakeRect((AW - CR_W) / 2, CR_Y, CR_W, ROW_H))
+    CR_Y = PAD + (ICON_H - 18) // 2   # vertically centred with icons
+    CR_W = 260
+    cr_btn = _mklinkbtn("© 2026 Alexander Bikmukhametov", color=C_GREEN_DIM, size=10)
+    cr_btn.setFrame_(AppKit.NSMakeRect((AW - CR_W) / 2, CR_Y, CR_W, 18))
     cr_btn.setAutoresizingMask_(AppKit.NSViewMinXMargin | AppKit.NSViewMaxXMargin | AppKit.NSViewMaxYMargin)
     cr_btn.setTarget_(_btn_t)
     cr_btn.setAction_(BtnTarget.aboutSite_)
     bg.addSubview_(cr_btn)
 
-    # ── Brand image (fills top area) ──────────────────────────────────────────
-    IMG_BOT = CR_Y + ROW_H + 10
-    IMG_TOP = 10
-    img_y = IMG_BOT
-    img_w = AW - PAD_X * 2
-    img_h = AH - IMG_BOT - IMG_TOP
+    BOTTOM_TOP = PAD + ICON_H + 8    # y where bottom section ends
+
+    # ── Top corners: version (left) · title (center) · docs link (right) ──────
+    CORNER_H = 18
+    CORNER_Y = AH - PAD - CORNER_H
+
+    ver_tf = AppKit.NSTextField.labelWithString_("v1.0")
+    ver_tf.setEditable_(False); ver_tf.setBezeled_(False); ver_tf.setDrawsBackground_(False)
+    ver_tf.setFont_(_mono(10, False))
+    ver_tf.setTextColor_(C_GREEN_DIM)
+    ver_tf.setAlignment_(AppKit.NSTextAlignmentLeft)
+    ver_tf.setFrame_(AppKit.NSMakeRect(PAD, CORNER_Y, 50, CORNER_H))
+    ver_tf.setAutoresizingMask_(AppKit.NSViewMaxXMargin | AppKit.NSViewMinYMargin)
+    bg.addSubview_(ver_tf)
+
+    doc_labels = {"ru": "[ Инструкция ]", "es": "[ Instrucciones ]"}
+    doc_label  = doc_labels.get(lang, "[ Documentation ]")
+    DC_W = 130
+    dc_btn = _mklinkbtn(doc_label, color=C_GREEN, size=10)
+    dc_btn.setFrame_(AppKit.NSMakeRect(AW - PAD - DC_W, CORNER_Y, DC_W, CORNER_H))
+    dc_btn.setAutoresizingMask_(AppKit.NSViewMinXMargin | AppKit.NSViewMinYMargin)
+    dc_btn.setTarget_(_btn_t)
+    dc_btn.setAction_(BtnTarget.aboutDocs_)
+    bg.addSubview_(dc_btn)
+
+    # ── Large title "HUSH" + subtitle ─────────────────────────────────────────
+    TITLE_H = 42
+    SUB_H   = 18
+    TITLE_Y = CORNER_Y - 4 - TITLE_H - SUB_H - 2
+    title_tf = AppKit.NSTextField.labelWithString_("HUSH")
+    title_tf.setEditable_(False); title_tf.setBezeled_(False); title_tf.setDrawsBackground_(False)
+    title_tf.setFont_(_mono(30, True))
+    title_tf.setTextColor_(C_GREEN)
+    title_tf.setAlignment_(AppKit.NSTextAlignmentCenter)
+    title_tf.setFrame_(AppKit.NSMakeRect(0, TITLE_Y + SUB_H + 2, AW, TITLE_H))
+    title_tf.setAutoresizingMask_(AppKit.NSViewWidthSizable | AppKit.NSViewMinYMargin)
+    bg.addSubview_(title_tf)
+
+    sub_texts = {
+        "ru": "Голосовой набор текста с постобработкой через LLM",
+        "es": "Dictado de voz con postprocesamiento por LLM",
+    }
+    sub_text = sub_texts.get(lang, "Voice-to-text with LLM post-processing")
+    sub_tf = AppKit.NSTextField.labelWithString_(sub_text)
+    sub_tf.setEditable_(False); sub_tf.setBezeled_(False); sub_tf.setDrawsBackground_(False)
+    sub_tf.setFont_(_mono(11, False))
+    sub_tf.setTextColor_(C_TEXT)
+    sub_tf.setAlignment_(AppKit.NSTextAlignmentCenter)
+    sub_tf.setFrame_(AppKit.NSMakeRect(PAD, TITLE_Y, AW - PAD * 2, SUB_H))
+    sub_tf.setAutoresizingMask_(AppKit.NSViewWidthSizable | AppKit.NSViewMinYMargin)
+    bg.addSubview_(sub_tf)
+
+    # ── Brand image (centre of composition) ──────────────────────────────────
+    IMG_Y   = BOTTOM_TOP
+    IMG_TOP = TITLE_Y - 6
+    img_w   = AW - PAD * 2
+    img_h   = IMG_TOP - IMG_Y
 
     img_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "hush_brand_full.png")
     ns_img   = AppKit.NSImage.alloc().initWithContentsOfFile_(img_path)
     if ns_img:
         iv = AppKit.NSImageView.alloc().initWithFrame_(
-            AppKit.NSMakeRect(PAD_X, img_y, img_w, img_h))
+            AppKit.NSMakeRect(PAD, IMG_Y, img_w, img_h))
         iv.setImage_(ns_img)
-        iv.setImageScaling_(3)   # NSImageScaleProportionallyUpOrDown
-        iv.setImageAlignment_(0) # NSImageAlignCenter
+        iv.setImageScaling_(3)    # NSImageScaleProportionallyUpOrDown
+        iv.setImageAlignment_(0)  # NSImageAlignCenter
         iv.setAutoresizingMask_(AppKit.NSViewWidthSizable | AppKit.NSViewHeightSizable)
         bg.addSubview_(iv)
     else:
         tf = AppKit.NSTextField.labelWithString_("[ HUSH ]")
         tf.setEditable_(False); tf.setBezeled_(False); tf.setDrawsBackground_(False)
         tf.setFont_(_mono(20, True)); tf.setTextColor_(C_GREEN_DIM)
-        tf.setFrame_(AppKit.NSMakeRect(PAD_X, img_y + img_h // 2 - 14, img_w, 28))
+        tf.setFrame_(AppKit.NSMakeRect(PAD, IMG_Y + img_h // 2 - 14, img_w, 28))
         bg.addSubview_(tf)
 
     ap.setAcceptsMouseMovedEvents_(True)
@@ -4266,6 +5703,8 @@ def _show_hist_panel(history):
         # Reset history-browser mode if active
         if _st["mode"] == "history_open":
             _st["mode"] = "idle" if not _st["text"] else "ready"
+        _cfg_saved.setdefault("panels_open", {})["hist"] = False
+        _save_settings()
         return
 
     CHK_W   = 26
@@ -4276,43 +5715,25 @@ def _show_hist_panel(history):
     FIXED   = HDR_H + FOOT_H + BOT_PAD
     # Size panel by filtered item count (current active tab)
     n_filtered = len(_hist_filter_items(history, _hist_filter))
-    pw      = int(_win.frame().size.width)
+    pw      = W    # panel always normal width regardless of expanded mode
     mf      = _win.frame()
     gap     = 6
     screen  = AppKit.NSScreen.mainScreen()
     vis     = screen.visibleFrame() if screen else None
 
-    # Determine placement: below (preferred) or side (fallback)
-    ph_dyn   = min(DP_HIST_MAX_H, max(FIXED + 40, FIXED + n_filtered * DP_HIST_ITEM_H))
-    py_below = mf.origin.y - ph_dyn - gap
-    fits_below = (vis is None or py_below >= vis.origin.y)
-
-    if fits_below:
-        ph           = ph_dyn
-        px           = mf.origin.x + mf.size.width - pw   # right-aligned to main window
-        panel_origin = AppKit.NSMakePoint(px, py_below)
-        _hist_panel_side = "below"
-    else:
-        ph       = int(mf.size.height)    # match main window height when to the side
-        px_right = mf.origin.x + mf.size.width + gap
-        px_left  = mf.origin.x - pw - gap
-        fits_right = (vis is None or px_right + pw <= vis.origin.x + vis.size.width)
-        fits_left  = (vis is None or px_left >= vis.origin.x)
-        if fits_right:
-            panel_origin     = AppKit.NSMakePoint(px_right, mf.origin.y)
-            _hist_panel_side = "right"
-        elif fits_left:
-            panel_origin     = AppKit.NSMakePoint(px_left, mf.origin.y)
-            _hist_panel_side = "left"
-        else:
-            _hist_panel_side = None
-            return   # no room anywhere
+    ph = H_PANEL
+    wx, wy = int(mf.origin.x), int(mf.origin.y)
+    ww, wh = int(mf.size.width), int(mf.size.height)
+    px, py = _calc_panel_pos("hist", wx, wy, ww, wh, pw, ph)
+    panel_origin  = AppKit.NSMakePoint(px, py)
+    _hist_panel_side = "left"
 
     if _hist_panel:
         _hist_panel.orderOut_(None)
         _hist_panel.close()
 
     _hist_panel = _make_drop_panel(pw, ph)
+    _hist_panel._panel_key = "hist"
     cv = _hist_panel.contentView()
 
     # ── Controller ───────────────────────────────────────────────────────────
@@ -4339,9 +5760,10 @@ def _show_hist_panel(history):
 
     # ── Header: three filter tabs + select-all checkbox ──────────────────────
     hdr_y   = ph - HDR_H
-    TAB_GAP = 6
-    n_tabs  = 3
-    tab_area_w = pw - CHK_W - CHK_R - 12
+    TAB_GAP  = 6
+    MAG_OFF  = 30   # left offset for magnet icon
+    n_tabs   = 3
+    tab_area_w = pw - CHK_W - CHK_R - 12 - MAG_OFF
     tab_w      = (tab_area_w - TAB_GAP * (n_tabs - 1)) // n_tabs
     tab_h      = 20
     tab_y      = hdr_y + (HDR_H - tab_h) // 2
@@ -4354,7 +5776,7 @@ def _show_hist_panel(history):
     for ti, (mode, key) in enumerate(tab_specs):
         lbl = _T(key)
         col = C_CYAN if mode == _hist_filter else C_GREEN_DIM
-        tx  = 8 + ti * (tab_w + TAB_GAP)
+        tx  = MAG_OFF + ti * (tab_w + TAB_GAP)
         tb  = _mkbtn(lbl, color=col, size=9)
         tb.setFrame_(AppKit.NSMakeRect(tx, tab_y, tab_w, tab_h))
         tb.setRepresentedObject_(mode)
@@ -4380,6 +5802,8 @@ def _show_hist_panel(history):
     cv.addSubview_(all_btn)
     ctrl._all_btn = all_btn
 
+    _mkmagnet_btn("hist", cv, 6, hdr_y + (HDR_H - 22) // 2, 22, 22)
+
     # ── Scrollable list ───────────────────────────────────────────────────────
     scroll_y = BOT_PAD + FOOT_H
     scroll_h = ph - HDR_H - FOOT_H - BOT_PAD
@@ -4399,12 +5823,21 @@ def _show_hist_panel(history):
     scroll.setDocumentView_(docview)
     cv.addSubview_(scroll)
 
-    # ── Footer: delete / merge / append / replace ────────────────────────────
+    # ── Footer: [ЗАКРЫТЬ] always visible + delete / merge / append / replace ──
     cv.addSubview_(_sep_line(0, BOT_PAD + FOOT_H - 1, pw, pin="bottom"))
 
-    btn_w  = 80
+    CLS_W  = 90
+    btn_w  = 72
     f_gap  = 5
-    bx0    = (pw - btn_w * 4 - f_gap * 3) // 2
+    # action buttons centered in the space right of close button
+    action_x0 = CLS_W + 10
+    bx0       = action_x0 + (pw - action_x0 - btn_w * 4 - f_gap * 3) // 2
+
+    close_btn = _mkbtn(_T("btn_close"), color=C_GREEN_DIM, size=9)
+    close_btn.setFrame_(AppKit.NSMakeRect(8, BOT_PAD + 4, CLS_W, 22))
+    close_btn.setTarget_(_btn_t)
+    close_btn.setAction_(BtnTarget.histClose_)
+    cv.addSubview_(close_btn)
 
     del_btn = _mkbtn(_T("btn_del"), color=C_REC, size=9)
     del_btn.setFrame_(AppKit.NSMakeRect(bx0, BOT_PAD + 4, btn_w, 22))
@@ -4438,9 +5871,59 @@ def _show_hist_panel(history):
     cv.addSubview_(replace_btn)
     ctrl._replace_btn = replace_btn
 
+    # In cluster mode: override panel_origin to follow cluster offset
+    if _cluster_mode:
+        cfg = globals().get("_cfg_panel")
+        if cfg and cfg.isVisible():
+            cf = cfg.frame()
+            cx, cy = int(cf.origin.x), int(cf.origin.y)
+            if "hist" in _cluster_offsets:
+                dx, dy = _cluster_offsets["hist"]
+            else:
+                # Hist wasn't in cluster yet — assign it a slot and add offset
+                dx, dy = W + _SNAP_GAP, 0   # default: to the right of cfg (grid col 1)
+                _cluster_offsets["hist"] = (dx, dy)
+            panel_origin = AppKit.NSMakePoint(cx + dx, cy + dy)
+
     _hist_panel.setFrameOrigin_(panel_origin)
     AppKit.NSApp.activateIgnoringOtherApps_(True)
     _hist_panel.makeKeyAndOrderFront_(None)
+    _cfg_saved.setdefault("panels_open", {})["hist"] = True
+    _save_settings()
+
+
+def _sc_model_from_refs() -> str:
+    """Read provider + model popups → 'provider:model' or '' for auto."""
+    pop_prov  = (_sc_edit_refs or {}).get("pop_provider")
+    pop_model = (_sc_edit_refs or {}).get("pop_model")
+    if not pop_prov:
+        return ""
+    pid = pop_prov.titleOfSelectedItem() or ""
+    if not pid or pid == "авто":
+        return ""
+    mname = (pop_model.titleOfSelectedItem() or "") if pop_model else ""
+    if not mname or mname == "—":
+        return ""
+    return f"{pid}:{mname}"
+
+
+def _reset_sc_model_popups(model_str: str):
+    """Reset provider + model popups from a model string like 'anthropic:claude-...'."""
+    pop_prov  = (_sc_edit_refs or {}).get("pop_provider")
+    pop_model = (_sc_edit_refs or {}).get("pop_model")
+    if not pop_prov or not pop_model:
+        return
+    if ":" in (model_str or ""):
+        pid, _, mname = model_str.partition(":")
+    else:
+        pid, mname = "", ""
+    items = [pop_prov.itemTitleAtIndex_(i) for i in range(pop_prov.numberOfItems())]
+    if pid in items:
+        pop_prov.selectItemWithTitle_(pid)
+    else:
+        pop_prov.selectItemAtIndex_(0)
+        pid = ""
+    _populate_model_popup(pop_model, pid, mname)
 
 
 def _sc_edit_dirty() -> bool:
@@ -4452,13 +5935,15 @@ def _sc_edit_dirty() -> bool:
         _sc_edit_refs["tf_ru"].stringValue().strip() != o["ru"] or
         _sc_edit_refs["tf_en"].stringValue().strip() != o["en"] or
         _sc_edit_refs["tf_es"].stringValue().strip() != o["es"] or
-        _sc_edit_refs["tf_model"].stringValue().strip() != o["model"] or
-        _sc_edit_refs["tv_prompt"].string().strip() != o["prompt"]
+        _sc_model_from_refs() != o["model"] or
+        _sc_edit_refs["tv_prompt"].string().strip() != o["prompt"] or
+        _sc_edit_refs.get("silent", False) != o.get("silent", False) or
+        _sc_edit_refs.get("full_default", False) != o.get("full_default", False)
     )
 
 
 def _close_editor_now(pending_fn=None):
-    """Close scenario editor panel, restore main window."""
+    """Close scenario editor panel."""
     global _sc_editor_panel, _sc_edit_pending, _editing_scenario
     _editing_scenario = False
     if _sc_editor_panel:
@@ -4466,12 +5951,15 @@ def _close_editor_now(pending_fn=None):
         _sc_editor_panel.close()
         _sc_editor_panel = None
     _sc_edit_pending = None
-    if _win:
-        _win.orderFrontRegardless()
     # Rebuild cfg panel so the highlighted card resets to normal color
     if _cfg_panel and _cfg_panel.isVisible():
         _close_cfg_panel_rebuild()
         _toggle_cfg_panel()
+        # In cluster mode: reposition all panels to restore the cluster grid
+        if _cluster_mode:
+            cfg = globals().get("_cfg_panel")
+            if cfg and cfg.isVisible():
+                _apply_cluster_offsets(cfg, _cluster_offsets)
     if pending_fn:
         pending_fn()
 
@@ -4583,7 +6071,6 @@ def _do_delete_scenario(sc_idx: int):
         _sc_editor_panel = None
 
     if _win:
-        _win.orderFrontRegardless()
         _relayout_buttons(W if not _expanded else W_EXP)
 
     _close_cfg_panel_rebuild()
@@ -4645,11 +6132,20 @@ def _update_sc_cfg_colors():
 
 
 def _show_sc_editor(sc_idx):
-    """Open scenario editor covering the main window.
-    cfg_panel stays open in its position. sc_idx=None = add new.
-    """
+    """Open scenario editor covering the main window."""
     global _sc_editor_panel, _sc_edit_refs, _sc_edit_pending, _editing_scenario
     _sc_edit_pending = None
+    try:
+        return _show_sc_editor_impl(sc_idx)
+    except Exception as _e:
+        import traceback
+        traceback.print_exc()
+        with open("/tmp/hush_sc_editor.log", "a") as _f:
+            traceback.print_exc(file=_f)
+
+
+def _show_sc_editor_impl(sc_idx):
+    global _sc_editor_panel, _sc_edit_refs, _editing_scenario
 
     if _sc_editor_panel:
         _sc_editor_panel.orderOut_(None)
@@ -4659,16 +6155,16 @@ def _show_sc_editor(sc_idx):
     scenarios = _st.get("scenarios", [])
     sc = scenarios[sc_idx] if sc_idx is not None and sc_idx < len(scenarios) else {}
 
-    # Use main window size so editor visually replaces it
+    # Fixed size — same as all other auxiliary panels
     mf      = _win.frame()
-    EDIT_W  = int(mf.size.width)
-    EDIT_H  = int(mf.size.height)
+    EDIT_W  = W
+    EDIT_H  = H_PANEL
     MARGIN  = 12
     LABEL_H = 13
     TF_H    = 22
     GAP     = 3
     BTN_H   = 22
-    BTN_W   = 60
+    BTN_W   = 72     # wide enough for Russian "[Сохранить]"
 
     # Use _EditorPanel so text fields can receive focus/keyboard input
     panel = _EditorPanel.alloc().initWithContentRect_styleMask_backing_defer_(
@@ -4689,14 +6185,16 @@ def _show_sc_editor(sc_idx):
 
     y = EDIT_H - 8
 
-    # Header: title + right-side action button
+    # Header: 🧲 + title + right-side action button
+    MAG_END = 30
     is_default_sc = sc_idx is not None and sc_idx < len(DEFAULT_SCENARIOS)
     is_custom_sc  = sc_idx is not None and sc_idx >= len(DEFAULT_SCENARIOS)
     RIGHT_BTN_W   = 56 if is_custom_sc else 34
     has_right_btn = is_default_sc or is_custom_sc
-    hdr_w = EDIT_W - MARGIN * 2 - (RIGHT_BTN_W + 4 if has_right_btn else 0)
-    hdr = _mklabel(_T("sc_edit_hdr"), size=10, color=C_IDLE)
-    hdr.setFrame_(AppKit.NSMakeRect(MARGIN, y - LABEL_H, hdr_w, LABEL_H))
+    _mkmagnet_btn("editor", cv, 6, y - LABEL_H - 2, 22, LABEL_H + 4)
+    hdr_w = EDIT_W - MAG_END - MARGIN - (RIGHT_BTN_W + 4 if has_right_btn else 0)
+    hdr = _mklabel("НАСТРОЙКИ СЦЕНАРИЯ", size=10, color=C_IDLE)
+    hdr.setFrame_(AppKit.NSMakeRect(MAG_END, y - LABEL_H, hdr_w, LABEL_H))
     cv.addSubview_(hdr)
     if is_default_sc:
         btn_rst = _mkbtn("[↺]", color=C_GREEN_DIM, size=9)
@@ -4735,23 +6233,51 @@ def _show_sc_editor(sc_idx):
     y       -= TF_H + GAP
     tf_es    = _make_tf("ES — nombre del botón, hasta 6 símbolos", label_val.get("es", ""))
     y       -= TF_H + GAP
-    tf_model = _make_tf("модель: ollama:qwen3:8b  (пусто = авто)", sc.get("model", "") or "")
-    y       -= TF_H + GAP
+    # ── Cascading provider → model selector ──────────────────────────────────
+    cur_model_str = sc.get("model", "") or ""
+    if ":" in cur_model_str:
+        cur_pid, _, cur_mname = cur_model_str.partition(":")
+    else:
+        cur_pid, cur_mname = "", ""
 
-    # Color model field: green = reachable, red = unavailable (runs in background)
-    _model_init = sc.get("model", "") or ""
-    if _model_init:
-        def _check_model_field(tf=tf_model, m=_model_init):
-            ok = _model_available(m)
-            def _apply(field=tf, good=ok):
-                field.setTextColor_(C_GREEN_BR if good else C_REC)
-                field.setNeedsDisplay_(True)
-            AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(_apply)
-        threading.Thread(target=_check_model_field, daemon=True).start()
+    HALF_W = (FW - 6) // 2
 
-    # Silent mode checkbox row — separated by thin lines, looks like a setting option
-    SIL_H   = 28
-    SIL_SEP = 6
+    # provider label + model label
+    lbl_p = _mklabel("провайдер", size=9, color=C_IDLE)
+    lbl_p.setFrame_(AppKit.NSMakeRect(MARGIN, y - LABEL_H, HALF_W, LABEL_H))
+    cv.addSubview_(lbl_p)
+    lbl_m = _mklabel("модель", size=9, color=C_IDLE)
+    lbl_m.setFrame_(AppKit.NSMakeRect(MARGIN + HALF_W + 6, y - LABEL_H, HALF_W, LABEL_H))
+    cv.addSubview_(lbl_m)
+    y -= LABEL_H + 2
+
+    # provider popup
+    prov_items = ["авто"] + _pc.available_providers()
+    pop_prov = AppKit.NSPopUpButton.alloc().initWithFrame_pullsDown_(
+        AppKit.NSMakeRect(MARGIN, y - TF_H, HALF_W, TF_H), False)
+    pop_prov.addItemsWithTitles_(prov_items)
+    pop_prov.setFont_(_mono(9))
+    if cur_pid in prov_items:
+        pop_prov.selectItemWithTitle_(cur_pid)
+    else:
+        pop_prov.selectItemAtIndex_(0)
+    pop_prov.setTarget_(_btn_t)
+    pop_prov.setAction_(BtnTarget.scProviderChanged_)
+    cv.addSubview_(pop_prov)
+
+    # model popup
+    pop_model = AppKit.NSPopUpButton.alloc().initWithFrame_pullsDown_(
+        AppKit.NSMakeRect(MARGIN + HALF_W + 6, y - TF_H, HALF_W, TF_H), False)
+    pop_model.setFont_(_mono(9))
+    _populate_model_popup(pop_model, cur_pid, cur_mname)
+    cv.addSubview_(pop_model)
+
+    y -= TF_H + GAP
+
+    # Silent mode + Full mode default — one row, side by side
+    SIL_H   = 26
+    SIL_SEP = 5
+    CHK_W   = FW // 2 - 2
     y -= SIL_SEP
     cv.addSubview_(_sep_line(MARGIN, y, FW, pin="top"))
     y -= 1
@@ -4760,16 +6286,39 @@ def _show_sc_editor(sc_idx):
     chk_color  = C_CYAN if is_silent else C_GREEN_DIM
     sil_btn    = _mkbtn(chk_prefix + _T("sc_silent"), color=chk_color,
                         size=10, align=AppKit.NSTextAlignmentLeft)
-    sil_btn.setFrame_(AppKit.NSMakeRect(MARGIN, y - SIL_H, FW, SIL_H))
+    sil_btn.setFrame_(AppKit.NSMakeRect(MARGIN, y - SIL_H, CHK_W, SIL_H))
     sil_btn.setTarget_(_btn_t)
     sil_btn.setAction_(BtnTarget.cfgScToggleSilent_)
     cv.addSubview_(sil_btn)
+    is_full_default = bool(sc.get("full_default", False))
+    fd_prefix = "[✓] " if is_full_default else "[ ] "
+    fd_color  = C_GREEN_BR if is_full_default else C_GREEN_DIM
+    fd_btn    = _mkbtn(fd_prefix + _T("sc_full_default"), color=fd_color,
+                       size=10, align=AppKit.NSTextAlignmentLeft)
+    fd_btn.setFrame_(AppKit.NSMakeRect(MARGIN + CHK_W + 4, y - SIL_H, CHK_W, SIL_H))
+    fd_btn.setTarget_(_btn_t)
+    fd_btn.setAction_(BtnTarget.cfgScToggleFullDefault_)
+    cv.addSubview_(fd_btn)
     y -= SIL_H
     cv.addSubview_(_sep_line(MARGIN, y, FW, pin="top"))
     y -= 1 + SIL_SEP
 
-    # Prompt textarea — expands to fill remaining space (no save/cancel buttons)
-    BOT_PAD       = 10
+    # ── Footer: Cancel + Save buttons ─────────────────────────────────────────
+    FOOT_H  = MARGIN + BTN_H + 6 + 1   # margin + btn + gap + sep
+    cv.addSubview_(_sep_line(MARGIN, MARGIN + BTN_H + 6, FW, pin="top"))
+    btn_cancel = _mkbtn("[Отмена]", color=C_GREEN_DIM, size=10)
+    btn_cancel.setFrame_(AppKit.NSMakeRect(MARGIN, MARGIN, BTN_W, BTN_H))
+    btn_cancel.setTarget_(_btn_t)
+    btn_cancel.setAction_(BtnTarget.cfgScCancel_)
+    cv.addSubview_(btn_cancel)
+    btn_save = _mkbtn("[Сохранить]", color=C_GREEN_BR, size=10)
+    btn_save.setFrame_(AppKit.NSMakeRect(EDIT_W - MARGIN - BTN_W, MARGIN, BTN_W, BTN_H))
+    btn_save.setTarget_(_btn_t)
+    btn_save.setAction_(BtnTarget.cfgScSave_)
+    cv.addSubview_(btn_save)
+
+    # Prompt textarea — expands to fill remaining space above footer
+    BOT_PAD       = FOOT_H + 4
     prompt_area_h = max(y - BOT_PAD, 40)
     outer_frame   = AppKit.NSMakeRect(MARGIN, BOT_PAD, FW, prompt_area_h)
 
@@ -4817,29 +6366,47 @@ def _show_sc_editor(sc_idx):
     scroll.setDocumentView_(tv_prompt)
 
     _sc_edit_refs = {
-        "tf_ru":     tf_ru,
-        "tf_en":     tf_en,
-        "tf_es":     tf_es,
-        "tf_model":  tf_model,
-        "sil_btn":   sil_btn,
-        "silent":    is_silent,   # current toggle state (Python bool, toggled in action)
-        "tv_prompt": tv_prompt,
-        "sc_idx":    sc_idx,
-        "original":  {
-            "ru":     label_val.get("ru", ""),
-            "en":     label_val.get("en", ""),
-            "es":     label_val.get("es", ""),
-            "model":  sc.get("model", "") or "",
-            "prompt": sc.get("prompt", ""),
-            "silent": is_silent,
+        "tf_ru":        tf_ru,
+        "tf_en":        tf_en,
+        "tf_es":        tf_es,
+        "pop_provider": pop_prov,
+        "pop_model":    pop_model,
+        "sil_btn":      sil_btn,
+        "silent":       is_silent,   # current toggle state (Python bool, toggled in action)
+        "fd_btn":       fd_btn,
+        "full_default": is_full_default,
+        "tv_prompt":    tv_prompt,
+        "sc_idx":       sc_idx,
+        "original":     {
+            "ru":           label_val.get("ru", ""),
+            "en":           label_val.get("en", ""),
+            "es":           label_val.get("es", ""),
+            "model":        sc.get("model", "") or "",
+            "prompt":       sc.get("prompt", ""),
+            "silent":       is_silent,
+            "full_default": is_full_default,
         },
     }
     _sc_editor_panel = panel
+    _sc_editor_panel._panel_key = "editor"
     _editing_scenario = True
 
-    # Position editor exactly over main window, hide main window behind it
-    panel.setFrameOrigin_(AppKit.NSMakePoint(mf.origin.x, mf.origin.y))
-    _win.orderOut_(None)
+    # Position using grid cell assignment
+    _ewx, _ewy = int(mf.origin.x), int(mf.origin.y)
+    _eww, _ewh = int(mf.size.width), int(mf.size.height)
+    ex, ey = _calc_panel_pos("editor", _ewx, _ewy, _eww, _ewh, int(mf.size.width), H_PANEL)
+    if _cluster_mode:
+        cfg = globals().get("_cfg_panel")
+        if cfg and cfg.isVisible():
+            cf = cfg.frame()
+            cx, cy = int(cf.origin.x), int(cf.origin.y)
+            if "editor" in _cluster_offsets:
+                dx, dy = _cluster_offsets["editor"]
+            else:
+                dx, dy = W + _SNAP_GAP, -(H_PANEL + _SNAP_GAP)   # default: bottom-right slot
+                _cluster_offsets["editor"] = (dx, dy)
+            ex, ey = cx + dx, cy + dy
+    panel.setFrameOrigin_(AppKit.NSMakePoint(ex, ey))
     AppKit.NSApp.activateIgnoringOtherApps_(True)
     panel.makeKeyAndOrderFront_(None)
     panel.makeFirstResponder_(tf_en)
@@ -4854,7 +6421,7 @@ def _sc_editor_save():
     lbl_ru = refs["tf_ru"].stringValue().strip().upper()[:6]
     lbl_en = refs["tf_en"].stringValue().strip().upper()[:6]
     lbl_es = refs["tf_es"].stringValue().strip().upper()[:6]
-    model  = refs["tf_model"].stringValue().strip() or None
+    model  = _sc_model_from_refs() or None
     prompt = refs["tv_prompt"].string()
     sc_idx = refs.get("sc_idx")
 
@@ -4862,6 +6429,7 @@ def _sc_editor_save():
         return   # EN is required
 
     is_silent = refs.get("silent", False)
+    is_full_default = refs.get("full_default", False)
 
     label = {
         "en": lbl_en,
@@ -4871,12 +6439,17 @@ def _sc_editor_save():
     sc = {"name": label.get("ru", lbl_en), "label": label, "model": model, "prompt": prompt}
     if is_silent:
         sc["silent"] = True
+    if is_full_default:
+        sc["full_default"] = True
     scenarios = list(_st.get("scenarios", []))
     if sc_idx is None:
-        # New scenario: clear silent flag from all existing ones first
+        # New scenario: clear silent/full_default flags from all existing ones first
         if is_silent:
             for s in scenarios:
                 s.pop("silent", None)
+        if is_full_default:
+            for s in scenarios:
+                s.pop("full_default", None)
         scenarios.append(sc)
         new_idx = len(scenarios) - 1
     else:
@@ -4886,6 +6459,10 @@ def _sc_editor_save():
                 for i, s in enumerate(scenarios):
                     if i != sc_idx:
                         s.pop("silent", None)
+            if is_full_default:
+                for i, s in enumerate(scenarios):
+                    if i != sc_idx:
+                        s.pop("full_default", None)
             scenarios[sc_idx] = sc
     _st["scenarios"] = scenarios
     save_scenarios(scenarios)
@@ -4901,7 +6478,6 @@ def _sc_editor_save():
         _sc_editor_panel = None
 
     if _win:
-        _win.orderFrontRegardless()
         _relayout_buttons(W if not _expanded else W_EXP)
 
     if pending_fn:
@@ -4912,6 +6488,22 @@ def _sc_editor_save():
         _toggle_cfg_panel()
 
 
+def _populate_model_popup(popup, provider_id, selected=""):
+    """Fill the model NSPopUpButton for the given provider_id."""
+    popup.removeAllItems()
+    models = _pc.models_for_provider(provider_id) if provider_id else []
+    if models:
+        popup.addItemsWithTitles_(models)
+        popup.setEnabled_(True)
+        if selected in models:
+            popup.selectItemWithTitle_(selected)
+        else:
+            popup.selectItemAtIndex_(0)
+    else:
+        popup.addItemsWithTitles_(["—"])
+        popup.setEnabled_(False)
+
+
 def _toggle_cfg_panel():
     global _cfg_panel, _pre_cfg_win_y, _sc_cfg_buttons
     _sc_cfg_buttons = {}
@@ -4919,36 +6511,33 @@ def _toggle_cfg_panel():
         _close_cfg_panel()
         return
 
-    pw = int(_win.frame().size.width)
+    pw = W   # panels always use the normal (non-expanded) width
 
     # ── Layout constants ─────────────────────────────────────────────────────────
     MARGIN    = 10        # panel left/right margin
-    MARGIN_T  = 26        # top margin (room for [ⓘ] button)
-    BOX_H     = 60        # top row: opacity | font | lang
+    MARGIN_T  = 22        # top margin (room for [ⓘ] button)
+    BOX_H     = 52        # top row: opacity | font | lang
     BOX_G     = 6         # horizontal gap between side-by-side boxes
-    HK_TH_H   = 72        # middle row: hotkey (left) | themes 2×4 (right)
+    HK_TH_H   = 120       # theme row: tall swatches (hotkey removed — Cmd+Enter hardcoded)
     CELL_H    = 22
     CELL_GAP  = 3
     COLS      = 6
     MAX_SC    = COLS * 3 - 1
     QUIT_H    = 46        # bottom quit section
-    VGAP      = 8         # uniform vertical gap between every row
+    VGAP      = 6         # uniform vertical gap between every row
 
     inner_w = pw - 2 * MARGIN
 
-    # Top row: opacity (narrow) | font | lang
-    op_w = max(72, inner_w // 5)
-    fn_w = max(90, inner_w // 3)
-    la_w = inner_w - op_w - fn_w - 2 * BOX_G
+    # Top row: three equal columns — opacity | font | lang
+    eq_col_w  = (inner_w - 2 * BOX_G) // 3
+    op_w = fn_w = la_w = eq_col_w
     op_x = MARGIN
     fn_x = MARGIN + op_w + BOX_G
-    la_x = fn_x + fn_w + BOX_G
+    la_x = MARGIN + 2 * (op_w + BOX_G)
 
-    # Middle row: hotkey (left half) | themes 2×4 (right half)
-    hk_w  = inner_w // 2 - BOX_G // 2
-    th_w  = inner_w - hk_w - BOX_G
-    hk_x  = MARGIN
-    th_x  = MARGIN + hk_w + BOX_G
+    # Theme row: full width
+    th_w  = inner_w
+    th_x  = MARGIN
 
     scenarios = _st.get("scenarios", [])
     n_sc      = len(scenarios)
@@ -4962,10 +6551,11 @@ def _toggle_cfg_panel():
     sc_box_y  = QUIT_H + VGAP
     hk_th_y   = sc_box_y + SC_BOX_H + VGAP
     box_y     = hk_th_y + HK_TH_H + VGAP
-    ph        = box_y + BOX_H + MARGIN_T
+    ph        = max(box_y + BOX_H + MARGIN_T, H_PANEL)
 
     _close_cfg_panel_rebuild()
     _cfg_panel = _make_drop_panel(pw, ph)
+    _cfg_panel._panel_key = "cfg"
     cv = _cfg_panel.contentView()
 
     # ── Fieldset box helper ───────────────────────────────────────────────────────
@@ -4986,14 +6576,27 @@ def _toggle_cfg_panel():
         bcv = box.contentView()
         return bcv, int(bcv.frame().size.width), int(bcv.frame().size.height)
 
-    # ── [ⓘ] INFO BUTTON — top-right corner of panel ──────────────────────────────
-    INFO_SZ = 18
+    # ── [ⓘ] INFO + [КЛЮЧИ] BUTTONS — top-right corner of panel ──────────────────
+    INFO_SZ  = 18
+    KEYS_W   = 46
     btn_info = _mkbtn("ⓘ", color=C_GREEN_DIM, size=12)
     btn_info.setFrame_(AppKit.NSMakeRect(pw - INFO_SZ - 8, ph - INFO_SZ - 4, INFO_SZ, INFO_SZ))
     btn_info.setTarget_(_btn_t)
     btn_info.setAction_(BtnTarget.cfgInfo_)
     btn_info.setToolTip_("О приложении")
     cv.addSubview_(btn_info)
+
+    btn_keys = _mkbtn("[КЛЮЧИ]", color=C_GREEN_DIM, size=9)
+    btn_keys.setFrame_(AppKit.NSMakeRect(pw - INFO_SZ - KEYS_W - 14, ph - INFO_SZ - 4, KEYS_W, INFO_SZ))
+    btn_keys.setTarget_(_btn_t)
+    btn_keys.setAction_(BtnTarget.cfgProviders_)
+    btn_keys.setToolTip_("Настройка провайдеров и API ключей")
+    cv.addSubview_(btn_keys)
+
+    _mkmagnet_btn("cfg", cv, 6, ph - INFO_SZ - 4, 22, INFO_SZ)
+    cfg_hdr = _mklabel("НАСТРОЙКИ", size=10, color=C_IDLE)
+    cfg_hdr.setFrame_(AppKit.NSMakeRect(32, ph - INFO_SZ - 4, pw - 32 - INFO_SZ - KEYS_W - 20, INFO_SZ))
+    cv.addSubview_(cfg_hdr)
 
     # ── OPACITY FIELDSET (narrow) ─────────────────────────────────────────────────
     op_cv, op_cw, op_ch = _fieldset(op_x, box_y, op_w, BOX_H, _T("cfg_opacity"))
@@ -5011,12 +6614,14 @@ def _toggle_cfg_panel():
     FBTN_W = max(28, (fn_cw - 8) // 2)
     fn_start_x = (fn_cw - 2 * FBTN_W - 4) // 2
     fn_btn_y   = (fn_ch - 22) // 2
-    for j, (lbl_txt, act) in enumerate(
-            [("[A-]", BtnTarget.cfgFontDec_), ("[A+]", BtnTarget.cfgFontInc_)]):
+    for j, (lbl_txt, act, tip) in enumerate(
+            [("[A-]", BtnTarget.cfgFontDec_, "Уменьшить шрифт"),
+             ("[A+]", BtnTarget.cfgFontInc_, "Увеличить шрифт")]):
         b = _mkbtn(lbl_txt, color=C_GREEN, size=11)
         b.setFrame_(AppKit.NSMakeRect(fn_start_x + j * (FBTN_W + 4), fn_btn_y, FBTN_W, 22))
         b.setTarget_(_btn_t)
         b.setAction_(act)
+        b.setToolTip_(tip)
         fn_cv.addSubview_(b)
 
     # ── LANGUAGE FIELDSET ─────────────────────────────────────────────────────────
@@ -5036,39 +6641,7 @@ def _toggle_cfg_panel():
         lb.setAction_(BtnTarget.cfgLang_)
         la_cv.addSubview_(lb)
 
-    # ── HOTKEY FIELDSET (left half of middle row) ─────────────────────────────────
-    hk_cv, hk_cw, hk_ch = _fieldset(hk_x, hk_th_y, hk_w, HK_TH_H, _T("cfg_hotkey"))
-    HOT_COPY_OPTIONS = ["ctrl", "cmd", "ctrl+shift", "cmd+shift"]
-    HOT_COPY_LABELS  = ["[^]", "[⌘]", "[^⇧]", "[⌘⇧]"]
-    cur_hk    = _st.get("hotkey_copy", "ctrl")
-    HK_GAP    = 5                                         # gap between buttons
-    HK_EDGE   = 4                                         # left/right margin
-    HK_BTN_H  = max(26, hk_ch - 10)                      # fill available height
-    HK_BTN_W  = max(38, (hk_cw - 2 * HK_EDGE - 3 * HK_GAP) // 4)
-    hk_start_x = (hk_cw - (4 * HK_BTN_W + 3 * HK_GAP)) // 2
-    hk_btn_y   = (hk_ch - HK_BTN_H) // 2
-    for i, (hk_val, hk_lbl) in enumerate(zip(HOT_COPY_OPTIONS, HOT_COPY_LABELS)):
-        active = (hk_val == cur_hk)
-        color  = C_CYAN if active else C_GREEN_DIM
-        sz     = 12 if active else 10
-        hb = _mkbtn(hk_lbl, color=color, size=sz)
-        hb.setWantsLayer_(True)
-        lay = hb.layer()
-        lay.setCornerRadius_(4.0)
-        if active:
-            lay.setBorderWidth_(1.5)
-            lay.setBorderColor_(C_CYAN.CGColor())
-            lay.setBackgroundColor_(_rgba(0.45, 0.45, 0.45, 0.22).CGColor())
-        else:
-            lay.setBorderWidth_(0.5)
-            lay.setBorderColor_(_rgba(0.50, 0.50, 0.50, 0.28).CGColor())
-        hb.setFrame_(AppKit.NSMakeRect(hk_start_x + i * (HK_BTN_W + HK_GAP), hk_btn_y, HK_BTN_W, HK_BTN_H))
-        hb.setTag_(i)
-        hb.setTarget_(_btn_t)
-        hb.setAction_(BtnTarget.cfgHotkeyCopy_)
-        hk_cv.addSubview_(hb)
-
-    # ── THEME FIELDSET (right half, 2 rows × 4 squares: светлые / тёмные) ─────────
+    # ── THEME FIELDSET (full width, 2 rows × 4 squares: светлые / тёмные) ───────────
     th_cv, th_cw, th_ch = _fieldset(th_x, hk_th_y, th_w, HK_TH_H, _T("cfg_theme"))
     cur_theme  = _st.get("theme", "emerald")
     n_light    = _N_LIGHT                      # 4 light themes (top row)
@@ -5086,6 +6659,13 @@ def _toggle_cfg_panel():
         _CALayer = objc.lookUpClass('CALayer')
     except Exception:
         _CALayer = None
+
+    _THEME_LABELS = {
+        "paper": "Paper (светлая)", "sky": "Sky (светлая)",
+        "sand": "Sand (светлая)", "arctic": "Arctic (светлая)",
+        "emerald": "Emerald (тёмная)", "ocean": "Ocean (тёмная)",
+        "neon": "Neon (тёмная)", "gold": "Gold (тёмная)",
+    }
 
     def _make_swatch(tname, tbg, tcolor, idx, sq_x, sq_y_val):
         active = (tname == cur_theme)
@@ -5122,6 +6702,7 @@ def _toggle_cfg_panel():
         tb.setTag_(idx)
         tb.setTarget_(_btn_t)
         tb.setAction_(BtnTarget.cfgTheme_)
+        tb.setToolTip_(_THEME_LABELS.get(tname, tname))
         th_cv.addSubview_(tb)
 
     # Ряд 1 (вверх): светлые темы — от края SQ_EDGE, равные промежутки
@@ -5150,27 +6731,29 @@ def _toggle_cfg_panel():
     sc_buttons = []
     for i, sc in enumerate(scenarios):
         label = _sc_label_for(sc, cur_lang)
-        if sc.get("silent"):
+        is_fd  = bool(sc.get("full_default"))
+        is_sil = bool(sc.get("silent"))
+        if is_fd or is_sil:
+            # Build title: [·LABEL·] both, [LABEL] fd only, ·LABEL· sil only
             ps = AppKit.NSMutableParagraphStyle.alloc().init()
             ps.setAlignment_(AppKit.NSTextAlignmentCenter)
             title = AppKit.NSMutableAttributedString.alloc().init()
-            dot_attrs = {
-                AppKit.NSFontAttributeName:            _mono(9),
-                AppKit.NSForegroundColorAttributeName: C_CYAN,
-                AppKit.NSParagraphStyleAttributeName:  ps,
-            }
-            txt_attrs = {
-                AppKit.NSFontAttributeName:            _mono(9),
-                AppKit.NSForegroundColorAttributeName: C_GREEN,
-                AppKit.NSParagraphStyleAttributeName:  ps,
-            }
-            title.appendAttributedString_(
-                AppKit.NSAttributedString.alloc().initWithString_attributes_("·", dot_attrs))
-            title.appendAttributedString_(
-                AppKit.NSAttributedString.alloc().initWithString_attributes_(label, txt_attrs))
-            title.appendAttributedString_(
-                AppKit.NSAttributedString.alloc().initWithString_attributes_("·", dot_attrs))
-            btn = _mkbtn("", color=C_GREEN, size=9)
+            mk = {AppKit.NSFontAttributeName:            _mono(9),
+                  AppKit.NSForegroundColorAttributeName: C_CYAN,
+                  AppKit.NSParagraphStyleAttributeName:  ps}
+            tx = {AppKit.NSFontAttributeName:            _mono(9),
+                  AppKit.NSForegroundColorAttributeName: C_GREEN if is_sil else C_CYAN,
+                  AppKit.NSParagraphStyleAttributeName:  ps}
+            parts = []
+            if is_fd:  parts.append(("[", mk))
+            if is_sil: parts.append(("·", mk))
+            parts.append((label, tx))
+            if is_sil: parts.append(("·", mk))
+            if is_fd:  parts.append(("]", mk))
+            for s, a in parts:
+                title.appendAttributedString_(
+                    AppKit.NSAttributedString.alloc().initWithString_attributes_(s, a))
+            btn = _mkbtn("", color=C_CYAN, size=9)
             btn.setAttributedTitle_(title)
         else:
             btn = _mkbtn(label, color=C_GREEN, size=9)
@@ -5180,38 +6763,36 @@ def _toggle_cfg_panel():
         btn.setAction_(BtnTarget.cfgScEdit_)
         sc_cv.addSubview_(btn)
         _sc_cfg_buttons[i] = btn
-        sc_buttons.append((btn, sc.get("model") or "", label, bool(sc.get("silent"))))
+        sc_buttons.append((btn, sc.get("model") or "", label,
+                           bool(sc.get("silent")), bool(sc.get("full_default"))))
 
     # Background model availability check
     def _check_models(buttons):
         C_ERR = _rgba(0.9, 0.2, 0.2, 1.0)
-        for btn, model_str, lbl, is_silent in buttons:
+        for btn, model_str, lbl, is_silent, is_fd in buttons:
             if model_str and not _model_available(model_str):
-                def _paint(b=btn, label=lbl, silent=is_silent):
+                def _paint(b=btn, label=lbl, sil=is_silent, fd=is_fd):
                     ps = AppKit.NSMutableParagraphStyle.alloc().init()
                     ps.setAlignment_(AppKit.NSTextAlignmentCenter)
-                    if silent:
+                    a = {AppKit.NSFontAttributeName: _mono(9),
+                         AppKit.NSForegroundColorAttributeName: C_ERR,
+                         AppKit.NSParagraphStyleAttributeName: ps}
+                    if sil or fd:
                         mstr = AppKit.NSMutableAttributedString.alloc().init()
-                        dot_a = {AppKit.NSFontAttributeName: _mono(9),
-                                 AppKit.NSForegroundColorAttributeName: C_ERR,
-                                 AppKit.NSParagraphStyleAttributeName: ps}
-                        txt_a = {AppKit.NSFontAttributeName: _mono(9),
-                                 AppKit.NSForegroundColorAttributeName: C_ERR,
-                                 AppKit.NSParagraphStyleAttributeName: ps}
-                        mstr.appendAttributedString_(
-                            AppKit.NSAttributedString.alloc().initWithString_attributes_("·", dot_a))
-                        mstr.appendAttributedString_(
-                            AppKit.NSAttributedString.alloc().initWithString_attributes_(label, txt_a))
-                        mstr.appendAttributedString_(
-                            AppKit.NSAttributedString.alloc().initWithString_attributes_("·", dot_a))
+                        parts = []
+                        if fd:  parts.append("[")
+                        if sil: parts.append("·")
+                        parts.append(label)
+                        if sil: parts.append("·")
+                        if fd:  parts.append("]")
+                        for p in parts:
+                            mstr.appendAttributedString_(
+                                AppKit.NSAttributedString.alloc().initWithString_attributes_(p, a))
                         b.setAttributedTitle_(mstr)
                     else:
-                        attrs = {AppKit.NSFontAttributeName: _mono(9),
-                                 AppKit.NSForegroundColorAttributeName: C_ERR,
-                                 AppKit.NSParagraphStyleAttributeName: ps}
                         b.setAttributedTitle_(
                             AppKit.NSAttributedString.alloc()
-                                .initWithString_attributes_(label, attrs))
+                                .initWithString_attributes_(label, a))
                 AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(_paint)
     threading.Thread(target=_check_models, args=(sc_buttons,), daemon=True).start()
 
@@ -5226,87 +6807,65 @@ def _toggle_cfg_panel():
     # ── SEP between scenarios and quit ───────────────────────────────────────────
     cv.addSubview_(_sep_line(MARGIN, QUIT_H, pw - MARGIN * 2, pin="bottom"))
 
-    # ── QUIT SECTION ─────────────────────────────────────────────────────────────
+    # ── QUIT SECTION: [🔄 reset] | [ВЫХОД центр] | [🎯 панели] ───────────────────
+    SB_W  = 34   # side button width
+    SB_G  = 6    # gap between side buttons and quit
+    BTN_Y = (QUIT_H - 22) // 2 + 4
+    quit_w = pw - MARGIN * 2 - SB_W * 2 - SB_G * 2
+    quit_x = MARGIN + SB_W + SB_G
+
+    # 🔄 — reset to default cross layout (left)
+    btn_cross = _mkbtn("🔄", color=C_GREEN_DIM, size=14)
+    btn_cross.setFrame_(AppKit.NSMakeRect(MARGIN, BTN_Y, SB_W, 22))
+    btn_cross.setTarget_(_btn_t)
+    btn_cross.setAction_(BtnTarget.hushDefaultCross_)
+    btn_cross.setToolTip_("Сброс: настройки↑  история↓  провайдеры←  сценарии→")
+    cv.addSubview_(btn_cross)
+
+    # [ВЫХОД] — центр
     btn_quit = _mkbtn(_T("btn_quit"), color=C_REC, size=10)
-    btn_quit.setFrame_(AppKit.NSMakeRect(MARGIN, (QUIT_H - 22) // 2 + 4, pw - MARGIN * 2, 22))
+    btn_quit.setFrame_(AppKit.NSMakeRect(quit_x, BTN_Y, quit_w, 22))
     btn_quit.setTarget_(_btn_t)
     btn_quit.setAction_(BtnTarget.cfgQuit_)
     cv.addSubview_(btn_quit)
 
+    # 🎯 — show/hide all panels (right)
+    btn_rst = _mkbtn("🎯", color=C_GREEN_DIM, size=14)
+    btn_rst.setFrame_(AppKit.NSMakeRect(pw - MARGIN - SB_W, BTN_Y, SB_W, 22))
+    btn_rst.setTarget_(_btn_t)
+    btn_rst.setAction_(BtnTarget.hushResetPanels_)
+    btn_rst.setToolTip_("Показать/скрыть все панели")
+    cv.addSubview_(btn_rst)
+
     _cfg_panel.setAlphaValue_(_st.get("opacity", 0.88))
 
-    # "Glued above" positioning: panel sits just above main window with small gap.
-    # If that would push panel off-screen, slide main window DOWN to make room.
-    CFG_GAP = 4
-    mf   = _win.frame()
-    px   = mf.origin.x + mf.size.width - pw
-    py   = mf.origin.y + mf.size.height + CFG_GAP
-    vis  = AppKit.NSScreen.mainScreen().visibleFrame()
-    top  = py + ph
-
-    if top > vis.origin.y + vis.size.height:
-        overflow = top - (vis.origin.y + vis.size.height)
-        new_win_y = max(vis.origin.y, mf.origin.y - overflow)
-        _pre_cfg_win_y = mf.origin.y
-        _win.setFrameOrigin_(AppKit.NSMakePoint(mf.origin.x, new_win_y))
-        py = new_win_y + mf.size.height + CFG_GAP
-        if _hist_panel and _hist_panel.isVisible():
-            _reposition_attached_panels()
-
+    mf  = _win.frame()
+    wx, wy = int(mf.origin.x), int(mf.origin.y)
+    ww, wh = int(mf.size.width), int(mf.size.height)
+    px, py = _calc_panel_pos("cfg", wx, wy, ww, wh, pw, ph)
+    # In cluster mode: restore cfg to its cluster anchor position
+    if _cluster_mode:
+        cx, cy = _cluster_anchor_pos()
+        px, py = cx, cy
     _cfg_panel.setFrameOrigin_(AppKit.NSMakePoint(px, py))
     AppKit.NSApp.activateIgnoringOtherApps_(True)
     _cfg_panel.makeKeyAndOrderFront_(None)
 
 
 def _restore_history_item(full_text: str, item_id: str = None):
-    """Load single history item into the text view."""
-    if _hist_panel:
-        _hist_panel.orderOut_(None)
-    _load_history_combined(full_text, loaded_id=item_id)
+    """Add history item as a new block (append, not replace)."""
+    _add_rich_block(full_text, hist_id=item_id)
 
 
 def _restore_session(blocks_text: list, block_hist_ids: list = None, session_id: str = None):
-    """Restore a session: recreate each block separately (preserving per-block structure)."""
+    """Append session blocks to current content (each block added separately)."""
     if not _doc_view:
         return
-    if _hist_panel:
-        _hist_panel.orderOut_(None)
-    _st["text"]      = ""
-    _st["mode"]      = "ready"
-    _st["is_md"]     = False
-    _st["md_mode"]   = False
-    _st["active_sc"] = None
-    _remove_all_rich_blocks()
-    if _on_history_load_cb:
-        _on_history_load_cb(session_id)
-    if _tv:
-        _tv.setString_("")
     for i, text in enumerate(blocks_text):
         if not text.strip():
             continue
-        idx   = len(_rich_blocks)
-        block = _make_rich_block(text, idx)
         hist_id = (block_hist_ids[i] if block_hist_ids and i < len(block_hist_ids) else None)
-        block._original_text    = text.strip()
-        block._original_hist_id = hist_id
-        block._hist_id          = hist_id
-        _rich_blocks.append(block)
-        _doc_view.addSubview_(block)
-        if block._inner_tv:
-            end = block._inner_tv.textStorage().length()
-            block._inner_tv.setSelectedRange_(AppKit.NSMakeRange(end, 0))
-    _update_md_indicator()
-    _update_format_indicator()
-    _relayout_doc_view()
-    _show_buttons(True)
-    _refresh_scenario_colors()
-    _show_target_app_header()
-    if _win:
-        _win.orderFrontRegardless()
-        if _tv:
-            _win.makeFirstResponder_(_tv)
-            _tv.setSelectedRange_(AppKit.NSMakeRange(0, 0))
-    _main(_update_cursor_pos)
+        _add_rich_block(text.strip(), hist_id=hist_id)
 
 
 def _get_all_text() -> str:
@@ -5372,8 +6931,6 @@ def refresh_hist_panel():
 def show_history_browser(history):
     """Open overlay in history-browser mode (double-tap hotkey)."""
     def _():
-        import time as _t
-        with open("/tmp/vi_debug.log","a") as f: f.write(f"[{_t.strftime('%H:%M:%S')}] show_history_browser: mode={_st.get('mode')} hist_panel_vis={bool(_hist_panel and _hist_panel.isVisible())}\n")
         _st["mode"] = "history_open"
         _show_target_app_header()   # keep showing target app, no status text
         _show_buttons(False)
@@ -5468,30 +7025,36 @@ def _build_silent_header(show_icon: bool):
     else:
         name_x = WIN_SIDE + PAD
 
-    # App name label
-    eq_x   = WIN_SIDE + CARD_W - PAD - ANIM_W
-    name_w = eq_x - name_x - GAP
+    # App name label — measure actual text width, then EQ takes the rest
     app_name = ""
     if _silent_target_app:
         try:
             app_name = str(_silent_target_app.localizedName() or "")
         except Exception:
             pass
+    font_d   = {AppKit.NSFontAttributeName: _mono(10)}
+    raw_name_w = int(AppKit.NSString.stringWithString_(app_name).sizeWithAttributes_(font_d).width) if app_name else 0
+    right_edge = WIN_SIDE + CARD_W - PAD   # right boundary of card content
+    max_name_w = (right_edge - name_x - GAP) // 2
+    name_w     = min(raw_name_w + 4, max_name_w)
+    eq_x       = name_x + name_w + GAP
+    eq_w       = right_edge - eq_x
+
     NAME_LBL_H  = 14
     name_lbl_y  = WIN_SIDE + (HEADER_H - NAME_LBL_H) // 2
     name_lbl = _mklabel(app_name, size=10, color=C_TEXT)
     name_lbl.setFrame_(AppKit.NSMakeRect(name_x, name_lbl_y, name_w, NAME_LBL_H))
     cv.addSubview_(name_lbl)
 
-    # Waveform — shown during recording (green, audio-driven)
+    # Waveform — fills all space right of app name
     wv = _SilentWaveformView.alloc().initWithFrame_(
-        AppKit.NSMakeRect(eq_x, anim_y, ANIM_W, ANIM_H))
+        AppKit.NSMakeRect(eq_x, anim_y, eq_w, ANIM_H))
     cv.addSubview_(wv)
     _silent_wf = wv
 
     # EQ bars — hidden initially; shown during recognition + LLM
     ev = EqBarsView.alloc().initWithFrame_(
-        AppKit.NSMakeRect(eq_x, anim_y, ANIM_W, ANIM_H))
+        AppKit.NSMakeRect(eq_x, anim_y, eq_w, ANIM_H))
     ev.setHidden_(True)
     cv.addSubview_(ev)
     _silent_eq_v = ev
@@ -5526,7 +7089,9 @@ def _populate_silent_app_icon():
 
 
 def show_recording_silent(prev_app=None):
-    """Show floating waveform strip at screen center-bottom; call AFTER _silent_mode is set."""
+    """Show floating waveform strip at screen center-bottom; call AFTER _silent_mode is set.
+    If the silent window already exists (resume in same session), just switch state without rebuild.
+    """
     global _silent_mode, _silent_target_app
     _silent_mode       = True
     _silent_target_app = prev_app
@@ -5535,12 +7100,24 @@ def show_recording_silent(prev_app=None):
         _silent_interrupt_fn = None
         _st["mode"] = "recording"
         _clear_waveform()
+
+        if _silent_win:
+            # Window already exists — cancel countdown, switch to waveform
+            global _eq_countdown_start
+            _eq_countdown_start = 0.0
+            if _silent_wf:
+                _silent_wf.setHidden_(False)
+            if _silent_eq_v:
+                _silent_eq_v.setHidden_(True)
+            _start_timer()
+            _silent_win.orderFrontRegardless()
+            return
+
         show_icon = not _is_python_app(_silent_target_app)
         _build_silent_header(show_icon=show_icon)
 
         _populate_silent_app_icon()
 
-        # Recording: show waveform (audio-driven green bars), hide equalizer
         if _silent_wf:
             _silent_wf.setHidden_(False)
         if _silent_eq_v:
@@ -5567,32 +7144,203 @@ def show_recognizing_silent():
     _main(_)
 
 
+def show_countdown_silent(duration: float = 2.0):
+    """Silent mode: grace period countdown — bars fill left→right (green→red)."""
+    def _():
+        global _eq_countdown_start, _eq_countdown_dur, _eq_countdown_t
+        import time as _tm
+        _eq_countdown_start = _tm.time()
+        _eq_countdown_dur   = duration
+        _eq_countdown_t     = 0.0
+        if _silent_wf:
+            _silent_wf.setHidden_(True)
+        if _silent_eq_v:
+            _silent_eq_v.setMode_(2)
+            _silent_eq_v.setHidden_(False)
+        _start_timer()
+    _main(_)
+
+
+def cancel_countdown_silent():
+    """Cancel countdown and return to scan animation (user pressed Alt during grace)."""
+    def _():
+        global _eq_countdown_start
+        _eq_countdown_start = 0.0
+        if _silent_eq_v and not _silent_eq_v.isHidden() and _silent_eq_v._mode == 2:
+            _silent_eq_v.setMode_(0)
+            _silent_eq_v.setCol_(C_PINK)
+    _main(_)
+
+
 def show_transcribed_silent(text: str):
     """Silent mode: transcription done without LLM — overlay closes immediately after paste."""
     pass
 
 
+def update_silent_accumulation(text: str):
+    """Show accumulated transcribed text in the silent pill.
+
+    Window grows upward based on actual text height.
+    Max = 4 × initial strip height; after that — scrollable.
+    NSScrollView + NSTextView with fully transparent background.
+    """
+    SEP_H    = 1
+    PAD      = 12
+    WIN_SIDE = 4
+    TOP_PAD  = 10   # gap from separator to first line of text
+    BOT_PAD  = 8    # gap from last line to window top edge
+
+    def _():
+        global _silent_text_v, _silent_scroll_v, _silent_strip_win_h, _silent_sep_y
+        import time as _t
+        with open("/tmp/vi_debug.log","a") as f:
+            f.write(f"[{_t.strftime('%H:%M:%S')}] accum: win={_silent_win is not None} tv={_silent_text_v is not None} text={repr(text[:40])}\n")
+        if not _silent_win:
+            return
+
+        fr    = _silent_win.frame()
+        old_h = fr.size.height
+        cw    = fr.size.width
+        CARD_W = cw - WIN_SIDE * 2
+        sv_w   = CARD_W - PAD * 2
+        cv     = _silent_win.contentView()
+
+        if _silent_text_v is None:
+            # ── FIRST CALL: record strip height, create separator + scroll view ─
+            _silent_strip_win_h = int(old_h)
+            _silent_sep_y       = int(old_h - WIN_SIDE)
+
+            # Separator
+            sep = AppKit.NSView.alloc().initWithFrame_(
+                AppKit.NSMakeRect(WIN_SIDE, _silent_sep_y, CARD_W, SEP_H))
+            sep.setWantsLayer_(True)
+            sep.layer().setBackgroundColor_(_rgba(0.15, 0.8, 0.15, 0.3).CGColor())
+            cv.addSubview_(sep)
+
+            # NSScrollView — starts 1px tall, grows below
+            sv_y = _silent_sep_y + SEP_H + TOP_PAD
+            scroll = AppKit.NSScrollView.alloc().initWithFrame_(
+                AppKit.NSMakeRect(WIN_SIDE + PAD, sv_y, sv_w, 1))
+            scroll.setBorderType_(AppKit.NSNoBorder)
+            scroll.setHasVerticalScroller_(False)   # revealed when needed
+            scroll.setHasHorizontalScroller_(False)
+            scroll.setAutohidesScrollers_(True)
+            # Full transparency: scroll view + clip view (NSClipView)
+            scroll.setBackgroundColor_(AppKit.NSColor.clearColor())
+            scroll.setDrawsBackground_(False)
+            scroll.contentView().setDrawsBackground_(False)
+            # Themed scroller: 4px accent-color knob, auto-hides via overlay style
+            scroll.setVerticalScroller_(_ThinAccentScroller.alloc().init())
+            scroll.setScrollerStyle_(getattr(AppKit, 'NSScrollerStyleOverlay', 1))
+
+            # NSTextView — document view, auto-grows vertically
+            tv = AppKit.NSTextView.alloc().initWithFrame_(
+                AppKit.NSMakeRect(0, 0, sv_w, 1))
+            tv.setEditable_(False)
+            tv.setSelectable_(False)
+            tv.setDrawsBackground_(False)
+            tv.setBackgroundColor_(AppKit.NSColor.clearColor())
+            tv.textContainer().setLineFragmentPadding_(0)
+            tv.textContainer().setWidthTracksTextView_(True)
+            tv.textContainer().setHeightTracksTextView_(False)
+            tv.setHorizontallyResizable_(False)
+            tv.setVerticallyResizable_(True)
+            tv.setMinSize_(AppKit.NSMakeSize(sv_w, 0))
+            tv.setMaxSize_(AppKit.NSMakeSize(sv_w, 100000))
+            tv.setAutoresizingMask_(AppKit.NSViewWidthSizable)
+
+            scroll.setDocumentView_(tv)
+            cv.addSubview_(scroll)
+            _silent_scroll_v = scroll
+            _silent_text_v   = tv
+            cv.updateTrackingAreas()
+
+        # ── Set text via NSAttributedString (reliable font + color) ──────────
+        attrs = {
+            AppKit.NSFontAttributeName:            _mono(9.5),
+            AppKit.NSForegroundColorAttributeName: C_TEXT,
+        }
+        astr = AppKit.NSAttributedString.alloc().initWithString_attributes_(text, attrs)
+        _silent_text_v.textStorage().setAttributedString_(astr)
+
+        # ── Measure content height ────────────────────────────────────────────
+        lm = _silent_text_v.layoutManager()
+        lm.ensureLayoutForTextContainer_(_silent_text_v.textContainer())
+        used = lm.usedRectForTextContainer_(_silent_text_v.textContainer())
+        content_h = used.size.height
+
+        # ── Grow or scroll? ───────────────────────────────────────────────────
+        sv_y = _silent_sep_y + SEP_H + TOP_PAD
+        MAX_WIN_H  = _silent_strip_win_h * 4
+        MAX_SV_H   = MAX_WIN_H - sv_y - BOT_PAD - WIN_SIDE
+
+        if content_h <= MAX_SV_H:
+            # Content fits — grow window to show everything
+            sv_h = max(content_h, 12)
+            new_win_h = int(sv_y + sv_h + BOT_PAD + WIN_SIDE)
+            needs_scroller = False
+        else:
+            # Content overflows — lock window at max, enable scroller
+            sv_h = MAX_SV_H
+            new_win_h = int(MAX_WIN_H)
+            needs_scroller = True
+
+        # Resize text view to match content (allows scroll to work)
+        _silent_text_v.setFrameSize_(AppKit.NSMakeSize(sv_w, max(content_h, sv_h)))
+
+        # Grow window if needed
+        if new_win_h > int(old_h):
+            _silent_win.setFrame_display_animate_(
+                AppKit.NSMakeRect(fr.origin.x, fr.origin.y, cw, new_win_h),
+                True, False)
+            cv.setFrame_(AppKit.NSMakeRect(0, 0, cw, new_win_h))
+            for sv in list(cv.subviews()):
+                if isinstance(sv, _SilentBgView):
+                    sv.setFrame_(AppKit.NSMakeRect(
+                        WIN_SIDE, WIN_SIDE, CARD_W, new_win_h - WIN_SIDE * 2))
+                    break
+            cv.updateTrackingAreas()
+
+        # Resize scroll view to fill text area
+        _silent_scroll_v.setFrame_(
+            AppKit.NSMakeRect(WIN_SIDE + PAD, sv_y, sv_w, max(sv_h, 12)))
+
+        # Show/hide scrollbar
+        _silent_scroll_v.setHasVerticalScroller_(needs_scroller)
+
+        # Scroll to latest text (bottom of content view)
+        _silent_text_v.scrollRangeToVisible_(
+            AppKit.NSMakeRange(_silent_text_v.string().length(), 0))
+
+        _silent_win.display()
+
+    _main(_)
+
+
 def _build_processing_card(raw_text: str, show_icon: bool):
     """Build the LLM-processing card (wider, taller than recording strip).
 
-    Layout (dark rounded card):
-      ┌─────────────────────────────────────────┐
-      │ [ICON 28px] App name       [EQ BARS]    │
-      │─────────────────────────────────────────│
+    Layout (dark rounded card, y=0 at bottom):
+      ┌─────────────────────────────────────────┐  ← top
+      │ распознанный текст...                   │  TEXT (high y)
       │ распознанный текст...                   │
-      │ распознанный текст...                   │
-      └─────────────────────────────────────────┘
-    On hover: dim + large "Оставить без обработки" overlay.
+      │─────────────────────────────────────────│  separator
+      │ [ICON 28px] App name       [EQ BARS]    │  HEADER (low y)
+      └─────────────────────────────────────────┘  ← bottom
+    Hover over TEXT area: "Оставить без обработки" (header stays uncovered).
     """
     global _silent_win, _silent_wf, _silent_eq_v
     global _silent_app_icon_v, _silent_hover_v, _silent_text_v
     global _silent_saved_cx, _silent_saved_sy
 
+    # Preserve the current window's height — don't shrink if text area grew during accumulation
+    _prev_win_h = None
     if _silent_win:
         fr = _silent_win.frame()
         _silent_saved_cx = fr.origin.x + fr.size.width / 2
         _silent_saved_sy = fr.origin.y
         _silent_save_pos(_silent_win)
+        _prev_win_h = int(fr.size.height)
         _silent_win.orderOut_(None)
         _silent_win.close()
         _silent_win = None
@@ -5605,16 +7353,18 @@ def _build_processing_card(raw_text: str, show_icon: bool):
     PAD      = 12
     ICON_SZ  = 28
     GAP      = 7
-    ANIM_W   = 88
     ANIM_H   = 22
-    HEADER_H = ICON_SZ + PAD * 2        # 52
+    HEADER_H = ICON_SZ + PAD * 2        # 52 — strip at bottom
     SEP_H    = 1
-    TEXT_H   = 72
-    CARD_H   = HEADER_H + SEP_H + TEXT_H + PAD  # 137
     WIN_SIDE = 4
+    MIN_TEXT_H = 72
+    # Use accumulated window height if it's larger (don't shrink on LLM transition)
+    default_win_h = HEADER_H + SEP_H + MIN_TEXT_H + PAD + WIN_SIDE * 2  # 145
+    win_h   = max(_prev_win_h or 0, default_win_h)
+    CARD_H  = win_h - WIN_SIDE * 2
+    TEXT_H  = CARD_H - HEADER_H - SEP_H - PAD  # variable, fills card
 
     win_w = CARD_W + WIN_SIDE * 2
-    win_h = CARD_H + WIN_SIDE * 2
 
     scr = AppKit.NSScreen.mainScreen()
     if _silent_saved_cx is not None:
@@ -5651,8 +7401,8 @@ def _build_processing_card(raw_text: str, show_icon: bool):
         AppKit.NSMakeRect(WIN_SIDE, WIN_SIDE, CARD_W, CARD_H))
     cv.addSubview_(bg)
 
-    # ── header row (top of card) ──────────────────────────────────────────────
-    header_y = WIN_SIDE + SEP_H + TEXT_H + PAD   # y of header bottom edge
+    # ── header row (BOTTOM of card, same position as recording strip) ─────────
+    header_y = WIN_SIDE   # y of header bottom edge
 
     # app icon (left)
     if show_icon:
@@ -5661,45 +7411,53 @@ def _build_processing_card(raw_text: str, show_icon: bool):
                               header_y + (HEADER_H - ICON_SZ) // 2,
                               ICON_SZ, ICON_SZ))
         cv.addSubview_(iv)
-        iv.applyRoundedMask_(ICON_SZ * 0.22)   # must be after addSubview_ (layer exists)
+        iv.applyRoundedMask_(ICON_SZ * 0.22)
         _silent_app_icon_v = iv
         name_x = WIN_SIDE + PAD + ICON_SZ + GAP
     else:
         name_x = WIN_SIDE + PAD
 
-    # app name label
+    # app name label — measure text, EQ gets the rest
     app_name = ""
     if _silent_target_app:
         try:
             app_name = str(_silent_target_app.localizedName() or "")
         except Exception:
             pass
+    font_d     = {AppKit.NSFontAttributeName: _mono(10)}
+    raw_name_w = int(AppKit.NSString.stringWithString_(app_name).sizeWithAttributes_(font_d).width) if app_name else 0
+    right_edge = WIN_SIDE + CARD_W - PAD
+    max_name_w = (right_edge - name_x - GAP) // 2
+    name_lbl_w = min(raw_name_w + 4, max_name_w)
+    card_eq_x  = name_x + name_lbl_w + GAP
+    card_eq_w  = right_edge - card_eq_x
+
     name_lbl = _mklabel(app_name, size=10, color=C_TEXT)
     name_lbl.setFrame_(AppKit.NSMakeRect(
-        name_x, header_y + (HEADER_H - 14) // 2,
-        CARD_W - (name_x - WIN_SIDE) - PAD - ANIM_W - GAP, 14))
+        name_x, header_y + (HEADER_H - 14) // 2, name_lbl_w, 14))
     cv.addSubview_(name_lbl)
 
-    # EQ bars (top-right)
-    eq_x = WIN_SIDE + CARD_W - PAD - ANIM_W
+    # EQ bars — fills all space right of name
     eq_y = header_y + (HEADER_H - ANIM_H) // 2
     ev = EqBarsView.alloc().initWithFrame_(
-        AppKit.NSMakeRect(eq_x, eq_y, ANIM_W, ANIM_H))
+        AppKit.NSMakeRect(card_eq_x, eq_y, card_eq_w, ANIM_H))
     ev.setMode_(1)
     ev.setCol_(C_YEL)
     cv.addSubview_(ev)
     _silent_eq_v = ev
-    _silent_wf   = None   # no waveform in card mode
+    _silent_wf   = None
 
     # ── separator line ────────────────────────────────────────────────────────
-    sep_y = WIN_SIDE + TEXT_H + PAD
+    sep_y = WIN_SIDE + HEADER_H
     sep = AppKit.NSBox.alloc().initWithFrame_(
-        AppKit.NSMakeRect(WIN_SIDE + PAD, sep_y, CARD_W - PAD * 2, 1))
+        AppKit.NSMakeRect(WIN_SIDE + PAD, sep_y, CARD_W - PAD * 2, SEP_H))
     sep.setBoxType_(AppKit.NSBoxSeparator)
     sep.setBorderColor_(C_GREEN_BORD)
     cv.addSubview_(sep)
 
-    # ── recognized text ───────────────────────────────────────────────────────
+    # ── recognized text (TOP of card, above separator) ────────────────────────
+    TOP_INSET = 10   # breathing room between text view top and card top edge
+    text_y = WIN_SIDE + HEADER_H + SEP_H + PAD // 2
     tv = AppKit.NSTextField.labelWithString_(raw_text or "")
     tv.setEditable_(False)
     tv.setSelectable_(False)
@@ -5708,18 +7466,18 @@ def _build_processing_card(raw_text: str, show_icon: bool):
     tv.setFont_(_mono(10))
     tv.setTextColor_(C_TEXT)
     tv.setLineBreakMode_(AppKit.NSLineBreakByWordWrapping)
-    tv.setMaximumNumberOfLines_(4)
+    tv.setMaximumNumberOfLines_(max(4, TEXT_H // 14))
     tv.setFrame_(AppKit.NSMakeRect(
-        WIN_SIDE + PAD, WIN_SIDE + PAD,
-        CARD_W - PAD * 2, TEXT_H))
+        WIN_SIDE + PAD, text_y,
+        CARD_W - PAD * 2, TEXT_H - TOP_INSET))
     cv.addSubview_(tv)
     _silent_text_v = tv
 
-    # ── hover overlay (interrupt) ─────────────────────────────────────────────
-    # Text drawn in drawRect_ (not as NSTextField subview — would swallow mouse events)
-    # Covers the whole card, but icon+name are re-added after so they float above it.
+    # ── hover overlay (interrupt) — covers TEXT area only, not header ─────────
+    hov_y = WIN_SIDE + HEADER_H + SEP_H
+    hov_h = TEXT_H + PAD
     hov = _HoverOverlayView.alloc().initWithFrame_(
-        AppKit.NSMakeRect(WIN_SIDE, WIN_SIDE, CARD_W, CARD_H))
+        AppKit.NSMakeRect(WIN_SIDE, hov_y, CARD_W, hov_h))
     hov._hint      = "Оставить без обработки"
     hov._hint_size = 16
     hov._hint_bold = True
@@ -5727,19 +7485,8 @@ def _build_processing_card(raw_text: str, show_icon: bool):
     cv.addSubview_(hov)
     _silent_hover_v = hov
 
-    # Bring icon and app-name label above the overlay so they stay readable
-    if _silent_app_icon_v:
-        _silent_app_icon_v.removeFromSuperview()
-        cv.addSubview_positioned_relativeTo_(
-            _silent_app_icon_v, AppKit.NSWindowAbove, hov)
-    if name_lbl:
-        name_lbl.removeFromSuperview()
-        cv.addSubview_positioned_relativeTo_(
-            name_lbl, AppKit.NSWindowAbove, hov)
-
-    # EQ bars stay behind overlay; dim them with a themed fill layer to "blur"
     ev.setWantsLayer_(True)
-    ev.layer().setOpacity_(1.0)   # will be reduced in show_processing_card / restored on hide
+    ev.layer().setOpacity_(1.0)
 
     _silent_win = panel
 
@@ -5750,6 +7497,14 @@ def show_processing_silent(interrupt_fn, raw_text=''):
     _silent_interrupt_fn = interrupt_fn
     def _():
         global _eq_pulse_t
+        import time as _t
+        try:
+            n = str(_silent_target_app.localizedName()) if _silent_target_app else "None"
+            b = str(_silent_target_app.bundleIdentifier()) if _silent_target_app else "None"
+        except Exception as e:
+            n, b = f"ERR:{e}", ""
+        with open("/tmp/vi_debug.log","a") as f:
+            f.write(f"[{_t.strftime('%H:%M:%S')}] processing_silent: target='{n}' bid='{b}'\n")
         show_icon = not _is_python_app(_silent_target_app)
         _build_processing_card(raw_text, show_icon)
         _populate_silent_app_icon()
@@ -5763,12 +7518,35 @@ def is_idle() -> bool:
     return _st.get("mode", "idle") == "idle"
 
 
+def is_any_session_visible() -> bool:
+    """True if silent strip OR full-mode recording card is currently showing."""
+    return _silent_win is not None or not is_idle()
+
+
 def get_silent_scenario():
     """Return the scenario dict configured for silent auto-paste, or None."""
     for sc in _st.get("scenarios", []):
         if sc.get("silent"):
             return sc
     return None
+
+
+def get_full_default_scenario():
+    """Return the scenario dict marked as full mode default, or None."""
+    for sc in _st.get("scenarios", []):
+        if sc.get("full_default"):
+            return sc
+    return None
+
+
+def get_active_sc():
+    """Return the index of the currently active scenario, or None."""
+    return _st.get("active_sc")
+
+
+def get_silent_interrupt_fn():
+    """Return current interrupt callable (set during LLM processing), or None."""
+    return _silent_interrupt_fn
 
 
 # ── Init ──────────────────────────────────────────────────────────────────────
@@ -5800,6 +7578,9 @@ def init(on_scenario_callback, on_history_callback=None,
     _on_update_session_cb  = on_update_session_callback
     _on_session_end_cb     = on_session_end_callback
     _btn_t                 = BtnTarget.alloc().init()
+
+    # Load magnet window state from saved settings
+    _magnet_load()
 
     # One-time migration: silent_sc_idx (old setting) → scenario["silent"] flag.
     # After migration, settings.json is rewritten without silent_sc_idx so this
@@ -5911,6 +7692,7 @@ def init(on_scenario_callback, on_history_callback=None,
     _cfg_hdr_btn.setAutoresizingMask_(AppKit.NSViewMinXMargin | AppKit.NSViewMinYMargin)
     _cfg_hdr_btn.setTarget_(_btn_t)
     _cfg_hdr_btn.setAction_(BtnTarget.cfg_)
+    _cfg_hdr_btn.setToolTip_("Настройки")
     _pill.addSubview_(_cfg_hdr_btn)
 
     # Expand [□] — permanently hidden; double-click on app icon activates expand
@@ -5932,7 +7714,7 @@ def init(on_scenario_callback, on_history_callback=None,
     _pill.addSubview_(_close_btn)
 
     # Header separator
-    _pill.addSubview_(_sep_line(0, HDR_Y - 1, W))
+    _pill.addSubview_(_sep_line(0, HDR_Y - 1, W, pin="top"))
 
     # ── Text area (middle) ────────────────────────────────────────────────────
 
@@ -6127,43 +7909,49 @@ def init(on_scenario_callback, on_history_callback=None,
     # Check model availability in background — colors scenario buttons appropriately
     _start_sc_avail_check()
 
-    # ── 3-button action row: Cancel | Scene | Send (hidden when empty) ───────────
-    # History moved to permanent corner button — leaves right side clear
-    global _action_row_v, _action_hist_btn, _action_cancel_btn, _action_scene_btn, _action_send_btn
+    # ── 4-button action row: Cancel | Scene | Copy | Send (hidden when empty) ────────
+    global _action_row_v, _action_hist_btn, _action_cancel_btn, _action_scene_btn, _action_send_btn, _action_copy_btn
     _action_row_v = AppKit.NSView.alloc().initWithFrame_(
         AppKit.NSMakeRect(0, 0, W, BTN_H))
     _action_row_v.setAutoresizingMask_(AppKit.NSViewWidthSizable | AppKit.NSViewMaxYMargin)
     _action_row_v.setHidden_(True)
     _action_hist_btn = None   # now permanently at bottom-right corner
 
-    # Three buttons fit within x=0..404, leaving right 36px for the corner history icon
-    ACT3_AVAIL = CFG_H_X - 4 * 8    # 410 - 32 = 378px for 3 buttons
-    ACT3_W = ACT3_AVAIL // 3        # = 126px each
-    ACT3_H = 28
-    ACT3_Y = (BTN_H - ACT3_H) // 2
+    # Four buttons within x=0..CFG_H_X (410), leaving right 36px for corner history icon
+    ACT4_AVAIL = CFG_H_X - 5 * 8    # 410 - 40 = 370px for 4 buttons
+    ACT4_W = ACT4_AVAIL // 4        # = 92px each
+    ACT4_H = 28
+    ACT4_Y = (BTN_H - ACT4_H) // 2
 
-    _action_cancel_btn = _mkbtn(_T("btn_sc_undo"), color=C_IDLE, size=12)
-    _action_cancel_btn.setFrame_(AppKit.NSMakeRect(8, ACT3_Y, ACT3_W, ACT3_H))
+    _action_cancel_btn = _mkbtn(_T("btn_sc_undo"), color=C_IDLE, size=11)
+    _action_cancel_btn.setFrame_(AppKit.NSMakeRect(8, ACT4_Y, ACT4_W, ACT4_H))
     _action_cancel_btn.setTarget_(_btn_t)
     _action_cancel_btn.setAction_(BtnTarget.actionCancel_)
     _action_row_v.addSubview_(_action_cancel_btn)
 
-    _action_scene_btn = _mkbtn(_T("btn_scene"), color=C_YEL, size=12)
-    _action_scene_btn.setFrame_(AppKit.NSMakeRect(8 + ACT3_W + 8, ACT3_Y, ACT3_W, ACT3_H))
+    _action_scene_btn = _mkbtn(_T("btn_scene"), color=C_YEL, size=11)
+    _action_scene_btn.setFrame_(AppKit.NSMakeRect(8 + ACT4_W + 8, ACT4_Y, ACT4_W, ACT4_H))
     _action_scene_btn.setTarget_(_btn_t)
     _action_scene_btn.setAction_(BtnTarget.actionScene_)
     _action_row_v.addSubview_(_action_scene_btn)
 
-    _action_send_btn = _mkbtn(_T("btn_sc_accept"), color=C_GREEN_BR, size=12)
-    _action_send_btn.setFrame_(AppKit.NSMakeRect(8 + 2*(ACT3_W + 8), ACT3_Y, ACT3_W, ACT3_H))
+    _action_copy_btn = _mkbtn(_T("btn_copy"), color=C_CYAN, size=11)
+    _action_copy_btn.setFrame_(AppKit.NSMakeRect(8 + 2*(ACT4_W + 8), ACT4_Y, ACT4_W, ACT4_H))
+    _action_copy_btn.setTarget_(_btn_t)
+    _action_copy_btn.setAction_(BtnTarget.hushCopyText_)
+    _action_copy_btn.setToolTip_("⌘+Enter — скопировать в буфер")
+    _action_row_v.addSubview_(_action_copy_btn)
+
+    _action_send_btn = _mkbtn(_T("btn_sc_accept"), color=C_GREEN_BR, size=11)
+    _action_send_btn.setFrame_(AppKit.NSMakeRect(8 + 3*(ACT4_W + 8), ACT4_Y, ACT4_W, ACT4_H))
     _action_send_btn.setTarget_(_btn_t)
     _action_send_btn.setAction_(BtnTarget.send_)
     _action_row_v.addSubview_(_action_send_btn)
 
     _pill.addSubview_(_action_row_v)
 
-    # ── 2-button result panel (shown when scenario result is active) ──────────────
-    global _sc_action_v, _sc_send_btn2, _sc_cancel_btn2
+    # ── 3-button result panel: Undo | Copy | Send (shown when scenario result is active) ──
+    global _sc_action_v, _sc_send_btn2, _sc_cancel_btn2, _sc_copy_btn2
     _sc_action_v = AppKit.NSView.alloc().initWithFrame_(
         AppKit.NSMakeRect(0, 0, W, BTN_H))
     _sc_action_v.setAutoresizingMask_(AppKit.NSViewWidthSizable | AppKit.NSViewMaxYMargin)
@@ -6171,7 +7959,7 @@ def init(on_scenario_callback, on_history_callback=None,
 
     ACT_BTN_H = 28
     ACT_BTN_Y = (BTN_H - ACT_BTN_H) // 2
-    ACT_BTN_W = (W - 3 * 8) // 2   # two equal buttons with 8px margins and gap
+    ACT_BTN_W = (W - 4 * 8) // 3   # three equal buttons with 8px margins and gaps
 
     _sc_cancel_btn2 = _mkbtn(_T("btn_sc_undo"), color=C_CYAN, size=12)
     _sc_cancel_btn2.setFrame_(AppKit.NSMakeRect(8, ACT_BTN_Y, ACT_BTN_W, ACT_BTN_H))
@@ -6179,8 +7967,15 @@ def init(on_scenario_callback, on_history_callback=None,
     _sc_cancel_btn2.setAction_(BtnTarget.undoScenario_)
     _sc_action_v.addSubview_(_sc_cancel_btn2)
 
+    _sc_copy_btn2 = _mkbtn(_T("btn_copy"), color=C_CYAN, size=12)
+    _sc_copy_btn2.setFrame_(AppKit.NSMakeRect(8 + ACT_BTN_W + 8, ACT_BTN_Y, ACT_BTN_W, ACT_BTN_H))
+    _sc_copy_btn2.setTarget_(_btn_t)
+    _sc_copy_btn2.setAction_(BtnTarget.hushCopyText_)
+    _sc_copy_btn2.setToolTip_("⌘+Enter — скопировать в буфер")
+    _sc_action_v.addSubview_(_sc_copy_btn2)
+
     _sc_send_btn2 = _mkbtn(_T("btn_sc_accept"), color=C_GREEN_BR, size=12)
-    _sc_send_btn2.setFrame_(AppKit.NSMakeRect(8 + ACT_BTN_W + 8, ACT_BTN_Y, ACT_BTN_W, ACT_BTN_H))
+    _sc_send_btn2.setFrame_(AppKit.NSMakeRect(8 + 2*(ACT_BTN_W + 8), ACT_BTN_Y, ACT_BTN_W, ACT_BTN_H))
     _sc_send_btn2.setTarget_(_btn_t)
     _sc_send_btn2.setAction_(BtnTarget.send_)
     _sc_action_v.addSubview_(_sc_send_btn2)
@@ -6301,24 +8096,27 @@ def show_recording():
     """Start a recording session (or continue an existing one)."""
     def _():
         global _silent_mode
-        # Cancel any pending delayed-history open and close visible panels
+        # Cancel any pending delayed-history open
         if _btn_t:
             AppKit.NSObject.cancelPreviousPerformRequestsWithTarget_selector_object_(
                 _btn_t, b'_openHistDelayed:', None)
-        if _hist_panel and _hist_panel.isVisible():
-            _hist_panel.orderOut_(None)
         # Hide silent strip — full overlay takes over
         if _silent_win and _silent_win.isVisible():
             _silent_win.orderOut_(None)
         _silent_mode = False
         _st["mode"] = "recording"
-        _st["active_sc"] = None   # new recording clears previous scenario result
-        _st["sc_picker"] = False  # close scenario picker
+        _st["active_sc"] = None
+        _st["post_interrupt"] = False
+        _st["sc_picker"] = False
         _clear_waveform()
         _show_target_app_header()     # always show icon + app name (no status text)
         _show_buttons(False)
         _start_timer()
         _win.orderFrontRegardless()
+        # Restore hist panel if it was open on last session
+        if _cfg_saved.get("panels_open", {}).get("hist") and not (_hist_panel and _hist_panel.isVisible()):
+            history = _on_history_cb() if _on_history_cb else []
+            _show_hist_panel(history)
     _main(_)
 
 
@@ -6348,37 +8146,239 @@ def show_transcribing():
 
 
 def show_result(text: str):
-    """Transcription done — append+animate new text into the text area."""
+    """Transcription done — append new text as a block immediately."""
     def _():
         _st["mode"] = "ready"
-        _st["active_sc"] = None   # new transcription clears any active filter
+        _st["active_sc"] = None
         _end_processing()
-        _show_target_app_header()   # icon + app name replace status label
-        # Set text in _st BEFORE _show_buttons so content-check finds it
+        _show_target_app_header()
         old = _st["text"]
         new_full = (old.rstrip() + "\n" + text).strip() if old else text
         _st["text"]    = new_full
         _st["is_md"]   = _is_markdown(new_full)
         _show_buttons(True)
         _refresh_scenario_colors()
-        # Activate app so keyboard events (Shift+Enter, Cmd+Enter) go to overlay
-        AppKit.NSApp.activateIgnoringOtherApps_(True)
-        _win.makeKeyAndOrderFront_(None)
-        if _tv:
-            _win.makeFirstResponder_(_tv)
+        if not _editing_scenario:
+            AppKit.NSApp.activateIgnoringOtherApps_(True)
+            _win.makeKeyAndOrderFront_(None)
+            if _tv:
+                _win.makeFirstResponder_(_tv)
         _st["md_mode"] = False
         _update_format_indicator()
-
-        threading.Thread(
-            target=_animate_text, args=(old, text), daemon=True
-        ).start()
-
+        # Show text immediately — no typewriter animation
+        prefix = (old.rstrip() + "\n") if old else ""
+        if _tv:
+            display = prefix + text + '\n'
+            _tv.setString_(display)
+            ln = len(display)
+            _tv.setSelectedRange_(AppKit.NSMakeRange(ln, 0))
+            _tv.scrollRangeToVisible_(AppKit.NSMakeRange(ln, 0))
+        _relayout_doc_view()
+        _finalize_tv_to_block()
+        _main(_update_cursor_pos)
     _main(_)
 
 
 def show_scenario_result(text: str, hist_id: str = None):
     """Scenario processing done — REPLACE overlay text with result (instant, no animation)."""
     _load_history_combined(text, loaded_id=hist_id, keep_active=True)
+
+
+# ── Providers panel ───────────────────────────────────────────────────────────
+
+def _close_providers_panel():
+    global _prov_panel, _prov_field_refs, _prov_dot_refs
+    if _prov_panel:
+        _prov_panel.orderOut_(None)
+        _prov_panel.close()
+        _prov_panel = None
+    _prov_field_refs = {}
+    _prov_dot_refs   = {}
+
+
+def _toggle_providers_panel():
+    global _prov_panel, _prov_field_refs, _prov_dot_refs
+    if _prov_panel and _prov_panel.isVisible():
+        _close_providers_panel()
+        return
+
+    _close_providers_panel()
+    # Re-probe on every open so status dots reflect current state immediately
+    try:
+        import provider_config as _pc_mod
+        _pc_mod.probe_all()
+    except Exception:
+        pass
+
+    PW     = W   # panel always normal width regardless of expanded mode
+    mf     = _win.frame()   # main window frame — for grid position only
+    MARGIN = 12
+    FW     = PW - MARGIN * 2
+    LBL_H  = 13
+    TF_H   = 22
+    GAP    = 4
+    BTN_H  = 22
+
+    # ── Fixed height (same across all panels) ─────────────────────────────────
+    screen = _win.screen() or AppKit.NSScreen.mainScreen()
+    vis    = screen.visibleFrame() if screen else AppKit.NSMakeRect(0, 0, 1440, 900)
+    PH     = H_PANEL
+
+    # ── Panel ─────────────────────────────────────────────────────────────────
+    panel = _EditorPanel.alloc().initWithContentRect_styleMask_backing_defer_(
+        AppKit.NSMakeRect(0, 0, PW, PH),
+        AppKit.NSWindowStyleMaskBorderless,
+        AppKit.NSBackingStoreBuffered, False,
+    )
+    panel.setOpaque_(False)
+    panel.setBackgroundColor_(AppKit.NSColor.clearColor())
+    panel.setLevel_(AppKit.NSFloatingWindowLevel + 2)
+    panel.setHasShadow_(True)
+    panel.setHidesOnDeactivate_(False)
+    panel.setAppearance_(AppKit.NSAppearance.appearanceNamed_(
+        AppKit.NSAppearanceNameDarkAqua))
+    _bg = TerminalView.alloc().initWithFrame_(AppKit.NSMakeRect(0, 0, PW, PH))
+    panel.setContentView_(_bg)
+    _prov_panel = panel
+    _prov_panel._panel_key = "providers"
+
+    cv = _bg
+
+    def _tf(y_pos, placeholder, value):
+        tf = AppKit.NSTextField.alloc().initWithFrame_(
+            AppKit.NSMakeRect(MARGIN, y_pos, FW, TF_H))
+        _style_tf(tf, placeholder)
+        tf.setStringValue_(value)
+        cv.addSubview_(tf)
+        return tf
+
+    def _dot_lbl(y_pos, pid, title):
+        dot = _mklabel("●", size=9, color=C_GREEN_DIM)
+        dot.setFrame_(AppKit.NSMakeRect(MARGIN, y_pos, 12, LBL_H))
+        cv.addSubview_(dot)
+        _prov_dot_refs[pid] = dot
+        lbl = _mklabel(title, size=9, bold=True, color=C_GREEN_BR)
+        lbl.setFrame_(AppKit.NSMakeRect(MARGIN + 15, y_pos, FW - 15, LBL_H))
+        cv.addSubview_(lbl)
+
+    y = PH - 8
+
+    # ── Header ────────────────────────────────────────────────────────────────
+    _mkmagnet_btn("providers", cv, 6, y - LBL_H - 2, 22, LBL_H + 4)
+    hdr = _mklabel("ПРОВАЙДЕРЫ / API КЛЮЧИ", size=10, color=C_IDLE)
+    hdr.setFrame_(AppKit.NSMakeRect(32, y - LBL_H, FW - 32, LBL_H))
+    cv.addSubview_(hdr)
+    y -= LBL_H + 5
+    cv.addSubview_(_sep_line(MARGIN, y, FW, pin="top"))
+    y -= 8
+
+    # ── OLLAMA ────────────────────────────────────────────────────────────────
+    _dot_lbl(y - LBL_H, "ollama", "OLLAMA")
+    y -= LBL_H + GAP
+    _prov_field_refs["ollama_url"] = _tf(y - TF_H, "http://localhost:11434",
+        _pc.get("ollama", "base_url", "http://localhost:11434"))
+    y -= TF_H + 10
+    cv.addSubview_(_sep_line(MARGIN, y, FW, pin="top"))
+    y -= 8
+
+    # ── ANTHROPIC ─────────────────────────────────────────────────────────────
+    _dot_lbl(y - LBL_H, "anthropic", "ANTHROPIC")
+    y -= LBL_H + GAP
+    _prov_field_refs["anthropic_key"] = _tf(y - TF_H, "sk-ant-api...",
+        _pc.get("anthropic", "api_key"))
+    y -= TF_H + 10
+    cv.addSubview_(_sep_line(MARGIN, y, FW, pin="top"))
+    y -= 8
+
+    # ── OPENAI ────────────────────────────────────────────────────────────────
+    _dot_lbl(y - LBL_H, "openai", "OPENAI")
+    y -= LBL_H + GAP
+    _prov_field_refs["openai_key"] = _tf(y - TF_H, "sk-proj-...",
+        _pc.get("openai", "api_key"))
+    y -= TF_H + GAP
+    _prov_field_refs["openai_base"] = _tf(y - TF_H, "https://api.openai.com/v1",
+        _pc.get("openai", "base_url", "https://api.openai.com/v1"))
+    y -= TF_H + 10
+    cv.addSubview_(_sep_line(MARGIN, y, FW, pin="top"))
+    y -= 8
+
+    # ── GLM ───────────────────────────────────────────────────────────────────
+    _dot_lbl(y - LBL_H, "glm", "GLM (Z.ai)")
+    y -= LBL_H + GAP
+    _prov_field_refs["glm_key"] = _tf(y - TF_H, "API ключ GLM",
+        _pc.get("glm", "api_key"))
+    y -= TF_H + GAP
+    _prov_field_refs["glm_base"] = _tf(y - TF_H, "https://api.z.ai/api/paas/v4",
+        _pc.get("glm", "base_url", "https://api.z.ai/api/paas/v4"))
+
+    # ── Buttons ───────────────────────────────────────────────────────────────
+    cv.addSubview_(_sep_line(MARGIN, MARGIN + BTN_H + 6, FW, pin="top"))
+    BTN_W = 80
+    btn_cancel = _mkbtn("[Отмена]", color=C_GREEN_DIM, size=10)
+    btn_cancel.setFrame_(AppKit.NSMakeRect(MARGIN, MARGIN, BTN_W, BTN_H))
+    btn_cancel.setTarget_(_btn_t)
+    btn_cancel.setAction_(BtnTarget.provClose_)
+    cv.addSubview_(btn_cancel)
+    btn_save = _mkbtn("[Сохранить]", color=C_GREEN_BR, size=10)
+    btn_save.setFrame_(AppKit.NSMakeRect(PW - MARGIN - BTN_W, MARGIN, BTN_W, BTN_H))
+    btn_save.setTarget_(_btn_t)
+    btn_save.setAction_(BtnTarget.provSave_)
+    cv.addSubview_(btn_save)
+
+    # ── Position using grid cell assignment ───────────────────────────────────
+    wx2, wy2 = int(mf.origin.x), int(mf.origin.y)
+    ww2, wh2 = int(mf.size.width), int(mf.size.height)
+    px, py = _calc_panel_pos("providers", wx2, wy2, ww2, wh2, PW, PH)
+    if _cluster_mode:
+        cfg = globals().get("_cfg_panel")
+        if cfg and cfg.isVisible():
+            cf = cfg.frame()
+            cx, cy = int(cf.origin.x), int(cf.origin.y)
+            if "providers" in _cluster_offsets:
+                dx, dy = _cluster_offsets["providers"]
+            else:
+                dx, dy = 0, -(H_PANEL + _SNAP_GAP)   # default: below cfg (grid row 1)
+                _cluster_offsets["providers"] = (dx, dy)
+            px, py = cx + dx, cy + dy
+    panel.setFrameOrigin_(AppKit.NSMakePoint(px, py))
+    panel.makeKeyAndOrderFront_(None)
+
+    _refresh_prov_dots()
+
+
+def _refresh_prov_dots():
+    """Update status dot colors based on current provider_config probe results."""
+    if not _prov_dot_refs:
+        return
+    for pid, dot in _prov_dot_refs.items():
+        status = _pc.get_status(pid)
+        if status is True:
+            dot.setTextColor_(C_GREEN_BR)
+        elif status is False:
+            dot.setTextColor_(C_REC)
+        else:
+            dot.setTextColor_(C_GREEN_DIM)
+
+
+def update_provider_status():
+    """Called from main.py when provider probe completes — refresh UI dots."""
+    _refresh_prov_dots()
+
+
+
+
+def restore_ready():
+    """After full_default interrupt: restore ready UI without touching existing text."""
+    def _():
+        _st["mode"] = "ready"
+        _st["post_interrupt"] = True   # [Отменить] stays in window instead of closing
+        _end_processing()
+        _show_target_app_header()
+        _show_buttons(True)
+        _refresh_scenario_colors()
+        if _tv:
+            _win.makeFirstResponder_(_tv)
+    _main(_)
 
 
 def show_processing(name: str, sc_idx: int = None, interrupt_fn=None):
@@ -6416,7 +8416,7 @@ def show_processing(name: str, sc_idx: int = None, interrupt_fn=None):
             _eq_pulse_t = 0.0
             _proc_eq_v.setMode_(1)      # pulse mode for LLM processing
             _proc_eq_v.setCol_(C_YEL)   # yellow for LLM phase
-            _proc_eq_v.setFrame_(AppKit.NSMakeRect(EQ_CTR_X, HDR_ITEM_Y, EQ_CTR_W, HDR_ITEM_H))
+            _layout_header_wf()
             _proc_eq_v.setHidden_(False)
 
         # Show scenario name to the right of EQ (in square brackets)
@@ -6434,13 +8434,23 @@ def show_processing(name: str, sc_idx: int = None, interrupt_fn=None):
 def hide_silent():
     """Hide only the silent strip (double-tap cancel). Does NOT touch the main overlay."""
     def _():
-        global _silent_mode, _silent_wf, _silent_eq_v, _silent_hover_v
-        _silent_mode    = False
-        _silent_wf      = None
-        _silent_eq_v    = None
-        _silent_hover_v = None
-        if _silent_win and _silent_win.isVisible():
+        global _silent_mode, _silent_wf, _silent_eq_v, _silent_hover_v, _silent_win
+        global _silent_text_v, _silent_scroll_v, _silent_block_count, _eq_countdown_start
+        global _silent_strip_win_h, _silent_sep_y
+        _silent_mode        = False
+        _silent_wf          = None
+        _silent_eq_v        = None
+        _silent_hover_v     = None
+        _silent_text_v      = None
+        _silent_scroll_v    = None
+        _silent_block_count = 0
+        _silent_strip_win_h = 0
+        _silent_sep_y       = 0
+        _eq_countdown_start = 0.0
+        if _silent_win:
             _silent_win.orderOut_(None)
+            _silent_win.close()
+            _silent_win = None
     _main(_)
 
 
@@ -6451,26 +8461,49 @@ def hide(force: bool = False):
     """
     def _():
         global _expanded, _font_size_saved, _silent_mode, _silent_interrupt_fn
-        global _silent_wf, _silent_eq_v, _silent_hover_v
+        global _silent_wf, _silent_eq_v, _silent_hover_v, _silent_win, _silent_text_v
+        global _silent_scroll_v, _silent_block_count, _silent_strip_win_h, _silent_sep_y
         import time as _t, traceback as _tb
         _caller = "".join(_tb.format_stack()[-4:-1]).replace('\n',' ')[-200:]
         with open("/tmp/vi_debug.log","a") as f: f.write(f"[{_t.strftime('%H:%M:%S')}] hide(force={force}): mode={_st.get('mode')} | {_caller}\n")
         if not force and _st["mode"] == "history_open":
             return
+        # Kill any running transcription subprocess
+        try:
+            import transcriber as _tc
+            _tc.cancel()
+        except Exception:
+            pass
         _st["mode"]          = "idle"
         _silent_mode         = False
         _silent_interrupt_fn = None
         _silent_wf           = None
         _silent_eq_v         = None
         _silent_hover_v      = None
+        _silent_text_v       = None
+        _silent_scroll_v     = None
+        _silent_block_count  = 0
+        _silent_strip_win_h  = 0
+        _silent_sep_y        = 0
+        global _eq_countdown_start
+        _eq_countdown_start  = 0.0
         global _silent_saved_cx, _silent_saved_sy
-        _silent_saved_cx = None
-        _silent_saved_sy = None
+        # Save current pill/card position to disk BEFORE closing
+        if _silent_win:
+            _silent_save_pos(_silent_win)
+            fr = _silent_win.frame()
+            _silent_saved_cx = fr.origin.x + fr.size.width / 2
+            _silent_saved_sy = fr.origin.y
+        else:
+            _silent_saved_cx = None
+            _silent_saved_sy = None
         _end_processing()
         if _on_session_end_cb:
             _on_session_end_cb()
-        if _silent_win and _silent_win.isVisible():
+        if _silent_win:
             _silent_win.orderOut_(None)
+            _silent_win.close()
+            _silent_win = None
         _st["text"]    = ""
         _st["is_md"]   = False
         _st["md_mode"] = False
@@ -6499,7 +8532,11 @@ def hide(force: bool = False):
             _lbl.setTextColor_(C_IDLE)
         if _hist_panel and _hist_panel.isVisible():
             _hist_panel.orderOut_(None)
-        _close_cfg_panel()   # restores win Y before saving position
+        _close_editor_now()
+        _close_cfg_panel()
+        _close_providers_panel()
+        global _panels_reset_open
+        _panels_reset_open = False   # sync toggle state: panels are now all closed
         _win_save_pos()
         _win.orderOut_(None)
         AppKit.NSApp.setActivationPolicy_(AppKit.NSApplicationActivationPolicyAccessory)
@@ -6599,23 +8636,31 @@ def _animate_text(old_text: str, new_text: str):
 
 class _TimerTarget(AppKit.NSObject):
     def tick_(self, t):
-        global _eq_t, _eq_dir, _eq_pulse_t
+        import time as _t_mod
+        global _eq_t, _eq_dir, _eq_pulse_t, _wf_t, _eq_countdown_t
+        _wf_t = (_wf_t + 0.05) % (math.pi * 20)   # advance idle wave phase
         if _wf:
             _wf.setNeedsDisplay_(True)
         if _silent_wf and _silent_mode and not _silent_wf.isHidden():
             _silent_wf.setNeedsDisplay_(True)
         # advance equalizer animation
         if _silent_mode and _silent_eq_v and not _silent_eq_v.isHidden():
-            if _silent_eq_v._mode == 0:
+            m = _silent_eq_v._mode
+            if m == 0:
                 # scan: _eq_t bounces 0→1→0
                 _eq_t += _eq_dir * 0.045
                 if _eq_t >= 1.0:
                     _eq_t = 1.0; _eq_dir = -1
                 elif _eq_t <= 0.0:
                     _eq_t = 0.0; _eq_dir = 1
-            else:
+            elif m == 1:
                 # pulse: _eq_pulse_t cycles 0→1 repeatedly
                 _eq_pulse_t = (_eq_pulse_t + 0.038) % 1.0
+            else:
+                # countdown: advance fill based on real elapsed time
+                if _eq_countdown_start > 0 and _eq_countdown_dur > 0:
+                    elapsed = _t_mod.time() - _eq_countdown_start
+                    _eq_countdown_t = min(1.0, elapsed / _eq_countdown_dur)
             _silent_eq_v.setNeedsDisplay_(True)
         # main-window EQ: scan during transcription, pulse during LLM processing
         if _proc_eq_v and not _proc_eq_v.isHidden():

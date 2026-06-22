@@ -2,7 +2,9 @@ import sounddevice as sd
 import numpy as np
 import wave
 import threading
-from config import SAMPLE_RATE, AUDIO_TMP
+import uuid
+import os
+from config import SAMPLE_RATE
 
 _lock = threading.Lock()
 _recording = False
@@ -89,11 +91,12 @@ def stop(stream):
     except Exception:
         pass
 
-    with wave.open(AUDIO_TMP, "wb") as f:
+    wav_path = f"/tmp/hush_chunk_{uuid.uuid4().hex[:8]}.wav"
+    with wave.open(wav_path, "wb") as f:
         f.setnchannels(1)
         f.setsampwidth(2)  # 16-bit
         f.setframerate(SAMPLE_RATE)
         pcm = (audio * 32767).astype(np.int16)
         f.writeframes(pcm.tobytes())
 
-    return AUDIO_TMP, 0
+    return wav_path, 0
