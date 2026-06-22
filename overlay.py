@@ -4538,27 +4538,53 @@ def _update_cluster_offsets():
 
 
 def _cluster_anchor_pos():
-    """Compute the top-left position for the panel cluster (to the left of expanded window).
-    Always uses the same screen as _win to avoid flying to a different monitor."""
-    GAP = _SNAP_GAP
+    """Compute cfg anchor position so the 2×2 cluster doesn't overlap the expanded window.
+
+    The cluster occupies 2 columns: cfg/providers on left, hist/editor on right.
+    Total cluster width = 2*W + GAP. We must clear the FULL cluster width from
+    the main window edge, not just one panel width.
+    Uses _win's own screen to stay on the same monitor.
+    """
+    GAP       = _SNAP_GAP
+    CW        = 2 * W + GAP   # total cluster width (2 columns of 440px + gap)
     if not _win:
         return 50, 400
     wf = _win.frame()
     wx, wy = int(wf.origin.x), int(wf.origin.y)
     ww, wh = int(wf.size.width), int(wf.size.height)
-    # Try left of main window, top-aligned
-    cx = wx - W - GAP
+
+    # Align cluster top with main window top
     cy = wy + wh - H_PANEL
-    # IMPORTANT: use _win's own screen, not mainScreen (avoids cluster jumping to other monitor)
+
     screen = _win.screen() or AppKit.NSScreen.mainScreen()
-    sf = screen.visibleFrame() if screen else None
+    sf     = screen.visibleFrame() if screen else None
     if sf:
         sx, sy = int(sf.origin.x), int(sf.origin.y)
         sw, sh = int(sf.size.width), int(sf.size.height)
-        if cx < sx:
-            cx = wx + ww + GAP   # fallback: right of main window
+
+        cx_left  = wx - CW - GAP          # fully left of main window
+        cx_right = wx + ww + GAP          # fully right of main window
+
+        left_ok  = cx_left  >= sx
+        right_ok = cx_right + CW <= sx + sw
+
+        if left_ok:
+            cx = cx_left
+        elif right_ok:
+            cx = cx_right
+        else:
+            # Neither side fits perfectly — pick whichever overflows less
+            left_over  = max(0, sx - cx_left)
+            right_over = max(0, cx_right + CW - (sx + sw))
+            cx = cx_left if left_over <= right_over else cx_right
+
+        # Clamp so at least cfg (left column) stays on screen
         cx = max(sx, min(cx, sx + sw - W))
-        cy = max(sy, min(cy, sy + sh - H_PANEL))
+        # Clamp vertical so cluster doesn't go off-screen top or bottom
+        cy = max(sy + H_PANEL + GAP, min(cy, sy + sh - H_PANEL))
+    else:
+        cx = wx - CW - GAP
+
     return cx, cy
 
 
