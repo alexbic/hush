@@ -282,6 +282,7 @@ STRINGS = {
         "btn_hist":      "[ИСТ]",
         "btn_cfg":       "⚙",
         "cfg_scenarios": "> сценарии",
+        "btn_close":     "[ЗАКРЫТЬ]",
         "btn_quit":      "[ВЫХОД]",
         "btn_save":      "[СОХР]",
         "btn_cancel":    "[ОТМН]",
@@ -341,6 +342,7 @@ STRINGS = {
         "btn_hist":      "[HIST]",
         "btn_cfg":       "⚙",
         "cfg_scenarios": "> scenarios",
+        "btn_close":     "[CLOSE]",
         "btn_quit":      "[QUIT]",
         "btn_save":      "[SAVE]",
         "btn_cancel":    "[CNCL]",
@@ -399,6 +401,7 @@ STRINGS = {
         "btn_hist":      "[HIST]",
         "btn_cfg":       "⚙",
         "cfg_scenarios": "> escenarios",
+        "btn_close":     "[CERRAR]",
         "btn_quit":      "[SALIR]",
         "btn_save":      "[GUAR]",
         "btn_cancel":    "[CNCL]",
@@ -5500,25 +5503,15 @@ def _show_hist_panel(history):
     ctrl._on_merge    = _on_history_merge_cb
     _hist_ctrl        = ctrl
 
-    # ── Header: three filter tabs + select-all checkbox + close [×] ─────────
+    # ── Header: three filter tabs + select-all checkbox ──────────────────────
     hdr_y   = ph - HDR_H
     TAB_GAP  = 6
     MAG_OFF  = 30   # left offset for magnet icon
-    CLOSE_W  = 22   # [×] button on the far right
-    CLOSE_GAP = 4
     n_tabs   = 3
-    tab_area_w = pw - CHK_W - CHK_R - 12 - MAG_OFF - CLOSE_W - CLOSE_GAP
+    tab_area_w = pw - CHK_W - CHK_R - 12 - MAG_OFF
     tab_w      = (tab_area_w - TAB_GAP * (n_tabs - 1)) // n_tabs
     tab_h      = 20
     tab_y      = hdr_y + (HDR_H - tab_h) // 2
-
-    # Close button — far right of header
-    hcl = _mkbtn("[×]", color=C_REC, size=11)
-    hcl.setFrame_(AppKit.NSMakeRect(pw - CLOSE_W - CLOSE_GAP, tab_y, CLOSE_W, tab_h))
-    hcl.setToolTip_("Закрыть историю")
-    hcl.setTarget_(_btn_t)
-    hcl.setAction_(BtnTarget.histClose_)
-    cv.addSubview_(hcl)
 
     tab_specs = [
         ("mixed",    "hist_mixed"),
@@ -5575,12 +5568,21 @@ def _show_hist_panel(history):
     scroll.setDocumentView_(docview)
     cv.addSubview_(scroll)
 
-    # ── Footer: delete / merge / append / replace ────────────────────────────
+    # ── Footer: [ЗАКРЫТЬ] always visible + delete / merge / append / replace ──
     cv.addSubview_(_sep_line(0, BOT_PAD + FOOT_H - 1, pw, pin="bottom"))
 
-    btn_w  = 80
+    CLS_W  = 90
+    btn_w  = 72
     f_gap  = 5
-    bx0    = (pw - btn_w * 4 - f_gap * 3) // 2
+    # action buttons centered in the space right of close button
+    action_x0 = CLS_W + 10
+    bx0       = action_x0 + (pw - action_x0 - btn_w * 4 - f_gap * 3) // 2
+
+    close_btn = _mkbtn(_T("btn_close"), color=C_GREEN_DIM, size=9)
+    close_btn.setFrame_(AppKit.NSMakeRect(8, BOT_PAD + 4, CLS_W, 22))
+    close_btn.setTarget_(_btn_t)
+    close_btn.setAction_(BtnTarget.histClose_)
+    cv.addSubview_(close_btn)
 
     del_btn = _mkbtn(_T("btn_del"), color=C_REC, size=9)
     del_btn.setFrame_(AppKit.NSMakeRect(bx0, BOT_PAD + 4, btn_w, 22))
