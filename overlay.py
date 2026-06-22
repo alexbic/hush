@@ -5839,6 +5839,11 @@ def _close_editor_now(pending_fn=None):
     if _cfg_panel and _cfg_panel.isVisible():
         _close_cfg_panel_rebuild()
         _toggle_cfg_panel()
+        # In cluster mode: reposition all panels to restore the cluster grid
+        if _cluster_mode:
+            cfg = globals().get("_cfg_panel")
+            if cfg and cfg.isVisible():
+                _apply_cluster_offsets(cfg, _cluster_offsets)
     if pending_fn:
         pending_fn()
 
@@ -6722,6 +6727,10 @@ def _toggle_cfg_panel():
     wx, wy = int(mf.origin.x), int(mf.origin.y)
     ww, wh = int(mf.size.width), int(mf.size.height)
     px, py = _calc_panel_pos("cfg", wx, wy, ww, wh, pw, ph)
+    # In cluster mode: restore cfg to its cluster anchor position
+    if _cluster_mode:
+        cx, cy = _cluster_anchor_pos()
+        px, py = cx, cy
     _cfg_panel.setFrameOrigin_(AppKit.NSMakePoint(px, py))
     AppKit.NSApp.activateIgnoringOtherApps_(True)
     _cfg_panel.makeKeyAndOrderFront_(None)
