@@ -5514,6 +5514,46 @@ def _setup_status_bar():
         pass
 
 
+class _GithubIconView(AppKit.NSView):
+    """GitHub link icon button for About panel, same footprint as _WalletView."""
+    _URL  = "https://github.com/alexbic/hush"
+    _img  = None
+
+    def acceptsFirstMouse_(self, _e): return True
+    def isOpaque(self): return False
+
+    def mouseUp_(self, _event):
+        import subprocess
+        subprocess.Popen(["open", self._URL])
+
+    def drawRect_(self, _rect):
+        w = self.bounds().size.width
+        h = self.bounds().size.height
+
+        if self.__class__._img is None:
+            img_path = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)), "github-mark.png")
+            self.__class__._img = AppKit.NSImage.alloc().initWithContentsOfFile_(img_path)
+
+        ns_img = self.__class__._img
+        if ns_img:
+            icon_pt = min(w, h) * 0.68
+            ix = (w - icon_pt) / 2
+            iy = (h - icon_pt) / 2
+            ns_img.drawInRect_fromRect_operation_fraction_respectFlipped_hints_(
+                AppKit.NSMakeRect(ix, iy, icon_pt, icon_pt),
+                AppKit.NSZeroRect,
+                AppKit.NSCompositingOperationSourceOver,
+                1.0, True, None,
+            )
+        else:
+            C_GREEN_DIM.setStroke()
+            path = AppKit.NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
+                AppKit.NSMakeRect(0.5, 0.5, w - 1, h - 1), 5, 5)
+            path.setLineWidth_(1.0)
+            path.stroke()
+
+
 def _show_about_view():
     """Show About card as a standalone NSPanel centered on screen."""
     global _about_panel
@@ -5521,8 +5561,8 @@ def _show_about_view():
     _hide_about_view()
 
     AW, AH = 560, 480
+    PAD    = 16
 
-    # Center on main screen
     sf = AppKit.NSScreen.mainScreen().frame()
     px = sf.origin.x + (sf.size.width  - AW) / 2
     py = sf.origin.y + (sf.size.height - AH) / 2
@@ -5538,118 +5578,107 @@ def _show_about_view():
     ap.setHasShadow_(True)
     ap.setHidesOnDeactivate_(False)
 
-    # Click-anywhere-to-close background
     bg = _AboutBgView.alloc().initWithFrame_(AppKit.NSMakeRect(0, 0, AW, AH))
     bg.setAutoresizingMask_(AppKit.NSViewWidthSizable | AppKit.NSViewHeightSizable)
     ap.setContentView_(bg)
 
-    PAD_X  = 20    # horizontal padding
-    PAD_B  = 12    # bottom padding
-    GAP    = 6     # gap between footer rows
-    ROW_H  = 20    # copyright / github row height
-
     lang = _st.get("lang", "ru")
 
-    # ── Top-right corner: wallet donate (closed → open on hover) ─────────────
-    W_W, W_H = _WalletView._VW, _WalletView._VH
+    # ── Bottom row: GitHub icon (left) · Copyright (center) · Wallet (right) ──
+    ICON_W, ICON_H = _WalletView._VW, _WalletView._VH  # 90 × 68
+
+    gh_icon = _GithubIconView.alloc().initWithFrame_(
+        AppKit.NSMakeRect(PAD, PAD, ICON_W, ICON_H))
+    gh_icon.setAutoresizingMask_(AppKit.NSViewMaxXMargin | AppKit.NSViewMaxYMargin)
+    bg.addSubview_(gh_icon)
+
     wallet_v = _WalletView.alloc().initWithFrame_(
-        AppKit.NSMakeRect(AW - W_W - PAD_X, AH - W_H - 8, W_W, W_H))
-    wallet_v.setAutoresizingMask_(AppKit.NSViewMinXMargin | AppKit.NSViewMinYMargin)
+        AppKit.NSMakeRect(AW - PAD - ICON_W, PAD, ICON_W, ICON_H))
+    wallet_v.setAutoresizingMask_(AppKit.NSViewMinXMargin | AppKit.NSViewMaxYMargin)
     bg.addSubview_(wallet_v)
 
-    # ── Second row from bottom: github link (centered) ────────────────────────
-    GH_Y = PAD_B + ROW_H + GAP
-    GH_W = 200
-    gh_btn = _mklinkbtn("[ github.com/alexbic/hush ]", color=C_TEXT, size=10)
-    gh_btn.setFrame_(AppKit.NSMakeRect((AW - GH_W) / 2, GH_Y, GH_W, ROW_H))
-    gh_btn.setAutoresizingMask_(AppKit.NSViewMinXMargin | AppKit.NSViewMaxXMargin | AppKit.NSViewMaxYMargin)
-    gh_btn.setTarget_(_btn_t)
-    gh_btn.setAction_(BtnTarget.aboutGithub_)
-    bg.addSubview_(gh_btn)
-
-    # ── Third row: docs link (language-aware) ────────────────────────────────
-    DC_Y = GH_Y + ROW_H + GAP
-    DC_W = 200
-    doc_labels = {"ru": "[ Инструкция ]", "es": "[ Instrucciones ]"}
-    doc_label  = doc_labels.get(lang, "[ Documentation ]")
-    dc_btn = _mklinkbtn(doc_label, color=C_GREEN, size=10)
-    dc_btn.setFrame_(AppKit.NSMakeRect((AW - DC_W) / 2, DC_Y, DC_W, ROW_H))
-    dc_btn.setAutoresizingMask_(AppKit.NSViewMinXMargin | AppKit.NSViewMaxXMargin | AppKit.NSViewMaxYMargin)
-    dc_btn.setTarget_(_btn_t)
-    dc_btn.setAction_(BtnTarget.aboutDocs_)
-    bg.addSubview_(dc_btn)
-
-    # ── Fourth row: copyright + author (centered) → link to site ─────────────
-    CR_Y = DC_Y + ROW_H + GAP
-    CR_W = 320
+    CR_Y = PAD + (ICON_H - 18) // 2   # vertically centred with icons
+    CR_W = 260
     cr_btn = _mklinkbtn("© 2026 Alexander Bikmukhametov", color=C_GREEN_DIM, size=10)
-    cr_btn.setFrame_(AppKit.NSMakeRect((AW - CR_W) / 2, CR_Y, CR_W, ROW_H))
+    cr_btn.setFrame_(AppKit.NSMakeRect((AW - CR_W) / 2, CR_Y, CR_W, 18))
     cr_btn.setAutoresizingMask_(AppKit.NSViewMinXMargin | AppKit.NSViewMaxXMargin | AppKit.NSViewMaxYMargin)
     cr_btn.setTarget_(_btn_t)
     cr_btn.setAction_(BtnTarget.aboutSite_)
     bg.addSubview_(cr_btn)
 
-    # ── Fifth row: one-sentence description (language-aware) ─────────────────
-    DESC_Y = CR_Y + ROW_H + 10
-    DESC_H = 20
-    DESC_W = AW - PAD_X * 2
-    desc_texts = {
-        "ru": "Голосовой набор текста с постобработкой через LLM",
-        "es": "Dictado de voz con postprocesamiento por LLM",
-    }
-    desc_text = desc_texts.get(lang, "Voice-to-text with LLM post-processing")
-    desc_tf = AppKit.NSTextField.labelWithString_(desc_text)
-    desc_tf.setEditable_(False); desc_tf.setBezeled_(False); desc_tf.setDrawsBackground_(False)
-    desc_tf.setFont_(_mono(11, False))
-    desc_tf.setTextColor_(C_TEXT)
-    desc_tf.setAlignment_(AppKit.NSTextAlignmentCenter)
-    desc_tf.setFrame_(AppKit.NSMakeRect(PAD_X, DESC_Y, DESC_W, DESC_H))
-    desc_tf.setAutoresizingMask_(AppKit.NSViewMinXMargin | AppKit.NSViewMaxXMargin | AppKit.NSViewMaxYMargin)
-    bg.addSubview_(desc_tf)
+    BOTTOM_TOP = PAD + ICON_H + 8    # y where bottom section ends
 
-    # ── Sixth row: app name + version ─────────────────────────────────────────
-    NAME_Y = DESC_Y + DESC_H + 4
-    NAME_H = 28
-    name_tf = AppKit.NSTextField.labelWithString_("HUSH")
-    name_tf.setEditable_(False); name_tf.setBezeled_(False); name_tf.setDrawsBackground_(False)
-    name_tf.setFont_(_mono(18, True))
-    name_tf.setTextColor_(C_GREEN)
-    name_tf.setAlignment_(AppKit.NSTextAlignmentCenter)
-    name_tf.setFrame_(AppKit.NSMakeRect(PAD_X, NAME_Y, DESC_W - 60, NAME_H))
-    name_tf.setAutoresizingMask_(AppKit.NSViewMinXMargin | AppKit.NSViewMaxXMargin | AppKit.NSViewMaxYMargin)
-    bg.addSubview_(name_tf)
+    # ── Top corners: version (left) · title (center) · docs link (right) ──────
+    CORNER_H = 18
+    CORNER_Y = AH - PAD - CORNER_H
 
-    ver_tf = AppKit.NSTextField.labelWithString_("v0.1")
+    ver_tf = AppKit.NSTextField.labelWithString_("v1.0")
     ver_tf.setEditable_(False); ver_tf.setBezeled_(False); ver_tf.setDrawsBackground_(False)
     ver_tf.setFont_(_mono(10, False))
     ver_tf.setTextColor_(C_GREEN_DIM)
     ver_tf.setAlignment_(AppKit.NSTextAlignmentLeft)
-    ver_tf.setFrame_(AppKit.NSMakeRect(AW / 2 + 28, NAME_Y + 6, 50, 18))
-    ver_tf.setAutoresizingMask_(AppKit.NSViewMinXMargin | AppKit.NSViewMaxXMargin | AppKit.NSViewMaxYMargin)
+    ver_tf.setFrame_(AppKit.NSMakeRect(PAD, CORNER_Y, 50, CORNER_H))
+    ver_tf.setAutoresizingMask_(AppKit.NSViewMaxXMargin | AppKit.NSViewMinYMargin)
     bg.addSubview_(ver_tf)
 
-    # ── Brand image (fills top area) ──────────────────────────────────────────
-    IMG_BOT = NAME_Y + NAME_H + 8
-    IMG_TOP = 10
-    img_y = IMG_BOT
-    img_w = AW - PAD_X * 2
-    img_h = AH - IMG_BOT - IMG_TOP
+    doc_labels = {"ru": "[ Инструкция ]", "es": "[ Instrucciones ]"}
+    doc_label  = doc_labels.get(lang, "[ Documentation ]")
+    DC_W = 130
+    dc_btn = _mklinkbtn(doc_label, color=C_GREEN, size=10)
+    dc_btn.setFrame_(AppKit.NSMakeRect(AW - PAD - DC_W, CORNER_Y, DC_W, CORNER_H))
+    dc_btn.setAutoresizingMask_(AppKit.NSViewMinXMargin | AppKit.NSViewMinYMargin)
+    dc_btn.setTarget_(_btn_t)
+    dc_btn.setAction_(BtnTarget.aboutDocs_)
+    bg.addSubview_(dc_btn)
+
+    # ── Large title "HUSH" + subtitle ─────────────────────────────────────────
+    TITLE_H = 42
+    SUB_H   = 18
+    TITLE_Y = CORNER_Y - 4 - TITLE_H - SUB_H - 2
+    title_tf = AppKit.NSTextField.labelWithString_("HUSH")
+    title_tf.setEditable_(False); title_tf.setBezeled_(False); title_tf.setDrawsBackground_(False)
+    title_tf.setFont_(_mono(30, True))
+    title_tf.setTextColor_(C_GREEN)
+    title_tf.setAlignment_(AppKit.NSTextAlignmentCenter)
+    title_tf.setFrame_(AppKit.NSMakeRect(0, TITLE_Y + SUB_H + 2, AW, TITLE_H))
+    title_tf.setAutoresizingMask_(AppKit.NSViewWidthSizable | AppKit.NSViewMinYMargin)
+    bg.addSubview_(title_tf)
+
+    sub_texts = {
+        "ru": "Голосовой набор текста с постобработкой через LLM",
+        "es": "Dictado de voz con postprocesamiento por LLM",
+    }
+    sub_text = sub_texts.get(lang, "Voice-to-text with LLM post-processing")
+    sub_tf = AppKit.NSTextField.labelWithString_(sub_text)
+    sub_tf.setEditable_(False); sub_tf.setBezeled_(False); sub_tf.setDrawsBackground_(False)
+    sub_tf.setFont_(_mono(11, False))
+    sub_tf.setTextColor_(C_TEXT)
+    sub_tf.setAlignment_(AppKit.NSTextAlignmentCenter)
+    sub_tf.setFrame_(AppKit.NSMakeRect(PAD, TITLE_Y, AW - PAD * 2, SUB_H))
+    sub_tf.setAutoresizingMask_(AppKit.NSViewWidthSizable | AppKit.NSViewMinYMargin)
+    bg.addSubview_(sub_tf)
+
+    # ── Brand image (centre of composition) ──────────────────────────────────
+    IMG_Y   = BOTTOM_TOP
+    IMG_TOP = TITLE_Y - 6
+    img_w   = AW - PAD * 2
+    img_h   = IMG_TOP - IMG_Y
 
     img_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "hush_brand_full.png")
     ns_img   = AppKit.NSImage.alloc().initWithContentsOfFile_(img_path)
     if ns_img:
         iv = AppKit.NSImageView.alloc().initWithFrame_(
-            AppKit.NSMakeRect(PAD_X, img_y, img_w, img_h))
+            AppKit.NSMakeRect(PAD, IMG_Y, img_w, img_h))
         iv.setImage_(ns_img)
-        iv.setImageScaling_(3)   # NSImageScaleProportionallyUpOrDown
-        iv.setImageAlignment_(0) # NSImageAlignCenter
+        iv.setImageScaling_(3)    # NSImageScaleProportionallyUpOrDown
+        iv.setImageAlignment_(0)  # NSImageAlignCenter
         iv.setAutoresizingMask_(AppKit.NSViewWidthSizable | AppKit.NSViewHeightSizable)
         bg.addSubview_(iv)
     else:
         tf = AppKit.NSTextField.labelWithString_("[ HUSH ]")
         tf.setEditable_(False); tf.setBezeled_(False); tf.setDrawsBackground_(False)
         tf.setFont_(_mono(20, True)); tf.setTextColor_(C_GREEN_DIM)
-        tf.setFrame_(AppKit.NSMakeRect(PAD_X, img_y + img_h // 2 - 14, img_w, 28))
+        tf.setFrame_(AppKit.NSMakeRect(PAD, IMG_Y + img_h // 2 - 14, img_w, 28))
         bg.addSubview_(tf)
 
     ap.setAcceptsMouseMovedEvents_(True)
