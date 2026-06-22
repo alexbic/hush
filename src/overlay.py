@@ -5589,8 +5589,47 @@ def _show_about_view():
     cr_btn.setAction_(BtnTarget.aboutSite_)
     bg.addSubview_(cr_btn)
 
+    # ── Fifth row: one-sentence description (language-aware) ─────────────────
+    DESC_Y = CR_Y + ROW_H + 10
+    DESC_H = 20
+    DESC_W = AW - PAD_X * 2
+    desc_texts = {
+        "ru": "Голосовой набор текста с постобработкой через LLM",
+        "es": "Dictado de voz con postprocesamiento por LLM",
+    }
+    desc_text = desc_texts.get(lang, "Voice-to-text with LLM post-processing")
+    desc_tf = AppKit.NSTextField.labelWithString_(desc_text)
+    desc_tf.setEditable_(False); desc_tf.setBezeled_(False); desc_tf.setDrawsBackground_(False)
+    desc_tf.setFont_(_mono(11, False))
+    desc_tf.setTextColor_(C_TEXT)
+    desc_tf.setAlignment_(AppKit.NSTextAlignmentCenter)
+    desc_tf.setFrame_(AppKit.NSMakeRect(PAD_X, DESC_Y, DESC_W, DESC_H))
+    desc_tf.setAutoresizingMask_(AppKit.NSViewMinXMargin | AppKit.NSViewMaxXMargin | AppKit.NSViewMaxYMargin)
+    bg.addSubview_(desc_tf)
+
+    # ── Sixth row: app name + version ─────────────────────────────────────────
+    NAME_Y = DESC_Y + DESC_H + 4
+    NAME_H = 28
+    name_tf = AppKit.NSTextField.labelWithString_("HUSH")
+    name_tf.setEditable_(False); name_tf.setBezeled_(False); name_tf.setDrawsBackground_(False)
+    name_tf.setFont_(_mono(18, True))
+    name_tf.setTextColor_(C_GREEN)
+    name_tf.setAlignment_(AppKit.NSTextAlignmentCenter)
+    name_tf.setFrame_(AppKit.NSMakeRect(PAD_X, NAME_Y, DESC_W - 60, NAME_H))
+    name_tf.setAutoresizingMask_(AppKit.NSViewMinXMargin | AppKit.NSViewMaxXMargin | AppKit.NSViewMaxYMargin)
+    bg.addSubview_(name_tf)
+
+    ver_tf = AppKit.NSTextField.labelWithString_("v0.1")
+    ver_tf.setEditable_(False); ver_tf.setBezeled_(False); ver_tf.setDrawsBackground_(False)
+    ver_tf.setFont_(_mono(10, False))
+    ver_tf.setTextColor_(C_GREEN_DIM)
+    ver_tf.setAlignment_(AppKit.NSTextAlignmentLeft)
+    ver_tf.setFrame_(AppKit.NSMakeRect(AW / 2 + 28, NAME_Y + 6, 50, 18))
+    ver_tf.setAutoresizingMask_(AppKit.NSViewMinXMargin | AppKit.NSViewMaxXMargin | AppKit.NSViewMaxYMargin)
+    bg.addSubview_(ver_tf)
+
     # ── Brand image (fills top area) ──────────────────────────────────────────
-    IMG_BOT = CR_Y + ROW_H + 10
+    IMG_BOT = NAME_Y + NAME_H + 8
     IMG_TOP = 10
     img_y = IMG_BOT
     img_w = AW - PAD_X * 2

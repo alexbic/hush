@@ -4,7 +4,7 @@
 
 <div align="center">
 
-<img src="hush_brand_full.png" alt="HUSH — Hear · Understand · Shape · Hand back" width="500">
+<img src="assets/hush_brand_full.png" alt="HUSH — Hear · Understand · Shape · Hand back" width="500">
 
 <br>
 
