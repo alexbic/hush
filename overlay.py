@@ -6728,50 +6728,19 @@ def _toggle_cfg_panel():
 
 
 def _restore_history_item(full_text: str, item_id: str = None):
-    """Load single history item into the text view."""
-    _load_history_combined(full_text, loaded_id=item_id)
+    """Add history item as a new block (append, not replace)."""
+    _add_rich_block(full_text, hist_id=item_id)
 
 
 def _restore_session(blocks_text: list, block_hist_ids: list = None, session_id: str = None):
-    """Restore a session: recreate each block separately (preserving per-block structure)."""
+    """Append session blocks to current content (each block added separately)."""
     if not _doc_view:
         return
-    _st["text"]      = ""
-    _st["mode"]      = "ready"
-    _st["is_md"]     = False
-    _st["md_mode"]   = False
-    _st["active_sc"] = None
-    _remove_all_rich_blocks()
-    if _on_history_load_cb:
-        _on_history_load_cb(session_id)
-    if _tv:
-        _tv.setString_("")
     for i, text in enumerate(blocks_text):
         if not text.strip():
             continue
-        idx   = len(_rich_blocks)
-        block = _make_rich_block(text, idx)
         hist_id = (block_hist_ids[i] if block_hist_ids and i < len(block_hist_ids) else None)
-        block._original_text    = text.strip()
-        block._original_hist_id = hist_id
-        block._hist_id          = hist_id
-        _rich_blocks.append(block)
-        _doc_view.addSubview_(block)
-        if block._inner_tv:
-            end = block._inner_tv.textStorage().length()
-            block._inner_tv.setSelectedRange_(AppKit.NSMakeRange(end, 0))
-    _update_md_indicator()
-    _update_format_indicator()
-    _relayout_doc_view()
-    _show_buttons(True)
-    _refresh_scenario_colors()
-    _show_target_app_header()
-    if _win:
-        _win.orderFrontRegardless()
-        if _tv:
-            _win.makeFirstResponder_(_tv)
-            _tv.setSelectedRange_(AppKit.NSMakeRange(0, 0))
-    _main(_update_cursor_pos)
+        _add_rich_block(text.strip(), hist_id=hist_id)
 
 
 def _get_all_text() -> str:
