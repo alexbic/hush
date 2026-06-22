@@ -4610,6 +4610,13 @@ def set_undo_scenario_callback(fn):
 
 _HDR_GAP = 8          # gap between app name and EQ, and between EQ and gear icon
 
+
+def _live_hdr_item_y() -> int:
+    """Return HDR_ITEM_Y based on actual current window height (correct in expanded mode)."""
+    h = int(_win.frame().size.height) if _win else H
+    return (h - HDR_H) + (HDR_H - HDR_ITEM_H) // 2
+
+
 def _layout_header_wf():
     """Measure app name width, position label, then stretch EQ to fill remaining space.
     Must run on main thread."""
@@ -4627,16 +4634,17 @@ def _layout_header_wf():
     name_w   = max(0, min(name_w, max_name))
     name_end = ICON_END + name_w
 
+    iy = _live_hdr_item_y()
     if _proc_app_lbl:
-        _proc_app_lbl.setFrame_(AppKit.NSMakeRect(ICON_END, HDR_ITEM_Y - 2, name_w, HDR_ITEM_H))
+        _proc_app_lbl.setFrame_(AppKit.NSMakeRect(ICON_END, iy - 2, name_w, HDR_ITEM_H))
 
     # EQ fills all remaining space: from name_end+gap to gear icon
     eq_x = name_end + _HDR_GAP
     eq_w = max(40, RIGHT_END - eq_x)
     if _wf:
-        _wf.setFrame_(AppKit.NSMakeRect(eq_x, HDR_ITEM_Y, eq_w, HDR_ITEM_H))
+        _wf.setFrame_(AppKit.NSMakeRect(eq_x, iy, eq_w, HDR_ITEM_H))
     if _proc_eq_v:
-        _proc_eq_v.setFrame_(AppKit.NSMakeRect(eq_x, HDR_ITEM_Y, eq_w, HDR_ITEM_H))
+        _proc_eq_v.setFrame_(AppKit.NSMakeRect(eq_x, iy, eq_w, HDR_ITEM_H))
 
     return name_end
 
@@ -6053,28 +6061,27 @@ def _toggle_cfg_panel():
 
     # ── Layout constants ─────────────────────────────────────────────────────────
     MARGIN    = 10        # panel left/right margin
-    MARGIN_T  = 26        # top margin (room for [ⓘ] button)
-    BOX_H     = 60        # top row: opacity | font | lang
+    MARGIN_T  = 22        # top margin (room for [ⓘ] button)
+    BOX_H     = 52        # top row: opacity | font | lang
     BOX_G     = 6         # horizontal gap between side-by-side boxes
-    HK_TH_H   = 72        # middle row: hotkey (left) | themes 2×4 (right)
+    HK_TH_H   = 120       # theme row: tall swatches (hotkey removed — Cmd+Enter hardcoded)
     CELL_H    = 22
     CELL_GAP  = 3
     COLS      = 6
     MAX_SC    = COLS * 3 - 1
     QUIT_H    = 46        # bottom quit section
-    VGAP      = 8         # uniform vertical gap between every row
+    VGAP      = 6         # uniform vertical gap between every row
 
     inner_w = pw - 2 * MARGIN
 
-    # Top row: opacity (narrow) | font | lang
-    op_w = max(72, inner_w // 5)
-    fn_w = max(90, inner_w // 3)
-    la_w = inner_w - op_w - fn_w - 2 * BOX_G
+    # Top row: three equal columns — opacity | font | lang
+    eq_col_w  = (inner_w - 2 * BOX_G) // 3
+    op_w = fn_w = la_w = eq_col_w
     op_x = MARGIN
     fn_x = MARGIN + op_w + BOX_G
-    la_x = fn_x + fn_w + BOX_G
+    la_x = MARGIN + 2 * (op_w + BOX_G)
 
-    # Middle row: themes 2×4 full width (hotkey configurator removed — Cmd+Enter hardcoded)
+    # Theme row: full width
     th_w  = inner_w
     th_x  = MARGIN
 
@@ -7284,7 +7291,7 @@ def init(on_scenario_callback, on_history_callback=None,
     _pill.addSubview_(_close_btn)
 
     # Header separator
-    _pill.addSubview_(_sep_line(0, HDR_Y - 1, W))
+    _pill.addSubview_(_sep_line(0, HDR_Y - 1, W, pin="top"))
 
     # ── Text area (middle) ────────────────────────────────────────────────────
 
