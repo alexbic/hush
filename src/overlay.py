@@ -270,8 +270,8 @@ STRINGS = {
         "cfg_scenarios": "> сценарии",
         "btn_close":     "[ЗАКРЫТЬ]",
         "btn_quit":      "[ВЫХОД]",
-        "btn_save":      "[СОХР]",
-        "btn_cancel":    "[ОТМН]",
+        "btn_save":      "[СОХРАНИТЬ]",
+        "btn_cancel":    "[ОТМЕНА]",
         "btn_discard":    "[СБРОС]",
         "edit_confirm":   "сохранить изменения?",
         "sc_edit_hdr":    "> сценарий",
@@ -290,9 +290,32 @@ STRINGS = {
         "cfg_hotkey":     "мастер-клавиша",
         "cfg_theme":      "цвет",
         "cfg_scenes":     "сценарии",
-        "hist_mixed":     "ВСЕ",
-        "hist_sessions":  "СЕССИИ",
-        "hist_blocks":    "БЛОКИ",
+        "prov_title":       "ПРОВАЙДЕРЫ / API КЛЮЧИ",
+        "hist_mixed":       "ВСЕ",
+        "hist_sessions":    "СЕССИИ",
+        "hist_blocks":      "БЛОКИ",
+        "btn_keys":         "[КЛЮЧИ]",
+        "cfg_title":        "НАСТРОЙКИ",
+        "cfg_about_tip":    "О приложении",
+        "cfg_prov_tip":     "Настройка провайдеров и API ключей",
+        "cfg_font_dec":     "Уменьшить шрифт",
+        "cfg_font_inc":     "Увеличить шрифт",
+        "cfg_reset_tip":    "Сброс: настройки↑  история↓  провайдеры←  сценарии→",
+        "cfg_panels_tip":   "Показать/скрыть все панели",
+        "sc_editor_title":  "НАСТРОЙКИ СЦЕНАРИЯ",
+        "sc_provider_lbl":  "провайдер",
+        "sc_model_lbl":     "модель",
+        "sc_auto":          "авто",
+        "tip_magnet_pin":   "Прикрепить к главному окну",
+        "tip_magnet_unpin": "Открепить от главного окна",
+        "tip_undo_sc":      "Вернуть оригинал",
+        "tip_cfg":          "Настройки",
+        "tip_hist":         "История (двойное нажатие хоткея)",
+        "tip_insert":       "Вставить (Shift+Enter)",
+        "tip_copy":         "⌘+Enter — скопировать в буфер",
+        "tip_hist_expand":  "История (двойной клик — развернуть)",
+        "theme_light":      "светлая",
+        "theme_dark":       "тёмная",
         "about_body": (
             "HUSH\n"
             "Hear · Understand · Shape · Hand back\n"
@@ -331,8 +354,8 @@ STRINGS = {
         "btn_close":     "[CLOSE]",
         "btn_quit":      "[QUIT]",
         "btn_save":      "[SAVE]",
-        "btn_cancel":    "[CNCL]",
-        "btn_discard":    "[DISC]",
+        "btn_cancel":    "[CANCEL]",
+        "btn_discard":    "[DISCARD]",
         "edit_confirm":   "save changes?",
         "sc_edit_hdr":    "> scenario",
         "btn_sc_delete":  "[DELETE]",
@@ -350,9 +373,32 @@ STRINGS = {
         "cfg_hotkey":     "modifier key",
         "cfg_theme":      "color",
         "cfg_scenes":     "scenarios",
-        "hist_mixed":     "ALL",
-        "hist_sessions":  "SESSIONS",
-        "hist_blocks":    "BLOCKS",
+        "prov_title":       "PROVIDERS / API KEYS",
+        "hist_mixed":       "ALL",
+        "hist_sessions":    "SESSIONS",
+        "hist_blocks":      "BLOCKS",
+        "btn_keys":         "[KEYS]",
+        "cfg_title":        "SETTINGS",
+        "cfg_about_tip":    "About",
+        "cfg_prov_tip":     "Provider & API key settings",
+        "cfg_font_dec":     "Decrease font size",
+        "cfg_font_inc":     "Increase font size",
+        "cfg_reset_tip":    "Reset: settings↑  history↓  providers←  scenarios→",
+        "cfg_panels_tip":   "Show/hide all panels",
+        "sc_editor_title":  "SCENARIO SETTINGS",
+        "sc_provider_lbl":  "provider",
+        "sc_model_lbl":     "model",
+        "sc_auto":          "auto",
+        "tip_magnet_pin":   "Attach to main window",
+        "tip_magnet_unpin": "Detach from main window",
+        "tip_undo_sc":      "Restore original",
+        "tip_cfg":          "Settings",
+        "tip_hist":         "History (double hotkey press)",
+        "tip_insert":       "Insert (Shift+Enter)",
+        "tip_copy":         "⌘+Enter — copy to clipboard",
+        "tip_hist_expand":  "History (double click to expand)",
+        "theme_light":      "light",
+        "theme_dark":       "dark",
         "about_body": (
             "HUSH\n"
             "Hear · Understand · Shape · Hand back\n"
@@ -389,9 +435,9 @@ STRINGS = {
         "cfg_scenarios": "> escenarios",
         "btn_close":     "[CERRAR]",
         "btn_quit":      "[SALIR]",
-        "btn_save":      "[GUAR]",
-        "btn_cancel":    "[CNCL]",
-        "btn_discard":    "[DESC]",
+        "btn_save":      "[GUARDAR]",
+        "btn_cancel":    "[CANCELAR]",
+        "btn_discard":    "[DESCARTAR]",
         "edit_confirm":   "¿guardar cambios?",
         "sc_edit_hdr":    "> escenario",
         "btn_sc_delete":  "[BORRAR]",
@@ -409,9 +455,32 @@ STRINGS = {
         "cfg_hotkey":     "tecla mod.",
         "cfg_theme":      "color",
         "cfg_scenes":     "escenarios",
-        "hist_mixed":     "TODO",
-        "hist_sessions":  "SESIONES",
-        "hist_blocks":    "BLOQUES",
+        "prov_title":       "PROVEEDORES / CLAVES API",
+        "hist_mixed":       "TODO",
+        "hist_sessions":    "SESIONES",
+        "hist_blocks":      "BLOQUES",
+        "btn_keys":         "[CLAVES]",
+        "cfg_title":        "AJUSTES",
+        "cfg_about_tip":    "Acerca de",
+        "cfg_prov_tip":     "Proveedores y claves API",
+        "cfg_font_dec":     "Reducir fuente",
+        "cfg_font_inc":     "Aumentar fuente",
+        "cfg_reset_tip":    "Restablecer: ajustes↑  historial↓  proveedores←  escenarios→",
+        "cfg_panels_tip":   "Mostrar/ocultar todos los paneles",
+        "sc_editor_title":  "AJUSTES DEL ESCENARIO",
+        "sc_provider_lbl":  "proveedor",
+        "sc_model_lbl":     "modelo",
+        "sc_auto":          "auto",
+        "tip_magnet_pin":   "Fijar a la ventana principal",
+        "tip_magnet_unpin": "Desanclar de la ventana principal",
+        "tip_undo_sc":      "Restaurar original",
+        "tip_cfg":          "Ajustes",
+        "tip_hist":         "Historial (doble pulsación del atajo)",
+        "tip_insert":       "Insertar (Shift+Intro)",
+        "tip_copy":         "⌘+Intro — copiar al portapapeles",
+        "tip_hist_expand":  "Historial (doble clic para expandir)",
+        "theme_light":      "claro",
+        "theme_dark":       "oscuro",
         "about_body": (
             "HUSH\n"
             "Hear · Understand · Shape · Hand back\n"
@@ -471,7 +540,7 @@ def _refresh_status_label():
     if _action_hist_btn:
         _action_hist_btn.setAttributedTitle_(_atitle(_T("btn_hist"), size=12, color=C_CYAN))
     if _cfg_hdr_btn:
-        _cfg_hdr_btn.setAttributedTitle_(_atitle(_T("btn_cfg"), size=11, color=C_GREEN))
+        _cfg_hdr_btn.setAttributedTitle_(_atitle(_T("btn_cfg"), size=18, color=C_GREEN_DIM))
     if _hist_corner_btn:
         _hist_corner_btn.setAttributedTitle_(_atitle("☰", size=14, color=C_GREEN_DIM))
 
@@ -777,16 +846,16 @@ def _pos_to_cell(nx, ny, wx, wy, ww, wh, pw, ph):
 def _valid_grid_cells(wx, wy, ww, wh, pw, ph, vx, vy, vx2, vy2):
     """Все ячейки (col, row) вокруг главного окна.
 
-    Всегда включает минимум 1 ячейку с каждой стороны, чтобы панели можно было
-    разместить — даже если экран слишком мал для идеального крестообразного расположения.
+    Включает осевые (грань-к-грани) и диагональные (угол-к-углу).
+    Диагональные получают штраф в _score и используются только когда все осевые заняты.
     Ячейки, не помещающиеся полностью на экране, тоже возвращаются; _assign_cell
     оценивает их по степени выхода за границы, поэтому экранные ячейки выигрывают первыми.
     """
     G = _SNAP_GAP
-    max_left  = max(1, int((wx - vx        - G) // (pw + G)))
-    max_right = max(1, int((vx2 - wx - ww  - G) // (pw + G)))
-    max_above = max(1, int((vy2 - wy - wh  - G) // (ph + G)))
-    max_below = max(1, int((wy - vy        - G) // (ph + G)))
+    max_left  = max(2, int((wx - vx        - G) // (pw + G)))
+    max_right = max(2, int((vx2 - wx - ww  - G) // (pw + G)))
+    max_above = max(2, int((vy2 - wy - wh  - G) // (ph + G)))
+    max_below = max(2, int((wy - vy        - G) // (ph + G)))
     cells = []
     for col in range(-max_left, max_right + 1):
         for row in range(-max_below, max_above + 1):
@@ -813,12 +882,11 @@ def _occupied_cells(excl_key, wx, wy, ww, wh, pw, ph):
 def _assign_cell(key, wx, wy, ww, wh, pw, ph, vx, vy, vx2, vy2):
     """Найти лучшую свободную ячейку для `key`. Возвращает (col, row, nx, ny) или None.
 
-    Оценка (меньше = лучше):
-      0. axis_group  — предпочитать ту же ось, что у pref (горизонтальная панель остаётся
-                       в row=0; вертикальная — в col=0). Ячейки поперечной оси — крайний случай.
-      1. off_screen  — суммарные пиксели, на которые панель выходит за границы экрана.
-                       Полностью экранные ячейки всегда выигрывают у обрезанных.
-      2. dist        — квадрат евклидова расстояния от предпочтительной ячейки (разбивка ничьих).
+    Правила (из схемы гридов):
+    1. Осевые ячейки (col=0 или row=0) — всегда допустимы.
+    2. Диагональные ячейки (col≠0 и row≠0) — только если хотя бы один
+       горизонтальный/вертикальный сосед занят (окна не соединяются «углом»).
+    3. Приоритет: своя ось → любая ось → off-screen. Внутри — по расстоянию от pref.
     """
     if key in _magnet_offset:
         dx, dy = _magnet_offset[key]
@@ -828,33 +896,56 @@ def _assign_cell(key, wx, wy, ww, wh, pw, ph, vx, vy, vx2, vy2):
 
     valid    = _valid_grid_cells(wx, wy, ww, wh, pw, ph, vx, vy, vx2, vy2)
     occupied = _occupied_cells(key, wx, wy, ww, wh, pw, ph)
-    free     = [c for c in valid if c not in occupied]
+
+    # Главное окно само по себе — «занятая» ячейка (0,0) для проверки соседства
+    occ_set = set(occupied) | {(0, 0)}
+
+    def has_face_neighbor(col, row):
+        """Диагональная ячейка допустима если хотя бы один сосед по грани занят."""
+        return any((col + dc, row + dr) in occ_set
+                   for dc, dr in [(1,0),(-1,0),(0,1),(0,-1)])
+
+    def is_valid(col, row):
+        if col == 0 or row == 0:
+            return True   # осевая — всегда OK
+        return has_face_neighbor(col, row)  # диагональ — только с соседом
+
+    free = [c for c in valid if c not in occupied and is_valid(*c)]
 
     if not free:
         return None
 
     pc, pr = pref
 
-    def _score(c):
-        col, row = c
+    def is_on_screen(col, row):
         nx, ny = _cell_to_pos(col, row, wx, wy, ww, wh, pw, ph)
-        # Пиксели за пределами экрана
-        off = (max(0, vx - nx) + max(0, nx + pw - vx2) +
-               max(0, vy - ny) + max(0, ny + ph - vy2))
-        # Штраф за ось: поперечные ячейки стоят ~1/4 размера панели.
-        # Если ячейка по оси выходит больше этого, поперечная ось выигрывает.
-        if pr == 0 and pc != 0:           # pref горизонтальная (левая/правая строка)
-            axis_pen = 0 if row == 0 else pw // 4
-        elif pc == 0 and pr != 0:         # pref вертикальная (строка выше/ниже)
-            axis_pen = 0 if col == 0 else ph // 4
-        else:
-            axis_pen = 0
-        dist = (col - pc) ** 2 + (row - pr) ** 2
-        return (off + axis_pen, dist)
+        return vx <= nx and nx + pw <= vx2 and vy <= ny and ny + ph <= vy2
 
-    best = min(free, key=_score)
-    nx, ny = _cell_to_pos(best[0], best[1], wx, wy, ww, wh, pw, ph)
-    return best[0], best[1], nx, ny
+    def is_same_axis(col, row):
+        if pr == 0 and pc != 0:   # pref горизонтальная
+            return row == 0
+        if pc == 0 and pr != 0:   # pref вертикальная
+            return col == 0
+        return True
+
+    def cell_sort_key(c):
+        col, row = c
+        is_diag = int(col != 0 and row != 0)
+        d = (col - pc) ** 2 + (row - pr) ** 2
+        return (is_diag, d)
+
+    for level_filter in [
+        lambda c: is_same_axis(*c) and is_on_screen(*c),  # своя ось, на экране
+        lambda c: is_on_screen(*c),                        # любая ось, на экране
+        lambda c: True,                                    # любая ячейка (off-screen — крайний случай)
+    ]:
+        candidates = sorted([c for c in free if level_filter(c)], key=cell_sort_key)
+        if candidates:
+            best = candidates[0]
+            nx, ny = _cell_to_pos(best[0], best[1], wx, wy, ww, wh, pw, ph)
+            return best[0], best[1], nx, ny
+
+    return None
 
 
 # Оставлено для вызовов, которые ещё передают perp (теперь игнорируется — все панели одной высоты)
@@ -925,6 +1016,9 @@ def _snap_attached_panels_live(new_wx, new_wy):
         if result is None:
             continue
         _col, _row, nx, ny = result
+        # Перестраивать только в on-screen позицию — иначе clamp создаст нахлёст
+        if nx < vx or nx + pw > vx2 or ny < vy or ny + ph > vy2:
+            continue
         _snap_ts[key] = now
         _magnet_offset[key] = (nx - new_wx, ny - new_wy)
 
@@ -1039,7 +1133,7 @@ def _mkmagnet_btn(key, cv, x, y, w=22, h=22):
     btn.setTag_(_MAGNET_KEYS.index(key))
     btn.setTarget_(_btn_t)
     btn.setAction_(BtnTarget.panelMagnet_)
-    btn.setToolTip_("Прикрепить к главному окну" if not is_on else "Открепить от главного окна")
+    btn.setToolTip_(_T("tip_magnet_unpin") if is_on else _T("tip_magnet_pin"))
     cv.addSubview_(btn)
     _magnet_btns[key] = btn
     return btn
@@ -1167,6 +1261,7 @@ _THEMES = {
         "C_TEXT":      _rgba(0.02, 0.16, 0.02),
         "C_IDLE":      _rgba(0.14, 0.42, 0.14),   # чуть светлее нормального
         "C_CYAN":      _rgba(0.00, 0.20, 0.52),
+        "C_YEL":       _rgba(0.58, 0.36, 0.00),   # тёмный янтарь — читаем на кремовом
         "C_BAR_ON":    _rgba(0.05, 0.30, 0.05),
         "C_BAR_OFF":   _rgba(0.882, 0.862, 0.792),
     },
@@ -1179,6 +1274,7 @@ _THEMES = {
         "C_TEXT":      _rgba(0.00, 0.08, 0.36),
         "C_IDLE":      _rgba(0.10, 0.26, 0.58),
         "C_CYAN":      _rgba(0.46, 0.00, 0.46),
+        "C_YEL":       _rgba(0.62, 0.38, 0.00),   # тёмный янтарь — читаем на голубом
         "C_BAR_ON":    _rgba(0.00, 0.18, 0.52),
         "C_BAR_OFF":   _rgba(0.808, 0.852, 0.898),
     },
@@ -1191,6 +1287,7 @@ _THEMES = {
         "C_TEXT":      _rgba(0.22, 0.10, 0.00),
         "C_IDLE":      _rgba(0.46, 0.28, 0.08),
         "C_CYAN":      _rgba(0.00, 0.26, 0.44),
+        "C_YEL":       _rgba(0.54, 0.28, 0.00),   # тёмный янтарь — читаем на бежевом
         "C_BAR_ON":    _rgba(0.38, 0.20, 0.00),
         "C_BAR_OFF":   _rgba(0.898, 0.858, 0.768),
     },
@@ -1203,6 +1300,7 @@ _THEMES = {
         "C_TEXT":      _rgba(0.00, 0.16, 0.26),
         "C_IDLE":      _rgba(0.08, 0.38, 0.48),
         "C_CYAN":      _rgba(0.44, 0.00, 0.44),
+        "C_YEL":       _rgba(0.56, 0.34, 0.00),   # тёмный янтарь — читаем на ледяном
         "C_BAR_ON":    _rgba(0.00, 0.30, 0.40),
         "C_BAR_OFF":   _rgba(0.812, 0.882, 0.892),
     },
@@ -1216,6 +1314,7 @@ _THEMES = {
         "C_TEXT":      _rgba(0.33, 1.00, 0.33),
         "C_IDLE":      _rgba(0.00, 0.72, 0.00),   # idle = чуть темнее C_GREEN
         "C_CYAN":      _rgba(0.33, 1.00, 1.00),
+        "C_YEL":       _rgba(1.00, 0.85, 0.00),   # яркий жёлтый на тёмно-зелёном
         "C_BAR_ON":    _rgba(0.33, 1.00, 0.33),
         "C_BAR_OFF":   _rgba(0.00, 0.18, 0.00),
     },
@@ -1228,6 +1327,7 @@ _THEMES = {
         "C_TEXT":      _rgba(0.33, 1.00, 1.00),
         "C_IDLE":      _rgba(0.00, 0.60, 0.82),   # idle = чуть ярче dim
         "C_CYAN":      _rgba(1.00, 1.00, 0.33),
+        "C_YEL":       _rgba(1.00, 0.75, 0.20),   # янтарный на тёмно-синем
         "C_BAR_ON":    _rgba(0.33, 1.00, 1.00),
         "C_BAR_OFF":   _rgba(0.00, 0.06, 0.20),
     },
@@ -1240,6 +1340,7 @@ _THEMES = {
         "C_TEXT":      _rgba(1.00, 0.33, 1.00),
         "C_IDLE":      _rgba(0.72, 0.00, 0.72),   # idle = между dim и C_GREEN
         "C_CYAN":      _rgba(0.33, 1.00, 1.00),
+        "C_YEL":       _rgba(1.00, 0.85, 0.00),   # яркий жёлтый на тёмно-фиолетовом
         "C_BAR_ON":    _rgba(1.00, 0.33, 1.00),
         "C_BAR_OFF":   _rgba(0.15, 0.00, 0.18),
     },
@@ -1252,6 +1353,7 @@ _THEMES = {
         "C_TEXT":      _rgba(1.00, 1.00, 0.33),
         "C_IDLE":      _rgba(0.78, 0.60, 0.00),   # idle = между dim и C_GREEN
         "C_CYAN":      _rgba(0.33, 1.00, 0.33),
+        "C_YEL":       _rgba(1.00, 0.95, 0.65),   # светло-жёлтый (почти белый) на янтарном
         "C_BAR_ON":    _rgba(1.00, 1.00, 0.33),
         "C_BAR_OFF":   _rgba(0.18, 0.12, 0.00),
     },
@@ -1272,7 +1374,7 @@ _THEME_META = [
 ]
 
 def _apply_theme(name, _save=True):
-    global C_BG, C_GREEN, C_GREEN_BR, C_GREEN_DIM, C_GREEN_BORD, C_TEXT, C_IDLE, C_CYAN, C_BAR_ON, C_BAR_OFF
+    global C_BG, C_GREEN, C_GREEN_BR, C_GREEN_DIM, C_GREEN_BORD, C_TEXT, C_IDLE, C_CYAN, C_BAR_ON, C_BAR_OFF, C_YEL
     t = _THEMES.get(name, _THEMES["emerald"])
     C_BG         = t["C_BG"]
     C_GREEN      = t["C_GREEN"]
@@ -1284,6 +1386,7 @@ def _apply_theme(name, _save=True):
     C_CYAN       = t["C_CYAN"]
     C_BAR_ON     = t["C_BAR_ON"]
     C_BAR_OFF    = t["C_BAR_OFF"]
+    C_YEL        = t.get("C_YEL", _rgba(1.00, 0.85, 0.00))
     _st["theme"] = name
     if _save:
         _save_settings()
@@ -1348,6 +1451,14 @@ def _apply_theme_to_all_windows():
             cv = sw.contentView()
             if cv:
                 _redisplay_tree(cv)
+
+    # Кнопки главного окна — перекрашиваем с новыми C_* (NSButton не перерисовывает себя сам)
+    _refresh_main_tooltips()
+    # Лейбл имени сценария (жёлтый — теперь тематический)
+    lbl = globals().get("_proc_sc_lbl")
+    if lbl:
+        try: lbl.setTextColor_(C_YEL)
+        except Exception: pass
 
     # Повторно отрендерить rich-блоки с новыми цветами темы
     for _b in list(globals().get("_rich_blocks", [])):
@@ -3577,13 +3688,26 @@ class BtnTarget(AppKit.NSObject):
         _refresh_status_label()
         _refresh_scenario_colors()
         _refresh_menu_titles()
-        # Пересобрать панель config с новым языком (сохранить позицию окна — немедленно переоткрыть)
-        _close_cfg_panel_rebuild()
-        _toggle_cfg_panel()
+        _refresh_main_tooltips()
+        # Обновить тексты cfg_panel на месте — без закрытия/открытия (без моргания)
+        _refresh_cfg_texts()
+        _refresh_sc_cfg_avail()
         # Пересобрать редактор сценариев с новым языком (сохраняет sc_idx, теряет несохранённые правки)
         if _editing_scenario and _sc_editor_panel:
             sc_idx = (_sc_edit_refs or {}).get("sc_idx")
             _show_sc_editor(sc_idx)
+        # Пересобрать панель истории если открыта (вкладки фильтров)
+        global _hist_panel
+        if _hist_panel and _hist_panel.isVisible() and _hist_ctrl:
+            history_data = list(_hist_ctrl._all_items)
+            _hist_panel.orderOut_(None)
+            _hist_panel.close()
+            _hist_panel = None
+            _show_hist_panel(history_data)
+        # Пересобрать панель провайдеров если открыта (заголовок)
+        if _prov_panel and _prov_panel.isVisible():
+            _close_providers_panel()
+            _toggle_providers_panel()
 
 
     def hushCopyText_(self, sender):
@@ -4147,6 +4271,7 @@ _hist_panel       = None   # drop panel для истории
 _hist_panel_side  = None   # "below" | "right" | "left" — текущее размещение
 _hist_filter      = "blocks"   # "mixed" | "sessions" | "blocks" — активная вкладка
 _cfg_panel        = None   # drop panel для настроек (остаётся открытым во время редактирования)
+_cfg_text_refs    = {}    # {key: NSView/NSButton/NSBox} для живого обновления текстов при смене языка
 _pre_cfg_win_y    = None   # (устаревший, не используется — панели больше не сдвигают главное окно)
 _panels_reset_open = False  # True после нажатия 🎯 открывает все; второе нажатие закрывает все
 _sc_editor_panel  = None   # панель редактора сценариев (перекрывает главное окно при редактировании)
@@ -4942,6 +5067,7 @@ def _start_sc_avail_check():
             avail[i] = _model_available(m) if m else True
         _sc_avail.update(avail)
         _main(_refresh_scenario_colors)
+        _main(_refresh_sc_cfg_avail)
 
     threading.Thread(target=_run, daemon=True).start()
 
@@ -5259,12 +5385,136 @@ def _reset_panels_layout():
     _reposition_attached_panels()
 
 
+def _force_cross_layout():
+    """Расставить все видимые панели по паттерну грида (зависит от размера экрана).
+    Паттерн выбирается исходя из числа ячеек которые помещаются на экран:
+      3×3+  → классический крест (cfg выше, providers слева, hist ниже, editor справа)
+      3×2   → providers слева, main по центру, cfg справа; hist под main, editor под providers
+      2×2   → main слева-сверху, cfg справа; hist под main, providers под cfg
+    После расстановки вся группа (main+панели) сдвигается чтобы bbox был на экране.
+    """
+    win = globals().get("_win")
+    if not win:
+        return
+    mf = win.frame()
+    wx, wy = int(mf.origin.x), int(mf.origin.y)
+    ww, wh = int(mf.size.width), int(mf.size.height)
+    G = _SNAP_GAP
+    pw = W  # все панели одной ширины
+
+    # Собрать видимые панели и их реальные высоты
+    panel_defs = [
+        ("cfg",       "_cfg_panel"),
+        ("providers", "_prov_panel"),
+        ("hist",      "_hist_panel"),
+        ("editor",    "_sc_editor_panel"),
+    ]
+    visible = {}  # key → panel
+    ph_of   = {}  # key → реальная высота
+    for key, gvar in panel_defs:
+        p = globals().get(gvar)
+        if p and p.isVisible():
+            visible[key] = p
+            ph_of[key] = int(p.frame().size.height)
+
+    if not visible:
+        return
+
+    # Размер экрана
+    cx = wx + ww // 2
+    cy = wy + wh // 2
+    vx, vy, vx2, vy2 = _screen_bounds_at(cx, cy)
+    sw, sh = vx2 - vx, vy2 - vy
+
+    # Типовая высота для расчёта вместимости
+    ph_typ = max(ph_of.values()) if ph_of else H_PANEL
+
+    # Количество ячеек которые помещаются на экран
+    max_cols = max(1, int(sw // (pw + G)))
+    max_rows = max(1, int(sh // (ph_typ + G)))
+
+    # Выбор паттерна: (col, row) относительно main при wx=wy=0
+    # Используем ph_typ для вычисления относительных позиций
+    if max_cols >= 3 and max_rows >= 3:
+        # Идеальный крест
+        pattern = {
+            "cfg":       (0,  1),
+            "providers": (-1, 0),
+            "hist":      (0, -1),
+            "editor":    (1,  0),
+        }
+    elif max_cols >= 3:
+        # 3 колонки, 2 ряда: [prov][main][cfg] / [editor][hist][ ]
+        pattern = {
+            "cfg":       (1,  0),
+            "providers": (-1, 0),
+            "hist":      (0, -1),
+            "editor":    (-1, -1),
+        }
+    elif max_rows >= 3:
+        # 2 колонки, 3 ряда: [cfg][  ] / [main][ed] / [hist][  ]
+        pattern = {
+            "cfg":       (0,  1),
+            "providers": (-1, 0),
+            "hist":      (0, -1),
+            "editor":    (1,  0),
+        }
+    else:
+        # 2×2: [main][cfg] / [hist][prov] + editor в диагональ если есть
+        pattern = {
+            "cfg":       (1,  0),
+            "hist":      (0, -1),
+            "providers": (1, -1),
+            "editor":    (2,  0),
+        }
+
+    # Вычислить относительные позиции панелей (при wx=wy=0) через _cell_to_pos
+    rel = {}
+    for key, (col, row) in pattern.items():
+        if key not in visible:
+            continue
+        ph = ph_of[key]
+        # Используем ph_typ для row чтобы вертикальные зазоры были единообразными
+        nx, ny = _cell_to_pos(col, row, 0, 0, ww, wh, pw, ph_typ)
+        rel[key] = (nx, ny, ph)
+
+    # Bbox всей группы относительно (0,0) — включая main (0,0,ww,wh)
+    all_x0 = [0] + [v[0] for v in rel.values()]
+    all_y0 = [0] + [v[1] for v in rel.values()]
+    all_x1 = [ww] + [v[0] + pw   for v in rel.values()]
+    all_y1 = [wh] + [v[1] + v[2] for v in rel.values()]
+    bx0, by0 = min(all_x0), min(all_y0)
+    bx1, by1 = max(all_x1), max(all_y1)
+    bbox_w, bbox_h = bx1 - bx0, by1 - by0
+
+    # Целевая позиция bbox — по центру экрана
+    target_bx = vx + (sw - bbox_w) // 2
+    target_by = vy + (sh - bbox_h) // 2
+
+    # Позиция main исходя из bbox
+    new_wx = target_bx - bx0
+    new_wy = target_by - by0
+
+    # Переместить main
+    win.setFrameOrigin_(AppKit.NSMakePoint(new_wx, new_wy))
+
+    # Разместить панели
+    for key, (rx, ry, ph) in rel.items():
+        panel = visible[key]
+        nx = new_wx + rx
+        ny = new_wy + ry
+        panel.setFrameOrigin_(AppKit.NSMakePoint(nx, ny))
+        _magnet_offset[key] = (nx - new_wx, ny - new_wy)
+
+    _magnet_save()
+
+
 def _reset_to_cross_layout():
     """[🔄] Reset panel layout.
     In expanded mode → 2×2 compact grid (panels gather as a square).
     In normal mode   → classic cross around main window, all magnets ON.
     """
-    global _magnet_on, _magnet_offset, _magnet_free_pos, _panels_reset_open, _cluster_mode, _cluster_offsets
+    global _magnet_on, _magnet_offset, _magnet_free_pos, _panels_reset_open, _cluster_mode, _cluster_offsets, _hist_panel
 
     if globals().get("_expanded"):
         # ── Развёрнутый / кластерный режим: собрать панели в сетку 2×2 ──────────────
@@ -5299,35 +5549,37 @@ def _reset_to_cross_layout():
     _panels_reset_open = True
     _magnet_on       = {k: True for k in _MAGNET_KEYS}
     _magnet_free_pos = {}
+    _magnet_offset   = {}   # сбросить — _assign_cell будет использовать _PANEL_PREF_CELL
     for k in _MAGNET_KEYS:
         _update_magnet_btn(k)
     win = globals().get("_win")
     if not win:
         _magnet_save()
         return
-    mf = win.frame()
-    ww = int(mf.size.width)
-    wh = int(mf.size.height)
-    G  = _SNAP_GAP
-    _magnet_offset = {
-        "cfg":       (0,         wh + 4),
-        "hist":      (0,        -(H_PANEL + G)),
-        "editor":    (ww + G,    0),
-        "providers": (-(ww + G), 0),
-    }
+
     _magnet_save()
+
+    # Закрыть ВСЕ панели перед переоткрытием — позиции вычисляются через _assign_cell
     if _cfg_panel and _cfg_panel.isVisible():
         _close_cfg_panel_rebuild()
+    if _prov_panel and _prov_panel.isVisible():
+        _close_providers_panel()
+    if _sc_editor_panel and _sc_editor_panel.isVisible():
+        _close_editor_now()
+    if _hist_panel and _hist_panel.isVisible():
+        _hist_panel.orderOut_(None)
+        _hist_panel = None
+
+    # Открыть панели, затем принудительно расставить без нахлёстов
     _toggle_cfg_panel()
-    if not (_prov_panel and _prov_panel.isVisible()):
-        _toggle_providers_panel()
+    _toggle_providers_panel()
     sc_list = _st.get("scenarios", [])
-    if sc_list and not (_sc_editor_panel and _sc_editor_panel.isVisible()):
+    if sc_list:
         _show_sc_editor_impl(0)
     history = _on_history_cb() if _on_history_cb else []
-    if not (_hist_panel and _hist_panel.isVisible()):
-        _show_hist_panel(history)
-    _reposition_attached_panels()
+    _show_hist_panel(history)
+    # Принудительная расстановка: каждая панель — on-screen и без нахлёста
+    _force_cross_layout()
 
 
 def _restore_overlay_after_panel():
@@ -5533,6 +5785,80 @@ def _refresh_menu_titles():
         btn.setToolTip_(_T("menu_tooltip"))
 
 
+def _refresh_cfg_texts():
+    """Обновить все тексты cfg_panel на месте при смене языка — без пересборки и моргания."""
+    refs = _cfg_text_refs
+    if not refs:
+        return
+    try:
+        if refs.get("hdr"):       refs["hdr"].setStringValue_(_T("cfg_title"))
+        if refs.get("btn_keys"):
+            refs["btn_keys"].setAttributedTitle_(_atitle(_T("btn_keys"), size=9, color=C_GREEN_DIM))
+            refs["btn_keys"].setToolTip_(_T("cfg_prov_tip"))
+        if refs.get("btn_info"):  refs["btn_info"].setToolTip_(_T("cfg_about_tip"))
+        if refs.get("btn_quit"):  refs["btn_quit"].setAttributedTitle_(_atitle(_T("btn_quit"), size=10, color=C_REC))
+        if refs.get("btn_cross"): refs["btn_cross"].setToolTip_(_T("cfg_reset_tip"))
+        if refs.get("btn_rst"):   refs["btn_rst"].setToolTip_(_T("cfg_panels_tip"))
+        for key, box in refs.get("boxes", {}).items():
+            box.setTitle_(f" {_T(key)} ")
+        fb = refs.get("font_btns", [])
+        if len(fb) >= 2:
+            fb[0].setToolTip_(_T("cfg_font_dec"))
+            fb[1].setToolTip_(_T("cfg_font_inc"))
+        _tl = _T("theme_light"); _td = _T("theme_dark")
+        new_labels = {
+            "paper": f"Paper ({_tl})", "sky": f"Sky ({_tl})",
+            "sand": f"Sand ({_tl})", "arctic": f"Arctic ({_tl})",
+            "emerald": f"Emerald ({_td})", "ocean": f"Ocean ({_td})",
+            "neon": f"Neon ({_td})", "gold": f"Gold ({_td})",
+        }
+        for tname, tb in refs.get("theme_btns", {}).items():
+            tb.setToolTip_(new_labels.get(tname, tname))
+        cur_lang = _st.get("lang", "ru")
+        for i, lb in enumerate(refs.get("lang_btns", [])):
+            color = C_GREEN_BR if (LANGS[i] == cur_lang) else C_GREEN_DIM
+            lb.setAttributedTitle_(_atitle(["[RU]", "[EN]", "[ES]"][i], size=9, color=color))
+    except Exception:
+        pass
+
+
+def _refresh_main_tooltips():
+    """Обновить тексты и тулсчипы кнопок главного окна при смене языка."""
+    try:
+        # Тулсчипы
+        if _undo_sc_btn:     _undo_sc_btn.setToolTip_(_T("tip_undo_sc"))
+        if _cfg_hdr_btn:     _cfg_hdr_btn.setToolTip_(_T("tip_cfg"))
+        if _hist_btn:        _hist_btn.setToolTip_(_T("tip_hist"))
+        if _send_hdr_btn:    _send_hdr_btn.setToolTip_(_T("tip_insert"))
+        if _action_copy_btn: _action_copy_btn.setToolTip_(_T("tip_copy"))
+        if _sc_copy_btn2:    _sc_copy_btn2.setToolTip_(_T("tip_copy"))
+        if _hist_corner_btn: _hist_corner_btn.setToolTip_(_T("tip_hist_expand"))
+        for key, btn in _magnet_btns.items():
+            is_on = _magnet_on.get(key, False)
+            btn.setToolTip_(_T("tip_magnet_unpin") if is_on else _T("tip_magnet_pin"))
+        # Тексты кнопок action row (4 кнопки)
+        if _action_cancel_btn:
+            _action_cancel_btn.setAttributedTitle_(_atitle(_T("btn_sc_undo"), size=11, color=C_IDLE))
+        if _action_scene_btn:
+            _action_scene_btn.setAttributedTitle_(_atitle(_T("btn_scene"), size=11, color=C_YEL))
+        if _action_copy_btn:
+            _action_copy_btn.setAttributedTitle_(_atitle(_T("btn_copy"), size=11, color=C_CYAN))
+        if _action_send_btn:
+            _action_send_btn.setAttributedTitle_(_atitle(_T("btn_sc_accept"), size=11, color=C_GREEN_BR))
+        # Тексты кнопок сценарной панели (3 кнопки)
+        if _sc_cancel_btn2:
+            _sc_cancel_btn2.setAttributedTitle_(_atitle(_T("btn_sc_undo"), size=12, color=C_CYAN))
+        if _sc_copy_btn2:
+            _sc_copy_btn2.setAttributedTitle_(_atitle(_T("btn_copy"), size=12, color=C_CYAN))
+        if _sc_send_btn2:
+            _sc_send_btn2.setAttributedTitle_(_atitle(_T("btn_sc_accept"), size=12, color=C_GREEN_BR))
+        # Кнопка истории в заголовке
+        if _hist_btn:
+            _hist_btn.setAttributedTitle_(_atitle(_T("btn_hist"), size=11, color=C_CYAN))
+    except Exception:
+        pass
+
+
 def _setup_status_bar():
     """Создать пункт статус-бара macOS с локализованным меню."""
     global _status_bar_item
@@ -5718,8 +6044,30 @@ def _about_tt_create(text):
     _tt_panel = panel
 
 
+def _panel_pos_near_win(pw, ph, gap=8):
+    """Вернуть (x, y) для панели pw×ph рядом с _win на ближайшей свободной грани."""
+    if _win is None:
+        sf = AppKit.NSScreen.mainScreen().visibleFrame()
+        return sf.origin.x + (sf.size.width - pw) / 2, sf.origin.y + (sf.size.height - ph) / 2
+    wf = _win.frame()
+    wx, wy, ww, wh = wf.origin.x, wf.origin.y, wf.size.width, wf.size.height
+    sf = AppKit.NSScreen.mainScreen().visibleFrame()
+    sx, sy, sw, sh = sf.origin.x, sf.origin.y, sf.size.width, sf.size.height
+    cy = max(sy, min(wy + (wh - ph) / 2, sy + sh - ph))   # центрирование по вертикали
+    cx = max(sx, min(wx + (ww - pw) / 2, sx + sw - pw))   # центрирование по горизонтали
+    if wx + ww + gap + pw <= sx + sw:
+        return wx + ww + gap, cy       # справа
+    if wx - gap - pw >= sx:
+        return wx - gap - pw, cy       # слева
+    if wy - gap - ph >= sy:
+        return cx, wy - gap - ph       # снизу
+    if wy + wh + gap + ph <= sy + sh:
+        return cx, wy + wh + gap       # сверху
+    return sx + (sw - pw) / 2, sy + (sh - ph) / 2   # по центру экрана
+
+
 def _show_about_view():
-    """Показать карточку «О программе» как отдельный NSPanel центрированный на экране."""
+    """Показать карточку «О программе» как отдельный NSPanel рядом с главным окном."""
     global _about_panel
 
     _hide_about_view()
@@ -5727,9 +6075,7 @@ def _show_about_view():
     AW, AH = 560, 480
     PAD    = 16
 
-    sf = AppKit.NSScreen.mainScreen().frame()
-    px = sf.origin.x + (sf.size.width  - AW) / 2
-    py = sf.origin.y + (sf.size.height - AH) / 2
+    px, py = _panel_pos_near_win(AW, AH)
 
     ap = _AboutPanel.alloc().initWithContentRect_styleMask_backing_defer_(
         AppKit.NSMakeRect(px, py, AW, AH),
@@ -5754,7 +6100,7 @@ def _show_about_view():
     LBL_H  = 16
 
     # ── Верхний левый угол: версия ───────────────────────────────────────────
-    ver_tf = AppKit.NSTextField.labelWithString_("v1.0")
+    ver_tf = AppKit.NSTextField.labelWithString_("v1.1")
     ver_tf.setEditable_(False); ver_tf.setBezeled_(False); ver_tf.setDrawsBackground_(False)
     ver_tf.setFont_(_mono(9, False))
     ver_tf.setTextColor_(C_GREEN_DIM)
@@ -5896,6 +6242,7 @@ def _show_hist_panel(history):
         _hist_panel.close()
 
     _hist_panel = _make_drop_panel(pw, ph)
+    _hist_panel.setAlphaValue_(_st.get("opacity", 0.88))
     _hist_panel._panel_key = "hist"
     cv = _hist_panel.contentView()
 
@@ -6294,6 +6641,49 @@ def _update_sc_cfg_colors():
             btn.setAttributedTitle_(_atitle(label, size=9, color=color))
 
 
+def _refresh_sc_cfg_avail():
+    """Обновить цвета кнопок сценариев в cfg панели по текущему _sc_avail (вызывать с main thread)."""
+    if not _cfg_panel or not _cfg_panel.isVisible():
+        return
+    C_ERR = _rgba(0.9, 0.2, 0.2, 1.0)
+    editing_idx = _sc_edit_refs.get("sc_idx") if _editing_scenario else None
+    scenarios   = _st.get("scenarios", [])
+    lang        = _st.get("lang", "ru")
+    ps = AppKit.NSMutableParagraphStyle.alloc().init()
+    ps.setAlignment_(AppKit.NSTextAlignmentCenter)
+    for sc_idx, btn in _sc_cfg_buttons.items():
+        if sc_idx >= len(scenarios):
+            continue
+        sc     = scenarios[sc_idx]
+        label  = _sc_label_for(sc, lang)
+        is_sil = bool(sc.get("silent"))
+        is_fd  = bool(sc.get("full_default"))
+        avail  = _sc_avail.get(sc_idx, True)
+        if not avail:
+            color = C_ERR
+        elif sc_idx == editing_idx:
+            color = C_CYAN
+        else:
+            color = C_GREEN
+        a = {AppKit.NSFontAttributeName: _mono(9),
+             AppKit.NSForegroundColorAttributeName: color,
+             AppKit.NSParagraphStyleAttributeName: ps}
+        if is_sil or is_fd:
+            mstr = AppKit.NSMutableAttributedString.alloc().init()
+            parts = []
+            if is_fd:  parts.append("[")
+            if is_sil: parts.append("·")
+            parts.append(label)
+            if is_sil: parts.append("·")
+            if is_fd:  parts.append("]")
+            for p in parts:
+                mstr.appendAttributedString_(
+                    AppKit.NSAttributedString.alloc().initWithString_attributes_(p, a))
+            btn.setAttributedTitle_(mstr)
+        else:
+            btn.setAttributedTitle_(_atitle(label, size=9, color=color))
+
+
 def _panel_appearance():
     """NSAppearance для панелей: светлая/тёмная по текущей теме."""
     name = (AppKit.NSAppearanceNameAqua
@@ -6639,7 +7029,7 @@ def _show_sc_editor_impl(sc_idx):
     has_right_btn = is_default_sc or is_custom_sc
     _mkmagnet_btn("editor", cv, 6, y - LABEL_H - 2, 22, LABEL_H + 4)
     hdr_w = EDIT_W - MAG_END - MARGIN - (RIGHT_BTN_W + 4 if has_right_btn else 0)
-    hdr = _mklabel("НАСТРОЙКИ СЦЕНАРИЯ", size=10, color=C_IDLE)
+    hdr = _mklabel(_T("sc_editor_title"), size=10, color=C_IDLE)
     hdr.setFrame_(AppKit.NSMakeRect(MAG_END, y - LABEL_H, hdr_w, LABEL_H))
     cv.addSubview_(hdr)
     if is_default_sc:
@@ -6696,16 +7086,16 @@ def _show_sc_editor_impl(sc_idx):
     HALF_W = (FW - 6) // 2
 
     # метка провайдера + метка модели
-    lbl_p = _mklabel("провайдер", size=9, color=C_IDLE)
+    lbl_p = _mklabel(_T("sc_provider_lbl"), size=9, color=C_IDLE)
     lbl_p.setFrame_(AppKit.NSMakeRect(MARGIN, y - LABEL_H, HALF_W, LABEL_H))
     cv.addSubview_(lbl_p)
-    lbl_m = _mklabel("модель", size=9, color=C_IDLE)
+    lbl_m = _mklabel(_T("sc_model_lbl"), size=9, color=C_IDLE)
     lbl_m.setFrame_(AppKit.NSMakeRect(MARGIN + HALF_W + 6, y - LABEL_H, HALF_W, LABEL_H))
     cv.addSubview_(lbl_m)
     y -= LABEL_H + 2
 
     # попап провайдера
-    prov_items = ["авто"] + _pc.available_providers()
+    prov_items = [_T("sc_auto")] + _pc.available_providers()
     pop_prov = _TerminalPopup.alloc().initWithFrame_(
         AppKit.NSMakeRect(MARGIN, y - TF_H, HALF_W, TF_H))
     pop_prov.addItemsWithTitles_(prov_items)
@@ -6757,12 +7147,12 @@ def _show_sc_editor_impl(sc_idx):
     # ── Нижняя строка: кнопки Отмена + Сохранить ─────────────────────────────────────────
     FOOT_H  = MARGIN + BTN_H + 6 + 1   # margin + btn + gap + sep
     cv.addSubview_(_sep_line(MARGIN, MARGIN + BTN_H + 6, FW, pin="top"))
-    btn_cancel = _mkbtn("[Отмена]", color=C_GREEN_DIM, size=10)
+    btn_cancel = _mkbtn(_T("btn_cancel"), color=C_GREEN_DIM, size=10)
     btn_cancel.setFrame_(AppKit.NSMakeRect(MARGIN, MARGIN, BTN_W, BTN_H))
     btn_cancel.setTarget_(_btn_t)
     btn_cancel.setAction_(BtnTarget.cfgScCancel_)
     cv.addSubview_(btn_cancel)
-    btn_save = _mkbtn("[Сохранить]", color=C_GREEN_BR, size=10)
+    btn_save = _mkbtn(_T("btn_save"), color=C_GREEN_BR, size=10)
     btn_save.setFrame_(AppKit.NSMakeRect(EDIT_W - MARGIN - BTN_W, MARGIN, BTN_W, BTN_H))
     btn_save.setTarget_(_btn_t)
     btn_save.setAction_(BtnTarget.cfgScSave_)
@@ -6840,6 +7230,7 @@ def _show_sc_editor_impl(sc_idx):
         },
     }
     _sc_editor_panel = panel
+    _sc_editor_panel.setAlphaValue_(_st.get("opacity", 0.88))
     _sc_editor_panel._panel_key = "editor"
     _editing_scenario = True
 
@@ -7013,7 +7404,7 @@ def _toggle_cfg_panel():
     # ── Вспомогательная функция блока fieldset ───────────────────────────────────────────────────────
     def _fieldset(x, y, w, h, title):
         """Создать именованный fieldset (NSBox, заголовок NSAtTop прорезает верхнюю границу).
-        Возвращает (contentView, content_w, content_h)."""
+        Возвращает (contentView, content_w, content_h, box)."""
         box = AppKit.NSBox.alloc().initWithFrame_(AppKit.NSMakeRect(x, y, w, h))
         box.setBoxType_(AppKit.NSBoxCustom)
         box.setTitle_(f" {title} ")
@@ -7026,7 +7417,7 @@ def _toggle_cfg_panel():
         cv.addSubview_(box)
         box.titleCell().setTextColor_(C_GREEN_DIM)
         bcv = box.contentView()
-        return bcv, int(bcv.frame().size.width), int(bcv.frame().size.height)
+        return bcv, int(bcv.frame().size.width), int(bcv.frame().size.height), box
 
     # ── Кнопки [ⓘ] INFO + [КЛЮЧИ] — верхний правый угол панели ──────────────────
     INFO_SZ  = 18
@@ -7035,23 +7426,23 @@ def _toggle_cfg_panel():
     btn_info.setFrame_(AppKit.NSMakeRect(pw - INFO_SZ - 8, ph - INFO_SZ - 4, INFO_SZ, INFO_SZ))
     btn_info.setTarget_(_btn_t)
     btn_info.setAction_(BtnTarget.cfgInfo_)
-    btn_info.setToolTip_("О приложении")
+    btn_info.setToolTip_(_T("cfg_about_tip"))
     cv.addSubview_(btn_info)
 
-    btn_keys = _mkbtn("[КЛЮЧИ]", color=C_GREEN_DIM, size=9)
+    btn_keys = _mkbtn(_T("btn_keys"), color=C_GREEN_DIM, size=9)
     btn_keys.setFrame_(AppKit.NSMakeRect(pw - INFO_SZ - KEYS_W - 14, ph - INFO_SZ - 4, KEYS_W, INFO_SZ))
     btn_keys.setTarget_(_btn_t)
     btn_keys.setAction_(BtnTarget.cfgProviders_)
-    btn_keys.setToolTip_("Настройка провайдеров и API ключей")
+    btn_keys.setToolTip_(_T("cfg_prov_tip"))
     cv.addSubview_(btn_keys)
 
     _mkmagnet_btn("cfg", cv, 6, ph - INFO_SZ - 4, 22, INFO_SZ)
-    cfg_hdr = _mklabel("НАСТРОЙКИ", size=10, color=C_IDLE)
+    cfg_hdr = _mklabel(_T("cfg_title"), size=10, color=C_IDLE)
     cfg_hdr.setFrame_(AppKit.NSMakeRect(32, ph - INFO_SZ - 4, pw - 32 - INFO_SZ - KEYS_W - 20, INFO_SZ))
     cv.addSubview_(cfg_hdr)
 
     # ── FIELDSET ПРОЗРАЧНОСТИ (узкий) ─────────────────────────────────────────────────
-    op_cv, op_cw, op_ch = _fieldset(op_x, box_y, op_w, BOX_H, _T("cfg_opacity"))
+    op_cv, op_cw, op_ch, op_box = _fieldset(op_x, box_y, op_w, BOX_H, _T("cfg_opacity"))
     sl = TerminalSlider.alloc().initWithFrame_(
         AppKit.NSMakeRect(4, (op_ch - 20) // 2, op_cw - 8, 20))
     sl.setMinValue_(0.40)
@@ -7062,27 +7453,30 @@ def _toggle_cfg_panel():
     op_cv.addSubview_(sl)
 
     # ── FIELDSET ШРИФТА ─────────────────────────────────────────────────────────────
-    fn_cv, fn_cw, fn_ch = _fieldset(fn_x, box_y, fn_w, BOX_H, _T("cfg_font"))
+    fn_cv, fn_cw, fn_ch, fn_box = _fieldset(fn_x, box_y, fn_w, BOX_H, _T("cfg_font"))
     FBTN_W = max(28, (fn_cw - 8) // 2)
     fn_start_x = (fn_cw - 2 * FBTN_W - 4) // 2
     fn_btn_y   = (fn_ch - 22) // 2
+    _font_btns = []
     for j, (lbl_txt, act, tip) in enumerate(
-            [("[A-]", BtnTarget.cfgFontDec_, "Уменьшить шрифт"),
-             ("[A+]", BtnTarget.cfgFontInc_, "Увеличить шрифт")]):
+            [("[A-]", BtnTarget.cfgFontDec_, _T("cfg_font_dec")),
+             ("[A+]", BtnTarget.cfgFontInc_, _T("cfg_font_inc"))]):
         b = _mkbtn(lbl_txt, color=C_GREEN, size=11)
         b.setFrame_(AppKit.NSMakeRect(fn_start_x + j * (FBTN_W + 4), fn_btn_y, FBTN_W, 22))
         b.setTarget_(_btn_t)
         b.setAction_(act)
         b.setToolTip_(tip)
         fn_cv.addSubview_(b)
+        _font_btns.append(b)
 
     # ── FIELDSET ЯЗЫКА ─────────────────────────────────────────────────────────
-    la_cv, la_cw, la_ch = _fieldset(la_x, box_y, la_w, BOX_H, _T("cfg_lang"))
+    la_cv, la_cw, la_ch, la_box = _fieldset(la_x, box_y, la_w, BOX_H, _T("cfg_lang"))
     cur_lang = _st.get("lang", "ru")
     LANG_H   = 18
     LANG_G   = 2
     lang_total_h = 3 * LANG_H + 2 * LANG_G
     lang_start_y = (la_ch - lang_total_h) // 2
+    _lang_btns = []
     for i, lbl_txt in enumerate(["[RU]", "[EN]", "[ES]"]):
         active = (LANGS[i] == cur_lang)
         color  = C_GREEN_BR if active else C_GREEN_DIM
@@ -7092,9 +7486,10 @@ def _toggle_cfg_panel():
         lb.setTarget_(_btn_t)
         lb.setAction_(BtnTarget.cfgLang_)
         la_cv.addSubview_(lb)
+        _lang_btns.append(lb)
 
     # ── FIELDSET ТЕМ (полная ширина, 2 ряда × 4 квадрата: светлые / тёмные) ───────────
-    th_cv, th_cw, th_ch = _fieldset(th_x, hk_th_y, th_w, HK_TH_H, _T("cfg_theme"))
+    th_cv, th_cw, th_ch, th_box = _fieldset(th_x, hk_th_y, th_w, HK_TH_H, _T("cfg_theme"))
     cur_theme  = _st.get("theme", "emerald")
     n_light    = _N_LIGHT                      # 4 светлые темы (верхний ряд)
     n_dark     = len(_THEME_META) - n_light    # 4 тёмные темы (нижний ряд)
@@ -7112,11 +7507,12 @@ def _toggle_cfg_panel():
     except Exception:
         _CALayer = None
 
+    _tl = _T("theme_light"); _td = _T("theme_dark")
     _THEME_LABELS = {
-        "paper": "Paper (светлая)", "sky": "Sky (светлая)",
-        "sand": "Sand (светлая)", "arctic": "Arctic (светлая)",
-        "emerald": "Emerald (тёмная)", "ocean": "Ocean (тёмная)",
-        "neon": "Neon (тёмная)", "gold": "Gold (тёмная)",
+        "paper": f"Paper ({_tl})", "sky": f"Sky ({_tl})",
+        "sand": f"Sand ({_tl})", "arctic": f"Arctic ({_tl})",
+        "emerald": f"Emerald ({_td})", "ocean": f"Ocean ({_td})",
+        "neon": f"Neon ({_td})", "gold": f"Gold ({_td})",
     }
 
     def _make_swatch(tname, tbg, tcolor, idx, sq_x, sq_y_val):
@@ -7156,17 +7552,19 @@ def _toggle_cfg_panel():
         tb.setAction_(BtnTarget.cfgTheme_)
         tb.setToolTip_(_THEME_LABELS.get(tname, tname))
         th_cv.addSubview_(tb)
+        return tb
 
+    _theme_btns = {}
     # Ряд 1 (вверх): светлые темы — от края SQ_EDGE, равные промежутки
     for i, (tname, tbg, tcolor) in enumerate(_THEME_META[:n_light]):
-        _make_swatch(tname, tbg, tcolor, i, SQ_EDGE + i * (sq_w + SQ_PAD), sq_y_light)
+        _theme_btns[tname] = _make_swatch(tname, tbg, tcolor, i, SQ_EDGE + i * (sq_w + SQ_PAD), sq_y_light)
 
     # Ряд 2 (низ): тёмные темы — от края SQ_EDGE, равные промежутки
     for i, (tname, tbg, tcolor) in enumerate(_THEME_META[n_light:]):
-        _make_swatch(tname, tbg, tcolor, n_light + i, SQ_EDGE + i * (sq_w + SQ_PAD), sq_y_dark)
+        _theme_btns[tname] = _make_swatch(tname, tbg, tcolor, n_light + i, SQ_EDGE + i * (sq_w + SQ_PAD), sq_y_dark)
 
     # ── FIELDSET СЦЕНАРИЕВ ────────────────────────────────────────────────────────
-    sc_cv, sc_cw, sc_ch = _fieldset(MARGIN, sc_box_y, inner_w, SC_BOX_H, _T("cfg_scenes"))
+    sc_cv, sc_cw, sc_ch, sc_box = _fieldset(MARGIN, sc_box_y, inner_w, SC_BOX_H, _T("cfg_scenes"))
     cur_lang = _st.get("lang", "ru")
 
     CELL_W        = (sc_cw - CELL_GAP * (COLS - 1)) // COLS
@@ -7271,7 +7669,7 @@ def _toggle_cfg_panel():
     btn_cross.setFrame_(AppKit.NSMakeRect(MARGIN, BTN_Y, SB_W, 22))
     btn_cross.setTarget_(_btn_t)
     btn_cross.setAction_(BtnTarget.hushDefaultCross_)
-    btn_cross.setToolTip_("Сброс: настройки↑  история↓  провайдеры←  сценарии→")
+    btn_cross.setToolTip_(_T("cfg_reset_tip"))
     cv.addSubview_(btn_cross)
 
     # [ВЫХОД] — центр
@@ -7286,8 +7684,29 @@ def _toggle_cfg_panel():
     btn_rst.setFrame_(AppKit.NSMakeRect(pw - MARGIN - SB_W, BTN_Y, SB_W, 22))
     btn_rst.setTarget_(_btn_t)
     btn_rst.setAction_(BtnTarget.hushResetPanels_)
-    btn_rst.setToolTip_("Показать/скрыть все панели")
+    btn_rst.setToolTip_(_T("cfg_panels_tip"))
     cv.addSubview_(btn_rst)
+
+    # Сохранить ссылки на переводимые элементы для живого обновления при смене языка
+    _cfg_text_refs.clear()
+    _cfg_text_refs.update({
+        "hdr":        cfg_hdr,
+        "btn_keys":   btn_keys,
+        "btn_info":   btn_info,
+        "btn_quit":   btn_quit,
+        "btn_cross":  btn_cross,
+        "btn_rst":    btn_rst,
+        "boxes": {
+            "cfg_opacity": op_box,
+            "cfg_font":    fn_box,
+            "cfg_lang":    la_box,
+            "cfg_theme":   th_box,
+            "cfg_scenes":  sc_box,
+        },
+        "font_btns":  _font_btns,
+        "theme_btns": _theme_btns,
+        "lang_btns":  _lang_btns,
+    })
 
     _cfg_panel.setAlphaValue_(_st.get("opacity", 0.88))
 
@@ -8094,7 +8513,7 @@ def init(on_scenario_callback, on_history_callback=None,
     # [↩] — возврат к оригиналу (скрыта пока сценарий не применён)
     _undo_sc_btn = _mkbtn("[↩]", color=C_CYAN, size=11)
     _undo_sc_btn.setFrame_(AppKit.NSMakeRect(STS_X + ICON_SZ, HDR_ITEM_Y, 34, HDR_ITEM_H))
-    _undo_sc_btn.setToolTip_("Вернуть оригинал")
+    _undo_sc_btn.setToolTip_(_T("tip_undo_sc"))
     _undo_sc_btn.setHidden_(True)
     _undo_sc_btn.setAutoresizingMask_(AppKit.NSViewMinYMargin)
     _undo_sc_btn.setTarget_(_btn_t)
@@ -8144,7 +8563,7 @@ def init(on_scenario_callback, on_history_callback=None,
     _cfg_hdr_btn.setAutoresizingMask_(AppKit.NSViewMinXMargin | AppKit.NSViewMinYMargin)
     _cfg_hdr_btn.setTarget_(_btn_t)
     _cfg_hdr_btn.setAction_(BtnTarget.cfg_)
-    _cfg_hdr_btn.setToolTip_("Настройки")
+    _cfg_hdr_btn.setToolTip_(_T("tip_cfg"))
     _pill.addSubview_(_cfg_hdr_btn)
 
     # Expand [□] — постоянно скрыта; двойной клик на иконке приложения активирует расширение
@@ -8173,6 +8592,7 @@ def init(on_scenario_callback, on_history_callback=None,
     _scroll = AppKit.NSScrollView.alloc().initWithFrame_(
         AppKit.NSMakeRect(8, TXT_Y, W - 16, TXT_H))   # симметричные отступы 8px
     _scroll.setHasVerticalScroller_(True)
+    _scroll.setAutohidesScrollers_(True)
     _scroll.setBorderType_(AppKit.NSNoBorder)
     _scroll.setDrawsBackground_(False)
     _scroll.setBackgroundColor_(AppKit.NSColor.clearColor())
@@ -8340,7 +8760,7 @@ def init(on_scenario_callback, on_history_callback=None,
     _hist_btn = _mkbtn(_T("btn_hist"), color=C_CYAN, size=11)
     _hist_btn.setFrame_(AppKit.NSMakeRect(HIST_H_X, HDR_ITEM_Y, HIST_H_W, HDR_ITEM_H))
     _hist_btn.setAutoresizingMask_(AppKit.NSViewMinXMargin | AppKit.NSViewMinYMargin)
-    _hist_btn.setToolTip_("История (двойное нажатие хоткея)")
+    _hist_btn.setToolTip_(_T("tip_hist"))
     _hist_btn.setTarget_(_btn_t)
     _hist_btn.setAction_(BtnTarget.history_)
     _hist_btn.setHidden_(True)   # перенесена в строку действий — всегда скрыта в заголовке
@@ -8349,7 +8769,7 @@ def init(on_scenario_callback, on_history_callback=None,
     # [↵] — нижний ряд, крайний справа (отделён от сценариев визуальным отступом)
     _send_hdr_btn = _mkbtn("[↵]", color=C_GREEN_BR, size=12)
     _send_hdr_btn.setHidden_(True)
-    _send_hdr_btn.setToolTip_("Вставить (Shift+Enter)")
+    _send_hdr_btn.setToolTip_(_T("tip_insert"))
     _send_hdr_btn.setAutoresizingMask_(AppKit.NSViewMaxYMargin)
     _send_hdr_btn.setTarget_(_btn_t)
     _send_hdr_btn.setAction_(BtnTarget.send_)
@@ -8391,7 +8811,7 @@ def init(on_scenario_callback, on_history_callback=None,
     _action_copy_btn.setFrame_(AppKit.NSMakeRect(8 + 2*(ACT4_W + 8), ACT4_Y, ACT4_W, ACT4_H))
     _action_copy_btn.setTarget_(_btn_t)
     _action_copy_btn.setAction_(BtnTarget.hushCopyText_)
-    _action_copy_btn.setToolTip_("⌘+Enter — скопировать в буфер")
+    _action_copy_btn.setToolTip_(_T("tip_copy"))
     _action_row_v.addSubview_(_action_copy_btn)
 
     _action_send_btn = _mkbtn(_T("btn_sc_accept"), color=C_GREEN_BR, size=11)
@@ -8423,7 +8843,7 @@ def init(on_scenario_callback, on_history_callback=None,
     _sc_copy_btn2.setFrame_(AppKit.NSMakeRect(8 + ACT_BTN_W + 8, ACT_BTN_Y, ACT_BTN_W, ACT_BTN_H))
     _sc_copy_btn2.setTarget_(_btn_t)
     _sc_copy_btn2.setAction_(BtnTarget.hushCopyText_)
-    _sc_copy_btn2.setToolTip_("⌘+Enter — скопировать в буфер")
+    _sc_copy_btn2.setToolTip_(_T("tip_copy"))
     _sc_action_v.addSubview_(_sc_copy_btn2)
 
     _sc_send_btn2 = _mkbtn(_T("btn_sc_accept"), color=C_GREEN_BR, size=12)
@@ -8440,7 +8860,7 @@ def init(on_scenario_callback, on_history_callback=None,
     _hist_corner_btn = _mkbtn("☰", color=C_GREEN_DIM, size=14)
     _hist_corner_btn.setFrame_(AppKit.NSMakeRect(CFG_H_X, HIST_C_GAP_B, CFG_H_W, HDR_ITEM_H))
     _hist_corner_btn.setAutoresizingMask_(AppKit.NSViewMinXMargin | AppKit.NSViewMaxYMargin)
-    _hist_corner_btn.setToolTip_("История (двойной клик — развернуть)")
+    _hist_corner_btn.setToolTip_(_T("tip_hist_expand"))
     _hist_corner_btn.setTag_(9)   # используется в history_ для определения двойного клика → развернуть
     _hist_corner_btn.setTarget_(_btn_t)
     _hist_corner_btn.setAction_(BtnTarget.history_)
@@ -8691,6 +9111,7 @@ def _toggle_providers_panel():
     _bg = TerminalView.alloc().initWithFrame_(AppKit.NSMakeRect(0, 0, PW, PH))
     panel.setContentView_(_bg)
     _prov_panel = panel
+    _prov_panel.setAlphaValue_(_st.get("opacity", 0.88))
     _prov_panel._panel_key = "providers"
 
     cv = _bg
@@ -8716,7 +9137,7 @@ def _toggle_providers_panel():
 
     # ── Заголовок ──────────────────────────────────────────────────────────────
     _mkmagnet_btn("providers", cv, 6, y - LBL_H - 2, 22, LBL_H + 4)
-    hdr = _mklabel("ПРОВАЙДЕРЫ / API КЛЮЧИ", size=10, color=C_IDLE)
+    hdr = _mklabel(_T("prov_title"), size=10, color=C_IDLE)
     hdr.setFrame_(AppKit.NSMakeRect(32, y - LBL_H, FW - 32, LBL_H))
     cv.addSubview_(hdr)
     y -= LBL_H + 5
@@ -8765,12 +9186,12 @@ def _toggle_providers_panel():
     # ── Кнопки ─────────────────────────────────────────────────────────────────
     cv.addSubview_(_sep_line(MARGIN, MARGIN + BTN_H + 6, FW, pin="top"))
     BTN_W = 80
-    btn_cancel = _mkbtn("[Отмена]", color=C_GREEN_DIM, size=10)
+    btn_cancel = _mkbtn(_T("btn_cancel"), color=C_GREEN_DIM, size=10)
     btn_cancel.setFrame_(AppKit.NSMakeRect(MARGIN, MARGIN, BTN_W, BTN_H))
     btn_cancel.setTarget_(_btn_t)
     btn_cancel.setAction_(BtnTarget.provClose_)
     cv.addSubview_(btn_cancel)
-    btn_save = _mkbtn("[Сохранить]", color=C_GREEN_BR, size=10)
+    btn_save = _mkbtn(_T("btn_save"), color=C_GREEN_BR, size=10)
     btn_save.setFrame_(AppKit.NSMakeRect(PW - MARGIN - BTN_W, MARGIN, BTN_W, BTN_H))
     btn_save.setTarget_(_btn_t)
     btn_save.setAction_(BtnTarget.provSave_)
