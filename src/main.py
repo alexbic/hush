@@ -1213,6 +1213,9 @@ class _AppDelegate(AppKit.NSObject):
         provider_config.add_status_callback(
             lambda: AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(
                 overlay.update_provider_status))
+        provider_config.add_status_callback(
+            lambda: AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(
+                overlay._start_sc_avail_check))
         provider_config.probe_all()
         _start_provider_monitor()
         transcriber.warm_up()

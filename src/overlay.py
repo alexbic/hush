@@ -188,33 +188,19 @@ def _model_available(model_str: str) -> bool:
     provider = provider.lower()
     if provider == "ollama":
         try:
-            from config import OLLAMA_BASE_URL
-            req = urllib.request.Request(f"{OLLAMA_BASE_URL}/api/tags")
+            base = _pc.get("ollama", "base_url", "http://localhost:11434").rstrip("/")
+            req = urllib.request.Request(f"{base}/api/tags")
             with urllib.request.urlopen(req, timeout=2) as r:
                 data = json.loads(r.read())
             names = [m["name"] for m in data.get("models", [])]
             return any(n == model_name or n.startswith(model_name + ":") for n in names)
         except Exception:
             return False
-    if provider == "anthropic":
-        try:
-            from config import ANTHROPIC_API_KEY
-            return bool(ANTHROPIC_API_KEY)
-        except Exception:
-            return False
-    if provider == "openai":
-        try:
-            from config import OPENAI_API_KEY
-            return bool(OPENAI_API_KEY)
-        except Exception:
-            return False
-    if provider == "glm":
-        try:
-            from config import GLM_API_KEY
-            return bool(GLM_API_KEY)
-        except Exception:
-            return False
-    return True
+    # Облачные провайдеры: используем статус от последнего probe (реальная HTTP-проверка ключа)
+    status = _pc.get_status(provider)
+    if status is None:
+        return True   # ещё не проверяли — не красим
+    return bool(status)
 
 
 # ── Сохранение настроек ────────────────────────────────────────────────────────
@@ -3730,12 +3716,8 @@ class BtnTarget(AppKit.NSObject):
             _pc.set_field("glm", "base_url",
                           refs["glm_base"].stringValue().strip() or "https://api.z.ai/api/paas/v4")
         _close_providers_panel()
-        # Повторно проверить после закрытия UI (ссылки очищены)
-        if changed_ollama:
-            _pc.probe_ollama()
-        else:
-            import threading as _th
-            _th.Thread(target=_pc._probe_cloud, daemon=True).start()
+        # Повторно проверить всех провайдеров после закрытия UI (ссылки очищены)
+        _pc.probe_all()
 
     def cfgScResetOne_(self, sender):
         """Restore default scenario fields to factory defaults (without saving)."""
