@@ -336,6 +336,34 @@ Gracias. De verdad.
 
 ---
 
+## Historial de versiones
+
+### v1.1 — 25.06.2026
+
+**Sistema de cuadrícula de paneles — reescrito desde cero**
+
+- El reset (`[🔄]`) ahora coloca todas las ventanas como grupo centrado en pantalla. El patrón se elige automáticamente según el espacio disponible: cruz 3×3 para pantallas grandes, 3×2 para medianas (la mayoría de MacBook), 2×2 para compactas.
+- Tras el reset los paneles nunca se superponen: las posiciones se calculan geométricamente antes de abrir las ventanas y el grupo se desplaza para caber en pantalla.
+- Nueva regla de colocación: una celda diagonal solo se usa si al menos una celda vecina por cara ya está ocupada — las ventanas no se conectan «solo por esquina».
+- Al arrastrar fuera del borde de pantalla, el panel se reordena al lado opuesto en lugar de crear una 4.ª columna horizontal fuera de pantalla.
+
+**Coherencia de la interfaz**
+
+- Todos los botones unificados al estilo `[MAYÚSCULAS]` con corchetes en los tres idiomas (RU/EN/ES).
+- El color del botón `[ESCENARIO]` ahora depende del tema: `C_YEL` se define por tema y se actualiza al cambiar. Antes el amarillo era fijo y difícil de leer en temas claros.
+
+**Monitoreo de proveedores**
+
+- Los botones de escenario se ponen rojos cuando el proveedor LLM asignado no está disponible. El estado se sondea cada 30 s en hilos en segundo plano; la lista de escenarios se actualiza automáticamente en cada cambio.
+
+---
+
+### v1.0 — 23.06.2026
+
+Primera versión pública. Consulta las [notas de la versión v1.0](https://github.com/alexbic/hush/releases/tag/v1.0) para todos los detalles.
+
+---
+
 ## Licencia
 
 [MIT](LICENSE) © 2026 Alexander Bikmukhametov

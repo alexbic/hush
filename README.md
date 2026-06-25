@@ -375,6 +375,34 @@ Thank you. Really.
 
 ---
 
+## Changelog
+
+### v1.1 — 2026-06-25
+
+**Panel grid system — rewritten from scratch**
+
+- Reset (`[🔄]`) now places all windows as a group centered on screen. The layout pattern is chosen automatically based on available screen space: 3×3 cross for large screens, 3×2 for medium (most MacBooks), 2×2 for compact.
+- Panels never overlap after reset: positions are computed geometrically before windows are placed, then the entire group is shifted to fit the screen.
+- New placement rule: a diagonal cell is only used if at least one face-adjacent cell is already occupied — windows never connect corner-to-corner with empty space in between.
+- Live repositioning (`_snap_attached_panels_live`) no longer pushes panels into off-screen cells. When a panel drifts off the bottom, it flips to the opposite side rather than growing a 4th horizontal column.
+
+**UI consistency**
+
+- All buttons unified to `[UPPERCASE]` style with square brackets across all three languages (RU/EN/ES).
+- Action row button colors (`[СЦЕНАРИЙ]` / `[SCENARIO]`) are now theme-aware: `C_YEL` is defined per theme and updates live on theme switch. Previously the yellow was hardcoded and unreadable on light themes.
+
+**Provider monitoring**
+
+- Scenario buttons turn red when the assigned LLM provider is unreachable. Status is polled every 30 s via background probe threads; the scenario list refreshes automatically on each status change.
+
+---
+
+### v1.0 — 2026-06-23
+
+Initial public release. See the [v1.0 release notes](https://github.com/alexbic/hush/releases/tag/v1.0) for full details.
+
+---
+
 ## License
 
 [MIT](LICENSE) © 2026 Alexander Bikmukhametov
