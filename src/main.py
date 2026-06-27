@@ -1014,6 +1014,9 @@ def _on_paste(mode: str = "raw"):
 
 # ── Хоткей ────────────────────────────────────────────────────────────────────
 
+_hotkey_listener = None
+
+
 def _setup_hotkey():
     pressed = set()
     shift_keys = {kb.Key.shift, kb.Key.shift_r, kb.Key.shift_l}
@@ -1036,10 +1039,11 @@ def _setup_hotkey():
             pressed.discard(kb.Key.alt_r)
             _on_hotkey_release()
 
-    listener = kb.Listener(on_press=on_press, on_release=on_release)
-    listener.daemon = True
-    listener.start()
-    return listener
+    global _hotkey_listener
+    _hotkey_listener = kb.Listener(on_press=on_press, on_release=on_release)
+    _hotkey_listener.daemon = True
+    _hotkey_listener.start()
+    return _hotkey_listener
 
 # ── Keep-alive таймер (фикс Ctrl+C) ──────────────────────────────────────────
 
@@ -1101,7 +1105,7 @@ class _SleepObserver(AppKit.NSObject):
             _state["stream"] = None
 
     def systemDidWake_(self, notification):
-        """При пробуждении: переинициализируем PortAudio чтобы sounddevice снова работал."""
+        """При пробуждении: переинициализируем PortAudio и перезапускаем pynput listener."""
         import sounddevice as sd
         try:
             sd._terminate()
@@ -1112,6 +1116,16 @@ class _SleepObserver(AppKit.NSObject):
         except Exception:
             pass
         _dbg("systemDidWake_: PortAudio reinitialized")
+        # pynput listener умирает после сна — пересоздаём
+        global _hotkey_listener
+        old = _hotkey_listener
+        if old is not None:
+            try:
+                old.stop()
+            except Exception:
+                pass
+        _setup_hotkey()
+        _dbg("systemDidWake_: hotkey listener restarted")
 
 
 _sleep_observer = None
