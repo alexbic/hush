@@ -1014,36 +1014,50 @@ def _on_paste(mode: str = "raw"):
 
 # ── Хоткей ────────────────────────────────────────────────────────────────────
 
-_hotkey_listener = None
+_hotkey_monitors = []   # NSEvent monitor refs — prevent GC
 
 
 def _setup_hotkey():
-    pressed = set()
-    shift_keys = {kb.Key.shift, kb.Key.shift_r, kb.Key.shift_l}
+    global _hotkey_monitors
 
-    def on_press(key):
-        if key in shift_keys:
-            pressed.add(key)
-        elif key == kb.Key.enter and _in_countdown:
+    for m in _hotkey_monitors:
+        try:
+            AppKit.NSEvent.removeMonitor_(m)
+        except Exception:
+            pass
+    _hotkey_monitors.clear()
+
+    # macOS key constants (fixed, no pynput needed for detection)
+    _NSAlternateKeyMask = 0x080000
+    _NSShiftKeyMask     = 0x020000
+    _kVK_RightOption    = 61
+    _kVK_Return         = 36
+    _kVK_NumpadEnter    = 76
+
+    def on_flags_changed(event):
+        if event is None:
+            return
+        if event.keyCode() == _kVK_RightOption:
+            flags = int(event.modifierFlags())
+            if flags & _NSAlternateKeyMask:
+                _on_hotkey_press(full_mode=bool(flags & _NSShiftKeyMask))
+            else:
+                _on_hotkey_release()
+
+    def on_key_down(event):
+        if event is None:
+            return
+        if event.keyCode() in (_kVK_Return, _kVK_NumpadEnter) and _in_countdown:
             threading.Thread(target=_force_paste_raw_now, daemon=True,
                              name="hush-enter-raw").start()
-        elif key == kb.Key.alt_r and kb.Key.alt_r not in pressed:
-            pressed.add(kb.Key.alt_r)
-            shift_held = bool(pressed & shift_keys)
-            _on_hotkey_press(full_mode=shift_held)
 
-    def on_release(key):
-        if key in shift_keys:
-            pressed.discard(key)
-        elif key == kb.Key.alt_r and kb.Key.alt_r in pressed:
-            pressed.discard(kb.Key.alt_r)
-            _on_hotkey_release()
-
-    global _hotkey_listener
-    _hotkey_listener = kb.Listener(on_press=on_press, on_release=on_release)
-    _hotkey_listener.daemon = True
-    _hotkey_listener.start()
-    return _hotkey_listener
+    m1 = AppKit.NSEvent.addGlobalMonitorForEventsMatchingMask_handler_(
+        AppKit.NSEventMaskFlagsChanged, on_flags_changed
+    )
+    m2 = AppKit.NSEvent.addGlobalMonitorForEventsMatchingMask_handler_(
+        AppKit.NSEventMaskKeyDown, on_key_down
+    )
+    _hotkey_monitors.extend([m for m in (m1, m2) if m is not None])
 
 # ── Keep-alive таймер (фикс Ctrl+C) ──────────────────────────────────────────
 
@@ -1105,7 +1119,7 @@ class _SleepObserver(AppKit.NSObject):
             _state["stream"] = None
 
     def systemDidWake_(self, notification):
-        """При пробуждении: переинициализируем PortAudio и перезапускаем pynput listener."""
+        """При пробуждении: переинициализируем PortAudio и перезапускаем hotkey мониторы."""
         import sounddevice as sd
         try:
             sd._terminate()
@@ -1116,16 +1130,8 @@ class _SleepObserver(AppKit.NSObject):
         except Exception:
             pass
         _dbg("systemDidWake_: PortAudio reinitialized")
-        # pynput listener умирает после сна — пересоздаём
-        global _hotkey_listener
-        old = _hotkey_listener
-        if old is not None:
-            try:
-                old.stop()
-            except Exception:
-                pass
         _setup_hotkey()
-        _dbg("systemDidWake_: hotkey listener restarted")
+        _dbg("systemDidWake_: hotkey monitors restarted")
 
 
 _sleep_observer = None
