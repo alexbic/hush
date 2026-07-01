@@ -2090,7 +2090,8 @@ class _HoverOverlayView(AppKit.NSView):
         AppKit.NSRectFill(rect)
         b = self.bounds()
         TOP_PAD  = 8   # отступ сверху, чтобы оверлей не касался разделителя
-        bg_rect  = AppKit.NSMakeRect(0, 0, b.size.width, b.size.height - TOP_PAD)
+        SIDE_PAD = 8   # отступ слева и справа — симметрично верхнему
+        bg_rect  = AppKit.NSMakeRect(SIDE_PAD, 0, b.size.width - 2 * SIDE_PAD, b.size.height - TOP_PAD)
         r        = min(bg_rect.size.height / 2, 12.0)
         p = AppKit.NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(bg_rect, r, r)
         _rgba(0.05, 0.07, 0.05, 0.92).set()
@@ -2107,9 +2108,9 @@ class _HoverOverlayView(AppKit.NSView):
                     AppKit.NSParagraphStyleAttributeName:  ps,
                 })
             text_h = sz + 4
-            # центрировать в прямоугольнике фона с отступом
+            # центрировать в прямоугольнике фона
             cy = (bg_rect.size.height - text_h) / 2
-            astr.drawInRect_(AppKit.NSMakeRect(8, cy, b.size.width - 16, text_h))
+            astr.drawInRect_(AppKit.NSMakeRect(bg_rect.origin.x, cy, bg_rect.size.width, text_h))
 
     def mouseDown_(self, event):
         fn = _proc_interrupt_fn if getattr(self, '_is_main', False) else _silent_interrupt_fn

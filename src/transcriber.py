@@ -11,13 +11,24 @@ _proc_lock    = threading.Lock()
 
 def cancel():
     """Немедленно завершить выполняющийся subprocess parakeet."""
+    import time as _t
     with _proc_lock:
         proc = _current_proc
     if proc and proc.poll() is None:
         try:
-            proc.kill()
+            proc.terminate()   # SIGTERM — корректное завершение, CoreML может сохранить кэш ANE
         except Exception:
             pass
+        # Даём 1 сек на graceful exit; если не вышел — добиваем
+        for _ in range(10):
+            _t.sleep(0.1)
+            if proc.poll() is not None:
+                break
+        else:
+            try:
+                proc.kill()    # SIGKILL только если SIGTERM не помог
+            except Exception:
+                pass
 
 # Первый запуск компилирует CoreML модель (~4 мин). После кэширования: ~33 с для 15 с аудио.
 # 360 с покрывает холодный старт + до ~2 мин аудио.
@@ -121,7 +132,7 @@ def transcribe(wav_path: str) -> str:
         with _proc_lock:
             if _current_proc is proc:
                 _current_proc = None
-    if proc.returncode == -9:  # завершён через cancel()
+    if proc.returncode in (-9, -15):   # killed (SIGKILL) или terminated (SIGTERM) через cancel()
         return ""
     result_stdout = stdout_b.decode("utf-8", errors="replace")
     result_stderr = stderr_b.decode("utf-8", errors="replace")

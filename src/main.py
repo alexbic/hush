@@ -258,6 +258,7 @@ _worker_lock      = threading.Lock()
 _stopping         = 0               # количество потоков _stop_and_queue, работающих в данный момент
 _in_countdown     = False           # True пока показывается обратный отсчёт grace-периода
 _processing_locked = False          # True во время LLM/вставки — Alt отключён
+_last_cancel_time  = 0.0            # дебаунс _cancel_all()
 
 # Временная директория сессии: /tmp/hush_session_YYYYMMDD_HHMMSS/
 _session_dir   = None
@@ -311,8 +312,16 @@ def _session_reset(clear_accum: bool = True):
 
 def _cancel_all():
     """Прерывает всё: запись, очередь транскрипции, накопленный текст."""
-    global _full_mode_standby
+    global _full_mode_standby, _last_cancel_time
+    now = time.time()
+    if now - _last_cancel_time < 0.8:   # дебаунс: игнорируем повторный cancel в течение 800мс
+        _dbg(f"_cancel_all(): debounced ({now - _last_cancel_time:.2f}s since last)")
+        return
+    _last_cancel_time = now
     _full_mode_standby = False
+    # После отмены Parakeet завершается и ANE-кэш может сбросится.
+    # Запускаем warm-up в фоне, чтобы следующая транскрипция была быстрой.
+    threading.Thread(target=transcriber.warm_up, daemon=True, name="parakeet-warmup-cancel").start()
     _state["silent"]    = True   # сбрасываем в тихий режим по умолчанию после любой отмены
     _dbg("_cancel_all()")
     _state["cancelled"] = True
@@ -572,6 +581,7 @@ def _on_hotkey_press(full_mode: bool = False):
     # Во время обработки LLM: любое нажатие вызывает прерывание (немедленно вставляем сырой текст)
     if _processing_locked:
         fn = overlay.get_silent_interrupt_fn()
+        _dbg(f"_on_hotkey_press: processing_locked, interrupt_fn={'yes' if fn else 'none'}")
         if fn:
             threading.Thread(target=fn, daemon=True, name="hush-interrupt").start()
         return
@@ -608,7 +618,16 @@ def _on_hotkey_press(full_mode: bool = False):
             AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(overlay.hide_silent)
             overlay.show_recording()
 
-    _state["stream"] = recorder.start(on_chunk=overlay.update_waveform)
+    try:
+        _state["stream"] = recorder.start(on_chunk=overlay.update_waveform)
+        _dbg("recorder.start(): OK")
+    except Exception as e:
+        _dbg(f"recorder.start() FAILED: {e}")
+        _state["stream"] = None
+        # Показывать оверлей в режиме записи при отсутствующем стриме нельзя — прячем
+        AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(lambda: overlay.hide(force=True))
+        AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(overlay.hide_silent)
+        _state["hotkey_held"] = False
 
 
 def _on_hotkey_release():
@@ -626,6 +645,7 @@ def _on_hotkey_release():
         global _stopping, _chunk_counter, _session_dir
         _stopping += 1   # предотвращаем преждевременное завершение пока идёт обработка
         try:
+            _dbg("_stop_and_queue: calling recorder.stop()")
             wav_path, _ = recorder.stop(stream)
             _state["stream"] = None
             _dbg(f"_stop_and_queue: wav={bool(wav_path)}, cancelled={_state.get('cancelled')}")
@@ -1034,30 +1054,49 @@ def _setup_hotkey():
     _kVK_Return         = 36
     _kVK_NumpadEnter    = 76
 
-    def on_flags_changed(event):
+    def _handle_flags(event):
         if event is None:
             return
-        if event.keyCode() == _kVK_RightOption:
-            flags = int(event.modifierFlags())
+        kc = event.keyCode()
+        flags = int(event.modifierFlags())
+        if kc == _kVK_RightOption:
+            _dbg(f"flags: kc={kc} flags=0x{flags:x} alt={bool(flags & _NSAlternateKeyMask)} shift={bool(flags & _NSShiftKeyMask)}")
             if flags & _NSAlternateKeyMask:
                 _on_hotkey_press(full_mode=bool(flags & _NSShiftKeyMask))
             else:
                 _on_hotkey_release()
 
-    def on_key_down(event):
+    def _handle_key_down(event):
         if event is None:
             return
         if event.keyCode() in (_kVK_Return, _kVK_NumpadEnter) and _in_countdown:
             threading.Thread(target=_force_paste_raw_now, daemon=True,
                              name="hush-enter-raw").start()
 
+    # Локальные мониторы: срабатывают когда HUSH сам на переднем плане
+    # (глобальные в этом случае не срабатывают — ограничение NSEvent)
+    def _local_flags(event):
+        _handle_flags(event)
+        return event
+
+    def _local_key_down(event):
+        _handle_key_down(event)
+        return event
+
+    # Глобальные — когда HUSH в фоне; локальные — когда окно HUSH активно
     m1 = AppKit.NSEvent.addGlobalMonitorForEventsMatchingMask_handler_(
-        AppKit.NSEventMaskFlagsChanged, on_flags_changed
+        AppKit.NSEventMaskFlagsChanged, _handle_flags
     )
     m2 = AppKit.NSEvent.addGlobalMonitorForEventsMatchingMask_handler_(
-        AppKit.NSEventMaskKeyDown, on_key_down
+        AppKit.NSEventMaskKeyDown, _handle_key_down
     )
-    _hotkey_monitors.extend([m for m in (m1, m2) if m is not None])
+    m3 = AppKit.NSEvent.addLocalMonitorForEventsMatchingMask_handler_(
+        AppKit.NSEventMaskFlagsChanged, _local_flags
+    )
+    m4 = AppKit.NSEvent.addLocalMonitorForEventsMatchingMask_handler_(
+        AppKit.NSEventMaskKeyDown, _local_key_down
+    )
+    _hotkey_monitors.extend([m for m in (m1, m2, m3, m4) if m is not None])
 
 # ── Keep-alive таймер (фикс Ctrl+C) ──────────────────────────────────────────
 
@@ -1070,6 +1109,21 @@ def _setup_keepalive():
     AppKit.NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
         0.25, tgt, _KATgt.ping_, None, True
     )
+
+
+_WARMUP_INTERVAL = 120   # секунды между прогревами Parakeet (кэш ANE живёт ~2-3 мин)
+
+def _start_periodic_warmup():
+    """Каждые 2 минуты прогоняет тихое аудио через Parakeet, чтобы CoreML не вытеснял модель из ANE."""
+    import threading, time
+
+    def _loop():
+        while True:
+            time.sleep(_WARMUP_INTERVAL)
+            if not _is_session_active() and not _processing_locked:
+                transcriber.warm_up()
+
+    threading.Thread(target=_loop, daemon=True, name="parakeet-periodic-warmup").start()
 
 
 def _start_provider_monitor():
@@ -1239,6 +1293,7 @@ class _AppDelegate(AppKit.NSObject):
         provider_config.probe_all()
         _start_provider_monitor()
         transcriber.warm_up()
+        _start_periodic_warmup()
         print("Voice Input запущен. Right ⌥ — запись, Right ⌥ × 2 — история. Ctrl+C — выход.")
 
     def applicationShouldTerminateAfterLastWindowClosed_(self, sender):

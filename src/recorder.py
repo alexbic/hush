@@ -42,11 +42,26 @@ def start(on_chunk=None):
 
 def stop(stream):
     """Останавливает запись. Возвращает (wav_path, 0) или (None, 0) при ошибке."""
+    import threading as _threading
     global _recording
     with _lock:
         _recording = False
-    stream.stop()
-    stream.close()
+
+    # stream.stop()/close() иногда зависают в PortAudio — запускаем с таймаутом 5 сек.
+    def _do_close():
+        try:
+            stream.stop()
+            stream.close()
+        except Exception:
+            pass
+
+    t = _threading.Thread(target=_do_close, daemon=True)
+    t.start()
+    t.join(timeout=5.0)
+    if t.is_alive():
+        import sys
+        print("[recorder] WARNING: stream.stop()/close() hung, continuing without it", file=sys.stderr)
+        # поток демонический — умрёт вместе с процессом; продолжаем с уже собранными фреймами
 
     with _lock:
         if not _frames:

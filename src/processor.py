@@ -141,13 +141,16 @@ def _openai_compat(system: str, text: str, model: str, provider: str) -> str:
         base_url = _pc.get("openai", "base_url", "https://api.openai.com/v1").rstrip("/")
         api_key  = _pc.get("openai", "api_key")
 
+    # o3/o1 серия не поддерживает max_tokens — используем max_completion_tokens
+    _o_series = model.startswith(("o1", "o3", "o4"))
+    _tok_key  = "max_completion_tokens" if _o_series else "max_tokens"
     payload = json.dumps({
         "model":    model,
         "messages": [
             {"role": "system", "content": system},
             {"role": "user",   "content": text},
         ],
-        "max_tokens":  2048,
+        _tok_key:      2048,
         "temperature": 0.3,
     }).encode()
     req = urllib.request.Request(
