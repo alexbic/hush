@@ -1111,16 +1111,18 @@ def _setup_keepalive():
     )
 
 
-_WARMUP_INTERVAL = 120   # секунды между прогревами Parakeet (кэш ANE живёт ~2-3 мин)
+_WARMUP_INTERVAL = 45   # секунды между прогревами Parakeet (кэш ANE живёт ~60 сек)
 
 def _start_periodic_warmup():
-    """Каждые 2 минуты прогоняет тихое аудио через Parakeet, чтобы CoreML не вытеснял модель из ANE."""
+    """Каждые 45 сек прогоняет тихое аудио через Parakeet чтобы ANE-кэш не протухал.
+    Не блокируется на время записи — ANE не нужен для захвата звука.
+    transcribe() сам убьёт warm-up процесс если он ещё работает."""
     import threading, time
 
     def _loop():
         while True:
             time.sleep(_WARMUP_INTERVAL)
-            if not _is_session_active() and not _processing_locked:
+            if not _processing_locked:   # пропускаем только во время LLM/вставки
                 transcriber.warm_up()
 
     threading.Thread(target=_loop, daemon=True, name="parakeet-periodic-warmup").start()
