@@ -73,57 +73,67 @@ def warm_up():
     """Прогоняет короткое тихое аудио через parakeet в фоне для запуска компиляции CoreML."""
     global _warmup_proc
 
-    # Если предыдущий warm-up ещё работает — не запускаем новый (холодный ANE = 60+ сек)
+    tmp = "/tmp/_parakeet_warmup.wav"
+    try:
+        _make_silent_wav(tmp)
+        env = os.environ.copy()
+        try:
+            from overlay import _st
+            env["PARAKEET_LANG_ID"] = str(LANG_IDS.get(_st.get("lang", "ru"), LANG_ID))
+        except Exception:
+            env["PARAKEET_LANG_ID"] = str(LANG_ID)
+        env["PARAKEET_MODEL_DIR"] = MODEL_DIR
+    except Exception:
+        return
+
     with _proc_lock:
+        # Проверяем и запускаем под одним локом — устраняет гонку между check и Popen
         if _warmup_proc and _warmup_proc.poll() is None:
             return
-
-    def _run():
-        global _warmup_proc
-        tmp = "/tmp/_parakeet_warmup.wav"
         try:
-            _make_silent_wav(tmp)
-            env = os.environ.copy()
-            try:
-                from overlay import _st
-                env["PARAKEET_LANG_ID"] = str(LANG_IDS.get(_st.get("lang", "ru"), LANG_ID))
-            except Exception:
-                env["PARAKEET_LANG_ID"] = str(LANG_ID)
-            env["PARAKEET_MODEL_DIR"] = MODEL_DIR
             proc = subprocess.Popen(
                 [PARAKEET_CLI, tmp],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 env=env,
             )
-            with _proc_lock:
-                _warmup_proc = proc
-            try:
-                proc.wait(timeout=_TIMEOUT)
-            except subprocess.TimeoutExpired:
-                proc.kill()
+            _warmup_proc = proc
         except Exception:
-            pass
+            return
+
+    def _wait():
+        global _warmup_proc
+        try:
+            proc.wait(timeout=_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            proc.kill()
         finally:
             with _proc_lock:
-                _warmup_proc = None
+                if _warmup_proc is proc:
+                    _warmup_proc = None
             try:
                 os.remove(tmp)
             except Exception:
                 pass
-    threading.Thread(target=_run, daemon=True, name="parakeet-warmup").start()
+
+    threading.Thread(target=_wait, daemon=True, name="parakeet-warmup").start()
 
 def transcribe(wav_path: str) -> str:
     global _current_proc
     import time as _t
-    # Если warm-up процесс ещё работает — убиваем его, чтобы не конкурировать за ANE
+    # Если warm-up ещё работает:
+    # - если ANE тёплый, он завершится за ~1 сек → ждём до 1.5с (ANE прогрет для нас)
+    # - если холодный (ещё бежит после 1.5с) → убиваем, чтобы не конкурировать
     with _proc_lock:
         wp = _warmup_proc
     if wp and wp.poll() is None:
         try:
-            wp.terminate()
-        except Exception:
-            pass
+            wp.wait(timeout=1.5)
+        except subprocess.TimeoutExpired:
+            try:
+                wp.terminate()
+            except Exception:
+                pass
 
     # Защита: parakeet падает с ошибкой ExtAudioFileOpenURL на отсутствующих/пустых файлах
     try:

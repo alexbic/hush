@@ -1112,7 +1112,7 @@ def _setup_keepalive():
     )
 
 
-_WARMUP_INTERVAL = 45   # секунды между прогревами Parakeet (кэш ANE живёт ~60 сек)
+_WARMUP_INTERVAL = 30   # секунды между прогревами Parakeet (кэш ANE живёт ~44 сек)
 
 def _start_periodic_warmup():
     """Каждые 45 сек прогоняет тихое аудио через Parakeet чтобы ANE-кэш не протухал.
