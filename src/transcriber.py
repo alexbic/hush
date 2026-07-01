@@ -6,8 +6,9 @@ import struct
 import os
 from config import PARAKEET_CLI, LANG_ID, LANG_IDS, MODEL_DIR
 
-_current_proc = None   # type: subprocess.Popen | None
-_proc_lock    = threading.Lock()
+_current_proc  = None   # type: subprocess.Popen | None
+_warmup_proc   = None   # type: subprocess.Popen | None
+_proc_lock     = threading.Lock()
 
 def cancel():
     """Немедленно завершить выполняющийся subprocess parakeet."""
@@ -70,7 +71,10 @@ def _make_silent_wav(path: str, duration_s: float = 1.0, sample_rate: int = 1600
 
 def warm_up():
     """Прогоняет короткое тихое аудио через parakeet в фоне для запуска компиляции CoreML."""
+    global _warmup_proc
+
     def _run():
+        global _warmup_proc
         tmp = "/tmp/_parakeet_warmup.wav"
         try:
             _make_silent_wav(tmp)
@@ -81,15 +85,23 @@ def warm_up():
             except Exception:
                 env["PARAKEET_LANG_ID"] = str(LANG_ID)
             env["PARAKEET_MODEL_DIR"] = MODEL_DIR
-            subprocess.run(
+            proc = subprocess.Popen(
                 [PARAKEET_CLI, tmp],
-                capture_output=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
                 env=env,
-                timeout=_TIMEOUT,
             )
+            with _proc_lock:
+                _warmup_proc = proc
+            try:
+                proc.wait(timeout=_TIMEOUT)
+            except subprocess.TimeoutExpired:
+                proc.kill()
         except Exception:
             pass
         finally:
+            with _proc_lock:
+                _warmup_proc = None
             try:
                 os.remove(tmp)
             except Exception:
@@ -99,6 +111,15 @@ def warm_up():
 def transcribe(wav_path: str) -> str:
     global _current_proc
     import time as _t
+    # Если warm-up процесс ещё работает — убиваем его, чтобы не конкурировать за ANE
+    with _proc_lock:
+        wp = _warmup_proc
+    if wp and wp.poll() is None:
+        try:
+            wp.terminate()
+        except Exception:
+            pass
+
     # Защита: parakeet падает с ошибкой ExtAudioFileOpenURL на отсутствующих/пустых файлах
     try:
         if not os.path.exists(wav_path) or os.path.getsize(wav_path) < 256:
