@@ -312,13 +312,14 @@ def _session_reset(clear_accum: bool = True):
 
 def _cancel_all():
     """Прерывает всё: запись, очередь транскрипции, накопленный текст."""
-    global _full_mode_standby, _last_cancel_time
+    global _full_mode_standby, _last_cancel_time, _processing_locked
     now = time.time()
     if now - _last_cancel_time < 0.8:   # дебаунс: игнорируем повторный cancel в течение 800мс
         _dbg(f"_cancel_all(): debounced ({now - _last_cancel_time:.2f}s since last)")
         return
     _last_cancel_time = now
     _full_mode_standby = False
+    _processing_locked = False   # немедленно разблокируем — LLM может висеть минутами
     # После отмены Parakeet завершается и ANE-кэш может сбросится.
     # Запускаем warm-up в фоне, чтобы следующая транскрипция была быстрой.
     threading.Thread(target=transcriber.warm_up, daemon=True, name="parakeet-warmup-cancel").start()
@@ -489,7 +490,7 @@ def _session_finalize_inner():
             final_text = processor.process_with_prompt(
                 full_text, silent_sc["prompt"], model=silent_sc.get("model"))
 
-            if not cancel_ev.is_set():
+            if not cancel_ev.is_set() and not _state.get("cancelled"):
                 final_s = _strip_markdown(final_text)
                 subprocess.run(["pbcopy"], input=final_s.encode("utf-8"), check=False)
                 _add_to_history(final_text)

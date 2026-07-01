@@ -107,7 +107,7 @@ def _ollama(system: str, text: str, model: str) -> str:
         data=payload,
         headers={"Content-Type": "application/json"},
     )
-    with urllib.request.urlopen(req, timeout=120) as resp:
+    with urllib.request.urlopen(req, timeout=25) as resp:
         data = json.loads(resp.read())
     result = data["message"]["content"].strip()
     result = re.sub(r"<think>.*?</think>", "", result, flags=re.DOTALL).strip()
