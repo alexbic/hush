@@ -641,6 +641,7 @@ def _on_hotkey_release():
     stream = _state.get("stream")
     if not stream:
         return
+    _state["stream"] = None   # сразу очищаем — второй Release не пройдёт guard и не вызовет double-stop
 
     def _stop_and_queue():
         global _stopping, _chunk_counter, _session_dir
@@ -648,7 +649,6 @@ def _on_hotkey_release():
         try:
             _dbg("_stop_and_queue: calling recorder.stop()")
             wav_path, _ = recorder.stop(stream)
-            _state["stream"] = None
             _dbg(f"_stop_and_queue: wav={bool(wav_path)}, cancelled={_state.get('cancelled')}")
             if _state.get("cancelled") or not wav_path:
                 return
