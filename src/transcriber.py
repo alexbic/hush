@@ -73,6 +73,11 @@ def warm_up():
     """Прогоняет короткое тихое аудио через parakeet в фоне для запуска компиляции CoreML."""
     global _warmup_proc
 
+    # Если предыдущий warm-up ещё работает — не запускаем новый (холодный ANE = 60+ сек)
+    with _proc_lock:
+        if _warmup_proc and _warmup_proc.poll() is None:
+            return
+
     def _run():
         global _warmup_proc
         tmp = "/tmp/_parakeet_warmup.wav"
