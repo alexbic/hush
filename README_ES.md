@@ -338,6 +338,37 @@ Gracias. De verdad.
 
 ## Historial de versiones
 
+### v1.2 — 01.07.2026
+
+**Estabilidad: crash en macOS 26 (Tahoe) corregido**
+
+- Reemplazado el listener `pynput` por monitores globales `NSEvent`. `pynput` llamaba `TSMGetInputSourceProperty` desde un hilo de fondo; macOS 26 añadió la verificación `dispatch_assert_queue` a esta API y HUSH se cerraba al desconectar el monitor + suspender el equipo. Los monitores NSEvent se ejecutan en el RunLoop principal — sin hilo de fondo, sin llamadas TSM, sin crash.
+- Corregido crash (corrupción de heap / SIGTRAP) al presionar Alt rápidamente: `_state["stream"]` se limpia de inmediato en el evento de liberación de tecla, no dentro del hilo trabajador, evitando que dos hilos llamen a `recorder.stop()` sobre el mismo stream de PortAudio.
+
+**Estabilidad: el hotkey ya no se bloquea**
+
+- `_cancel_all()` (Alt+Shift) limpia `_processing_locked` de inmediato para que el siguiente Alt nunca quede bloqueado mientras una llamada LLM esté colgada o esperando timeout.
+- Timeout de solicitudes Ollama reducido de 120 s a 25 s; el resultado se descarta si la sesión fue cancelada durante la llamada.
+- `recorder.stop()` tiene un timeout estricto de 5 segundos en `stream.stop()/close()` — PortAudio puede colgarse indefinidamente al cambiar dispositivo de audio; antes esto congelaba el hotkey.
+- Los fallos de `recorder.start()` se capturan y el overlay se oculta correctamente en lugar de dejar HUSH atascado en la UI de "grabando".
+- Debounce de 800 ms en `_cancel_all()` evita múltiples cancelaciones ante una ráfaga de pulsaciones Alt+Shift.
+
+**Rendimiento: transcripción rápida tras inactividad**
+
+- Parakeet ahora se pre-calienta con un WAV silencioso de 0.5 s cada 30 s para mantener el modelo CoreML caliente en la caché del Apple Neural Engine (TTL ≈ 44 s). Sin este calentamiento, la primera transcripción tras cualquier pausa superior a 44 s tardaba 60–90 s en lugar de ~1 s.
+- `transcriber.cancel()` usa SIGTERM → 1 s de gracia → SIGKILL solo si no termina. SIGKILL invalidaba la caché del modelo compilado ANE; SIGTERM permite que CoreML la libere correctamente. Tras cada cancelación también se lanza un calentamiento.
+- Corregidas múltiples condiciones de carrera que causaban que dos procesos `parakeet-cli` compitieran por ANE, ralentizando ambos a 60+ s:
+  - El `Popen` del calentamiento ahora ocurre dentro de `_proc_lock` — `transcribe()` no puede leer `_warmup_proc = None` entre la verificación y el almacenamiento.
+  - El calentamiento periódico se omite si ya hay un calentamiento o una transcripción real en curso.
+  - `transcribe()` espera hasta 90 s a que el calentamiento en curso finalice (en vez de matarlo tras 1.5 s). Con ANE frío, el calentamiento tarda ≈ 60 s; matarlo y reiniciar desperdicia ese trabajo — esperar significa que la transcripción real arranca con ANE caliente y tarda ~1 s.
+
+**Correcciones menores**
+
+- API compatible con OpenAI: se usa `max_completion_tokens` para la serie de modelos `o1`/`o3`/`o4` (`max_tokens` devuelve HTTP 400 en estos modelos).
+- Panel de interrupción: relleno horizontal simétrico de 8 px.
+
+---
+
 ### v1.1 — 25.06.2026
 
 **Sistema de cuadrícula de paneles — reescrito desde cero**

@@ -377,6 +377,37 @@ Thank you. Really.
 
 ## Changelog
 
+### v1.2 — 2026-07-01
+
+**Stability: crash on macOS 26 (Tahoe) fixed**
+
+- Replaced `pynput` keyboard listener with `NSEvent` global monitors. `pynput` called `TSMGetInputSourceProperty` from a background thread; macOS 26 added `dispatch_assert_queue` enforcement to this API and crashed HUSH on every monitor disconnect + sleep. NSEvent monitors run on the main RunLoop — no background thread, no TSM call, no crash.
+- Fixed crash (heap corruption / SIGTRAP) when Alt was tapped rapidly: `_state["stream"]` is now cleared immediately on key-release instead of inside the worker thread, preventing two threads from calling `recorder.stop()` on the same PortAudio stream simultaneously.
+
+**Stability: hotkey never getting stuck**
+
+- `_cancel_all()` (Alt+Shift) now clears `_processing_locked` immediately so the next Alt press is never blocked while an LLM call is hanging or timing out.
+- Ollama request timeout reduced 120 s → 25 s; result is discarded if the session was cancelled while the call was in flight.
+- `recorder.stop()` has a 5-second hard timeout on `stream.stop()/close()` — PortAudio can hang indefinitely on device changes; this previously froze the hotkey until the stream unblocked.
+- `recorder.start()` failures (device unavailable etc.) are caught and the overlay is hidden cleanly instead of leaving HUSH stuck in "recording" UI.
+- 800 ms debounce on `_cancel_all()` prevents a burst of Alt+Shift presses from firing multiple cancels.
+
+**Performance: fast transcription after idle**
+
+- Parakeet is now primed with a silent 0.5 s WAV every 30 s to keep the CoreML model hot in Apple Neural Engine cache (TTL ≈ 44 s). Without warmup, the first transcription after any pause longer than 44 s took 60–90 s instead of ~1 s.
+- `transcriber.cancel()` uses SIGTERM → 1 s grace → SIGKILL fallback. SIGKILL was invalidating the ANE compiled-model cache; SIGTERM allows CoreML to release it cleanly so the next run is fast. A warm-up is also triggered immediately after every cancel.
+- Fixed multiple race conditions that caused two `parakeet-cli` processes to compete for ANE, each slowing the other to 60+ s:
+  - Warmup `Popen` now happens inside `_proc_lock` so `transcribe()` can never read `_warmup_proc = None` between the check and the store.
+  - Periodic warmup skips if a previous warmup or a real transcription is already running.
+  - `transcribe()` waits up to 90 s for a running warmup to complete (rather than killing it after 1.5 s). When ANE is cold a warmup takes ≈ 60 s; killing it and restarting wastes that work — waiting means the real transcription starts with a hot ANE and finishes in ~1 s.
+
+**Minor fixes**
+
+- OpenAI-compatible API: use `max_completion_tokens` for `o1`/`o3`/`o4` model series (`max_tokens` returns HTTP 400 on these models).
+- Interrupt panel: symmetric 8 px horizontal padding.
+
+---
+
 ### v1.1 — 2026-06-25
 
 **Panel grid system — rewritten from scratch**
