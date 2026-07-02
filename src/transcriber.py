@@ -90,6 +90,9 @@ def warm_up():
         # Проверяем и запускаем под одним локом — устраняет гонку между check и Popen
         if _warmup_proc and _warmup_proc.poll() is None:
             return
+        # Не запускаем warmup пока идёт реальная транскрипция (ANE занят)
+        if _current_proc and _current_proc.poll() is None:
+            return
         try:
             proc = subprocess.Popen(
                 [PARAKEET_CLI, tmp],
