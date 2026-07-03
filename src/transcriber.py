@@ -4,21 +4,11 @@ import subprocess
 import threading
 import struct
 import os
-import time as _t_mod
 from config import PARAKEET_CLI, LANG_ID, LANG_IDS, MODEL_DIR
 
 _current_proc  = None   # type: subprocess.Popen | None
 _warmup_proc   = None   # type: subprocess.Popen | None
 _proc_lock     = threading.Lock()
-
-def _wlog(msg: str):
-    ts = _t_mod.strftime("%H:%M:%S")
-    line = f"[{ts}] [warmup] {msg}\n"
-    try:
-        with open("/tmp/vi_warmup.log", "a") as f:
-            f.write(line)
-    except Exception:
-        pass
 
 def cancel():
     """Немедленно завершить выполняющийся subprocess parakeet."""
@@ -111,21 +101,15 @@ def warm_up():
                 env=env,
             )
             _warmup_proc = proc
-            _wlog(f"start pid={proc.pid}")
-        except Exception as e:
-            _wlog(f"Popen failed: {e}")
+        except Exception:
             return
-
-    t0 = _t_mod.time()
 
     def _wait():
         global _warmup_proc
         try:
             proc.wait(timeout=_TIMEOUT)
-            _wlog(f"done pid={proc.pid} rc={proc.returncode} elapsed={_t_mod.time()-t0:.1f}s")
         except subprocess.TimeoutExpired:
             proc.kill()
-            _wlog(f"TIMEOUT pid={proc.pid} elapsed={_t_mod.time()-t0:.1f}s — killed")
         finally:
             with _proc_lock:
                 if _warmup_proc is proc:
@@ -147,13 +131,9 @@ def transcribe(wav_path: str) -> str:
     with _proc_lock:
         wp = _warmup_proc
     if wp and wp.poll() is None:
-        _wlog(f"transcribe waiting for warmup pid={wp.pid}")
-        t_wait = _t_mod.time()
         try:
             wp.wait(timeout=90)   # ждём до 90 сек; холодный старт ANE ≈ 60 сек
-            _wlog(f"warmup finished, waited {_t_mod.time()-t_wait:.1f}s — ANE hot")
         except subprocess.TimeoutExpired:
-            _wlog(f"warmup timeout after 90s — killing and starting cold")
             try:
                 wp.terminate()
             except Exception:
