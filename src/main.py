@@ -1037,6 +1037,23 @@ def _on_paste(mode: str = "raw"):
 
 _hotkey_monitors = []   # NSEvent monitor refs — prevent GC
 
+# Очередь событий хоткея — сериализует press/release на одном воркере.
+# NSEvent-хендлеры работают на главном RunLoop, поэтому нельзя блокироваться
+# внутри них. Кладём событие в очередь и тут же выходим; воркер обрабатывает
+# последовательно — так же, как раньше делал pynput-поток.
+import queue as _queue
+_hotkey_queue: "_queue.Queue[tuple]" = _queue.Queue()
+
+def _hotkey_worker():
+    while True:
+        event_type, arg = _hotkey_queue.get()
+        if event_type == "press":
+            _on_hotkey_press(full_mode=arg)
+        else:
+            _on_hotkey_release()
+
+threading.Thread(target=_hotkey_worker, daemon=True, name="hush-hotkey").start()
+
 
 def _setup_hotkey():
     global _hotkey_monitors
@@ -1063,12 +1080,9 @@ def _setup_hotkey():
         if kc == _kVK_RightOption:
             _dbg(f"flags: kc={kc} flags=0x{flags:x} alt={bool(flags & _NSAlternateKeyMask)} shift={bool(flags & _NSShiftKeyMask)}")
             if flags & _NSAlternateKeyMask:
-                full_mode = bool(flags & _NSShiftKeyMask)
-                threading.Thread(target=_on_hotkey_press, args=(full_mode,),
-                                 daemon=True, name="hush-press").start()
+                _hotkey_queue.put(("press", bool(flags & _NSShiftKeyMask)))
             else:
-                threading.Thread(target=_on_hotkey_release,
-                                 daemon=True, name="hush-release").start()
+                _hotkey_queue.put(("release", None))
 
     def _handle_key_down(event):
         if event is None:
