@@ -1063,9 +1063,12 @@ def _setup_hotkey():
         if kc == _kVK_RightOption:
             _dbg(f"flags: kc={kc} flags=0x{flags:x} alt={bool(flags & _NSAlternateKeyMask)} shift={bool(flags & _NSShiftKeyMask)}")
             if flags & _NSAlternateKeyMask:
-                _on_hotkey_press(full_mode=bool(flags & _NSShiftKeyMask))
+                full_mode = bool(flags & _NSShiftKeyMask)
+                threading.Thread(target=_on_hotkey_press, args=(full_mode,),
+                                 daemon=True, name="hush-press").start()
             else:
-                _on_hotkey_release()
+                threading.Thread(target=_on_hotkey_release,
+                                 daemon=True, name="hush-release").start()
 
     def _handle_key_down(event):
         if event is None:
