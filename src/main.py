@@ -1047,10 +1047,15 @@ _hotkey_queue: "_queue.Queue[tuple]" = _queue.Queue()
 def _hotkey_worker():
     while True:
         event_type, arg = _hotkey_queue.get()
-        if event_type == "press":
-            _on_hotkey_press(full_mode=arg)
-        else:
-            _on_hotkey_release()
+        try:
+            if event_type == "press":
+                _on_hotkey_press(full_mode=arg)
+            else:
+                _on_hotkey_release()
+        except Exception as e:
+            # Один сбойный обработчик не должен убивать единственный воркер-поток —
+            # иначе все последующие нажатия Alt перестанут обрабатываться навсегда.
+            _dbg(f"_hotkey_worker: handler failed ({event_type}): {e}")
 
 threading.Thread(target=_hotkey_worker, daemon=True, name="hush-hotkey").start()
 

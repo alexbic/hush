@@ -29,15 +29,33 @@ def start(on_chunk=None):
             if on_chunk:
                 on_chunk(indata.flatten())
 
-    stream = sd.InputStream(
-        callback=callback,
-        samplerate=SAMPLE_RATE,
-        channels=1,
-        dtype="float32",
-        blocksize=int(SAMPLE_RATE * 0.02),
-    )
-    stream.start()
-    return stream
+    # sd.InputStream(...)/.start() иногда зависают в PortAudio (та же болячка,
+    # что и у stream.stop()/close() в stop() ниже) — защищаем тайм-аутом 5 сек,
+    # иначе единственный _hotkey_worker в main.py блокируется навсегда.
+    result = {}
+
+    def _do_open():
+        try:
+            s = sd.InputStream(
+                callback=callback,
+                samplerate=SAMPLE_RATE,
+                channels=1,
+                dtype="float32",
+                blocksize=int(SAMPLE_RATE * 0.02),
+            )
+            s.start()
+            result["stream"] = s
+        except Exception as e:
+            result["error"] = e
+
+    t = threading.Thread(target=_do_open, daemon=True)
+    t.start()
+    t.join(timeout=5.0)
+    if t.is_alive():
+        raise TimeoutError("sd.InputStream()/start() hung (PortAudio)")
+    if "error" in result:
+        raise result["error"]
+    return result["stream"]
 
 
 def stop(stream):
