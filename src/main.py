@@ -803,7 +803,8 @@ def _commit_and_paste(text: str):
             _kbd.tap('v')
             _kbd.release(kb.Key.cmd)
             _dbg("paste: pynput Cmd+V done")
-            time.sleep(0.05)
+            time.sleep(0.35)   # было 0.05 — недостаточно для Electron-приложений (Claude Desktop):
+                                 # пробел долетал раньше вставленного текста
             _kbd.tap(' ')   # trailing space so next dictation joins cleanly
         else:
             _dbg("paste: ПРОПУЩЕНО — нет разрешения Accessibility. Текст в буфере обмена, используйте Cmd+V вручную.")
