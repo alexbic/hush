@@ -377,6 +377,17 @@ Thank you. Really.
 
 ## Changelog
 
+### v1.3 — 2026-07-11
+
+**Stability: parakeet-cli no longer hangs after system sleep**
+
+- `parakeet-cli` runs inference on ANE/CoreML; if the process survives a system sleep, its ANE context is torn down and any operation on it blocks forever after wake — until the 360 s hard timeout.
+- `_SleepObserver` now kills the active `parakeet-cli` (transcription and warm-up) in `systemWillSleep_`, and does the same defensively in `systemDidWake_` before reinitializing PortAudio — no process survives sleep with an unfinished ANE context.
+- `transcriber.cancel()` now terminates both `_current_proc` and `_warmup_proc` (previously only the active transcription), which also fixes a latent version of the old "two parakeet-cli processes competing for ANE" race when cancelling during an active warm-up.
+- A process killed by timeout/cancel is now logged to `/tmp/vi_transcribe.log` instead of silently returning an empty string — hangs of this kind no longer vanish without a trace in the logs.
+
+---
+
 ### v1.2 — 2026-07-01
 
 **Stability: crash on macOS 26 (Tahoe) fixed**

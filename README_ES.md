@@ -338,6 +338,17 @@ Gracias. De verdad.
 
 ## Historial de versiones
 
+### v1.3 — 11.07.2026
+
+**Estabilidad: parakeet-cli ya no se cuelga tras suspender el equipo**
+
+- `parakeet-cli` ejecuta la inferencia en ANE/CoreML; si el proceso sobrevive a una suspensión del sistema, su contexto ANE se rompe y cualquier operación sobre él se bloquea para siempre tras despertar — hasta el timeout estricto de 360 s.
+- `_SleepObserver` ahora mata el `parakeet-cli` activo (transcripción y calentamiento) en `systemWillSleep_`, y hace lo mismo como respaldo en `systemDidWake_` antes de reinicializar PortAudio — ningún proceso sobrevive a la suspensión con un contexto ANE inconcluso.
+- `transcriber.cancel()` ahora termina tanto `_current_proc` como `_warmup_proc` (antes solo la transcripción activa), lo que también corrige una versión latente de la vieja condición de carrera "dos procesos parakeet-cli compitiendo por ANE" al cancelar durante un calentamiento activo.
+- Un proceso terminado por timeout/cancelación ahora se registra en `/tmp/vi_transcribe.log` en lugar de devolver una cadena vacía en silencio — este tipo de cuelgues ya no desaparece sin dejar rastro en los logs.
+
+---
+
 ### v1.2 — 01.07.2026
 
 **Estabilidad: crash en macOS 26 (Tahoe) corregido**
