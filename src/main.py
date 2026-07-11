@@ -1188,7 +1188,9 @@ class _SleepObserver(AppKit.NSObject):
     """Обрабатывает системный сон/пробуждение для переинициализации PortAudio после пробуждения."""
 
     def systemWillSleep_(self, notification):
-        """При засыпании: чисто прерываем любую активную запись."""
+        """При засыпании: чисто прерываем любую активную запись и транскрипцию.
+        parakeet-cli работает через ANE/CoreML — если процесс переживёт сон, его
+        ANE-контекст рвётся и любая операция на нём зависает навсегда после пробуждения."""
         stream = _state.get("stream")
         if stream:
             try:
@@ -1197,9 +1199,14 @@ class _SleepObserver(AppKit.NSObject):
             except Exception:
                 pass
             _state["stream"] = None
+        transcriber.cancel()
+        _dbg("systemWillSleep_: transcriber cancelled")
 
     def systemDidWake_(self, notification):
-        """При пробуждении: переинициализируем PortAudio и перезапускаем hotkey мониторы."""
+        """При пробуждении: переинициализируем PortAudio и перезапускаем hotkey мониторы.
+        transcriber.cancel() здесь — подстраховка на случай, если systemWillSleep_ не успел
+        сработать (например, резкое закрытие крышки) и parakeet-cli завис с разорванным ANE."""
+        transcriber.cancel()
         import sounddevice as sd
         try:
             sd._terminate()
@@ -1212,6 +1219,8 @@ class _SleepObserver(AppKit.NSObject):
         _dbg("systemDidWake_: PortAudio reinitialized")
         _setup_hotkey()
         _dbg("systemDidWake_: hotkey monitors restarted")
+        transcriber.warm_up()
+        _dbg("systemDidWake_: transcriber cancelled + warm-up started")
 
 
 _sleep_observer = None

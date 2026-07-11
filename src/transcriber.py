@@ -10,26 +10,32 @@ _current_proc  = None   # type: subprocess.Popen | None
 _warmup_proc   = None   # type: subprocess.Popen | None
 _proc_lock     = threading.Lock()
 
-def cancel():
-    """Немедленно завершить выполняющийся subprocess parakeet."""
+def _terminate(proc):
+    """SIGTERM → до 1 сек ожидания graceful exit → SIGKILL если не помог."""
     import time as _t
+    if not proc or proc.poll() is not None:
+        return
+    try:
+        proc.terminate()   # SIGTERM — корректное завершение, CoreML может сохранить кэш ANE
+    except Exception:
+        pass
+    for _ in range(10):
+        _t.sleep(0.1)
+        if proc.poll() is not None:
+            return
+    try:
+        proc.kill()    # SIGKILL только если SIGTERM не помог
+    except Exception:
+        pass
+
+def cancel():
+    """Немедленно завершить оба возможных subprocess parakeet: активную транскрипцию
+    и фоновый прогрев. Вызывается и при пользовательской отмене, и перед сном системы —
+    ни один parakeet-cli не должен пережить сон с незавершённым ANE-контекстом."""
     with _proc_lock:
-        proc = _current_proc
-    if proc and proc.poll() is None:
-        try:
-            proc.terminate()   # SIGTERM — корректное завершение, CoreML может сохранить кэш ANE
-        except Exception:
-            pass
-        # Даём 1 сек на graceful exit; если не вышел — добиваем
-        for _ in range(10):
-            _t.sleep(0.1)
-            if proc.poll() is not None:
-                break
-        else:
-            try:
-                proc.kill()    # SIGKILL только если SIGTERM не помог
-            except Exception:
-                pass
+        proc, wp = _current_proc, _warmup_proc
+    _terminate(proc)
+    _terminate(wp)
 
 # Первый запуск компилирует CoreML модель (~4 мин). После кэширования: ~33 с для 15 с аудио.
 # 360 с покрывает холодный старт + до ~2 мин аудио.
@@ -172,7 +178,12 @@ def transcribe(wav_path: str) -> str:
         with _proc_lock:
             if _current_proc is proc:
                 _current_proc = None
-    if proc.returncode in (-9, -15):   # killed (SIGKILL) или terminated (SIGTERM) через cancel()
+    if proc.returncode in (-9, -15):   # killed (SIGKILL) или terminated (SIGTERM) через cancel()/таймаут
+        try:
+            with open("/tmp/vi_transcribe.log", "a") as f:
+                f.write(f"\n[{_t.strftime('%H:%M:%S')}] KILLED rc={proc.returncode} wav={wav_path}\n")
+        except Exception:
+            pass
         return ""
     result_stdout = stdout_b.decode("utf-8", errors="replace")
     result_stderr = stderr_b.decode("utf-8", errors="replace")
