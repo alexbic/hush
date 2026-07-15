@@ -539,6 +539,22 @@ def _force_paste_raw_now():
     ).start()
 
 
+def _reinit_portaudio():
+    """Сбрасывает состояние PortAudio. Используется после сна и когда recorder.start()
+    виснет несколько раз подряд — PortAudio может застрять внутри живого процесса
+    без внешнего триггера (сна/смены устройства); отдельный процесс в это же время
+    открывает тот же микрофон нормально, значит порча состояния — процесс-локальная."""
+    import sounddevice as sd
+    try:
+        sd._terminate()
+    except Exception:
+        pass
+    try:
+        sd._initialize()
+    except Exception:
+        pass
+
+
 def _on_hotkey_press(full_mode: bool = False):
     """Вызывается при нажатии Right ⌥.
     full_mode=True  (Shift+⌥) → переключить окно полного режима открыть/закрыть.
@@ -625,6 +641,11 @@ def _on_hotkey_press(full_mode: bool = False):
     except Exception as e:
         _dbg(f"recorder.start() FAILED: {e}")
         _state["stream"] = None
+        if isinstance(e, TimeoutError):
+            # PortAudio завис в этом процессе — переинициализируем сразу, а не ждём
+            # следующего сна/пробуждения, иначе запись остаётся мёртвой до перезапуска HUSH.
+            _reinit_portaudio()
+            _dbg("recorder.start(): PortAudio reinitialized after hang")
         # Показывать оверлей в режиме записи при отсутствующем стриме нельзя — прячем
         AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(lambda: overlay.hide(force=True))
         AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(overlay.hide_silent)
@@ -1207,15 +1228,7 @@ class _SleepObserver(AppKit.NSObject):
         transcriber.cancel() здесь — подстраховка на случай, если systemWillSleep_ не успел
         сработать (например, резкое закрытие крышки) и parakeet-cli завис с разорванным ANE."""
         transcriber.cancel()
-        import sounddevice as sd
-        try:
-            sd._terminate()
-        except Exception:
-            pass
-        try:
-            sd._initialize()
-        except Exception:
-            pass
+        _reinit_portaudio()
         _dbg("systemDidWake_: PortAudio reinitialized")
         _setup_hotkey()
         _dbg("systemDidWake_: hotkey monitors restarted")
