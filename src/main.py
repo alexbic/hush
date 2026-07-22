@@ -539,20 +539,42 @@ def _force_paste_raw_now():
     ).start()
 
 
-def _reinit_portaudio():
+_portaudio_reinit_lock = threading.Lock()
+
+
+def _reinit_portaudio(timeout: float = 3.0) -> bool:
     """Сбрасывает состояние PortAudio. Используется после сна и когда recorder.start()
     виснет несколько раз подряд — PortAudio может застрять внутри живого процесса
     без внешнего триггера (сна/смены устройства); отдельный процесс в это же время
     открывает тот же микрофон нормально, значит порча состояния — процесс-локальная."""
-    import sounddevice as sd
-    try:
-        sd._terminate()
-    except Exception:
-        pass
-    try:
-        sd._initialize()
-    except Exception:
-        pass
+    result = {"ok": False}
+
+    def _run():
+        import sounddevice as sd
+        with _portaudio_reinit_lock:
+            try:
+                sd._terminate()
+            except Exception:
+                pass
+            try:
+                sd._initialize()
+                result["ok"] = True
+            except Exception:
+                result["ok"] = False
+
+    t = threading.Thread(target=_run, daemon=True, name="hush-portaudio-reinit")
+    t.start()
+    t.join(timeout=timeout)
+    return bool(result["ok"]) if not t.is_alive() else False
+
+
+def _schedule_portaudio_reinit(reason: str):
+    """Run PortAudio recovery off the hotkey/UI path and log only technical state."""
+    def _run():
+        ok = _reinit_portaudio(timeout=3.0)
+        _dbg(f"{reason}: PortAudio recovery ok={ok}")
+
+    threading.Thread(target=_run, daemon=True, name="hush-portaudio-recovery").start()
 
 
 def _on_hotkey_press(full_mode: bool = False):
@@ -644,8 +666,7 @@ def _on_hotkey_press(full_mode: bool = False):
         if isinstance(e, TimeoutError):
             # PortAudio завис в этом процессе — переинициализируем сразу, а не ждём
             # следующего сна/пробуждения, иначе запись остаётся мёртвой до перезапуска HUSH.
-            _reinit_portaudio()
-            _dbg("recorder.start(): PortAudio reinitialized after hang")
+            _schedule_portaudio_reinit("recorder.start() hang")
         # Показывать оверлей в режиме записи при отсутствующем стриме нельзя — прячем
         AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(lambda: overlay.hide(force=True))
         AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(overlay.hide_silent)
@@ -1141,13 +1162,59 @@ def _setup_hotkey():
     m4 = AppKit.NSEvent.addLocalMonitorForEventsMatchingMask_handler_(
         AppKit.NSEventMaskKeyDown, _local_key_down
     )
-    _hotkey_monitors.extend([m for m in (m1, m2, m3, m4) if m is not None])
+
+    # Валидация: проверяем что все 4 монитора создались успешно
+    monitors = {"global_flags": m1, "global_keydown": m2, "local_flags": m3, "local_keydown": m4}
+    failed = [name for name, mon in monitors.items() if mon is None]
+
+    if failed:
+        _dbg(f"ERROR: Failed to create monitors: {failed}. Hotkey may not work!")
+        # Всё равно добавляем что создалось
+        _hotkey_monitors.extend([m for m in (m1, m2, m3, m4) if m is not None])
+        return False  # Индикатор неудачи
+
+    _hotkey_monitors.extend([m1, m2, m3, m4])
+    _dbg("All 4 hotkey monitors created successfully")
+    return True  # Индикатор успеха
+
+def _check_hotkey_health():
+    """Периодически проверяет что hotkey мониторы живы. Возвращает False если проблема."""
+    if not _hotkey_monitors:
+        _dbg("WARNING: No hotkey monitors registered!")
+        return False
+
+    # Проверяем что хотя бы 2 монитора существуют (минимум для работы)
+    if len(_hotkey_monitors) < 2:
+        _dbg(f"WARNING: Only {len(_hotkey_monitors)}/4 monitors alive, hotkey may not work properly")
+        return False
+
+    return True
+
+
+def _ensure_hotkey_monitors():
+    """Гарантирует что hotkey мониторы существуют. Если нет - пересоздаёт."""
+    if not _check_hotkey_health():
+        _dbg("Hotkey health check failed, recreating monitors...")
+        success = _setup_hotkey()
+        if not success:
+            _dbg("ERROR: Failed to recreate hotkey monitors!")
+        return success
+    return True
+
 
 # ── Keep-alive таймер (фикс Ctrl+C) ──────────────────────────────────────────
 
 class _KATgt(AppKit.NSObject):
-    """Пустой target таймера — держит Python signal handler живым внутри NSApp.run()."""
-    def ping_(self, t): pass
+    """Target таймера — держит Python signal handler живым внутри NSApp.run()
+    и периодически проверяет здоровье hotkey мониторов."""
+    def ping_(self, t):
+        # Каждую минуту (240 * 0.25с) проверяем hotkey здоровье
+        if not hasattr(self, '_check_counter'):
+            self._check_counter = 0
+        self._check_counter += 1
+        if self._check_counter >= 240:
+            self._check_counter = 0
+            _ensure_hotkey_monitors()
 
 def _setup_keepalive():
     tgt = _KATgt.alloc().init()
@@ -1189,7 +1256,8 @@ def _start_provider_monitor():
 # ── Workspace observer — динамический трекинг целевого приложения ─────────────
 
 class _AppObserver(AppKit.NSObject):
-    """Отслеживает NSWorkspaceDidActivateApplicationNotification для определения цели вставки."""
+    """Отслеживает NSWorkspaceDidActivateApplicationNotification для определения цели вставки
+    и периодически проверяет здоровье hotkey мониторов при смене приложений."""
     def appActivated_(self, notification):
         global _prev_app
         info = notification.userInfo()
@@ -1200,6 +1268,16 @@ class _AppObserver(AppKit.NSObject):
             return
         _prev_app = app
         overlay.set_prev_app_icon(app)
+
+        # Каждые ~20 смен приложения проверяем hotkey здоровье (для recovery)
+        if not hasattr(self, '_activation_counter'):
+            self._activation_counter = 0
+        self._activation_counter += 1
+        if self._activation_counter >= 20:
+            self._activation_counter = 0
+            if not _check_hotkey_health():
+                _dbg("App activation detected hotkey issue, recreating monitors...")
+                _setup_hotkey()
 
 
 _app_observer = None   # сохраняем сильную ссылку
@@ -1228,10 +1306,13 @@ class _SleepObserver(AppKit.NSObject):
         transcriber.cancel() здесь — подстраховка на случай, если systemWillSleep_ не успел
         сработать (например, резкое закрытие крышки) и parakeet-cli завис с разорванным ANE."""
         transcriber.cancel()
-        _reinit_portaudio()
-        _dbg("systemDidWake_: PortAudio reinitialized")
-        _setup_hotkey()
-        _dbg("systemDidWake_: hotkey monitors restarted")
+        portaudio_ok = _reinit_portaudio()
+        _dbg(f"systemDidWake_: PortAudio recovery ok={portaudio_ok}")
+        hotkey_ok = _setup_hotkey()
+        if hotkey_ok:
+            _dbg("systemDidWake_: hotkey monitors recreated successfully")
+        else:
+            _dbg("ERROR: systemDidWake_: hotkey monitor recreation had issues!")
         transcriber.warm_up()
         _dbg("systemDidWake_: transcriber cancelled + warm-up started")
 

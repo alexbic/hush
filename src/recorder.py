@@ -14,6 +14,24 @@ _frames = []
 _CHUNK_SAMPLES = 240000
 
 
+def _reset_state():
+    global _recording, _frames
+    with _lock:
+        _recording = False
+        _frames = []
+
+
+def _close_stream_quietly(stream):
+    try:
+        stream.stop()
+    except Exception:
+        pass
+    try:
+        stream.close()
+    except Exception:
+        pass
+
+
 def start(on_chunk=None):
     """Начинает запись голоса. Возвращает stream object."""
     global _recording, _frames
@@ -22,8 +40,12 @@ def start(on_chunk=None):
         _recording = True
         _frames = []
 
+    abandoned = threading.Event()
+
     def callback(indata, frames, time, status):
-        if _recording:
+        with _lock:
+            should_record = _recording and not abandoned.is_set()
+        if should_record:
             with _lock:
                 _frames.append(indata.copy())
             if on_chunk:
@@ -44,17 +66,27 @@ def start(on_chunk=None):
                 blocksize=int(SAMPLE_RATE * 0.02),
             )
             s.start()
-            result["stream"] = s
+            if abandoned.is_set():
+                _close_stream_quietly(s)
+            else:
+                result["stream"] = s
         except Exception as e:
-            result["error"] = e
+            if not abandoned.is_set():
+                result["error"] = e
 
     t = threading.Thread(target=_do_open, daemon=True)
     t.start()
     t.join(timeout=5.0)
     if t.is_alive():
+        abandoned.set()
+        _reset_state()
         raise TimeoutError("sd.InputStream()/start() hung (PortAudio)")
     if "error" in result:
+        _reset_state()
         raise result["error"]
+    if "stream" not in result:
+        _reset_state()
+        raise TimeoutError("sd.InputStream()/start() abandoned (PortAudio)")
     return result["stream"]
 
 
