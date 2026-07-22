@@ -1,15 +1,12 @@
 # Status: HUSH
 
-**Updated:** 2026-07-22T21:06:00Z by Codex
+**Updated:** 2026-07-22T21:31:00Z by Codex
 
 ## Brief
-Project-state bootstrap is complete after a repository review. HUSH is a local
-macOS accessory app for hotkey-driven dictation, Parakeet/CoreML transcription,
-optional LLM scenario processing, and paste into the previously active app.
-
-The next implementation task is to diagnose the current app failure the
-maintainer mentioned. No runtime fix has been attempted yet in this bootstrap
-step.
+HUSH now has a targeted full-mode UI fix for a regression where loading context
+from history could leave the bottom action buttons hidden until a new voice
+chunk was recorded. The visibility rule now follows any non-empty context,
+including rich blocks restored from history.
 
 ## Progress
 - M1: ██████████ 100%
@@ -48,6 +45,13 @@ step.
   pre-existing user/worktree changes unless the maintainer asks to revise them.
 - `overlay.py` is very large and owns many responsibilities; fixes touching UI
   state should be tightly scoped and verified manually.
+- Current UI regression: in full mode, loading history can end with content in
+  rich blocks while `_tv` is empty, and one visibility path checks only `_tv`
+  text before switching out of `history_open`. That leaves bottom action
+  buttons hidden even though the context already contains text.
+- The fix centralizes content detection in `src/overlay.py` so history-loaded
+  blocks, manual typing, and text already present in `_st["text"]` all drive
+  the same bottom-action visibility behavior.
 - Runtime log review on 2026-07-22 found fresh `/private/tmp` logs but no HUSH
   `.ips` crash report in `~/Library/Logs/DiagnosticReports` for the last two
   days. A scoped macOS unified-log query was attempted but RunningBoard/TCC
@@ -81,8 +85,6 @@ step.
   current fix scope is PortAudio recovery only.
 
 ## Blockers
-- Exact app failure symptom is not yet recorded in project state. Need the next
-  task description or reproduce locally before changing runtime code.
 - Full app verification may require local macOS Accessibility/Microphone
   permissions and GUI execution approval.
 - Exact forced-quit timestamps cannot be recovered from `hush_launcher.log`
@@ -92,6 +94,10 @@ step.
 ## Verification
 - Repository review: completed by reading project files and examples.
 - Python compile check: passed with `python3 -m compileall -q src`.
+- UI visibility bug fix: completed in `src/overlay.py` by routing action-row
+  visibility through a shared "has context content" check used by
+  `history_open` transitions, panel restore, history close, and rich-block
+  restore paths.
 - App build/runtime smoke: not run during bootstrap; defer until failure
   diagnosis unless explicitly requested.
 - Recent-log analysis: completed from `/private/tmp/vi_debug.log`,
@@ -103,7 +109,7 @@ step.
   changes to `src/main.py` and `src/recorder.py`.
 
 ## Next
-- Rebuild/reinstall HUSH before manual runtime smoke so `/Applications/HUSH.app`
+- Rebuild/reinstall HUSH before a focused manual UI smoke so the app bundle
   matches repository sources.
-- Sanitize existing diagnostic logging so dictated text and LLM result snippets
-  are not written to `/tmp` logs.
+- Verify the fixed repro path manually: open full mode, load history content,
+  confirm bottom action buttons appear without a new dictation chunk.

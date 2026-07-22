@@ -29,6 +29,11 @@
       selected-model/configuration issue rather than the hang being debugged.
 
 ## Done
+- [x] @desktop: Show action buttons for any loaded context text — DoD: when
+      full-mode context contains text from history, manual typing, or rich
+      blocks, the bottom action buttons appear consistently without requiring a
+      new voice-input chunk — completed 2026-07-22; compile check passed,
+      manual UI smoke still pending with rebuilt app/runtime.
 - [x] @desktop: Harden PortAudio hang recovery — DoD: after
       `sd.InputStream().start()` timeout, reset recorder state, avoid blocking
       the hotkey worker/main AppKit path on PortAudio reinitialization, log the

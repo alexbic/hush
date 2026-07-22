@@ -2847,7 +2847,7 @@ class TerminalTextView(AppKit.NSTextView):
         if mode in ("ready", "history_open"):
             raw = str(self.string()).rstrip('\n')
             _st["text"] = raw
-            if mode == "history_open" and raw.strip():
+            if mode == "history_open" and _has_context_content():
                 _st["mode"] = "ready"
                 _show_buttons(True)
                 _refresh_scenario_colors()
@@ -4662,6 +4662,12 @@ def _add_rich_block(md_text, hist_id=None):
         block._original_hist_id = hist_id
         if _on_update_session_cb:
             _on_update_session_cb()
+        if _has_context_content():
+            if _st.get("mode") == "history_open":
+                _st["mode"] = "ready"
+            _show_target_app_header()
+            _show_buttons(True)
+            _refresh_scenario_colors()
     except Exception as e:
         print(f"[overlay] _add_rich_block error: {e}")
 
@@ -5586,7 +5592,7 @@ def _reset_to_cross_layout():
 def _restore_overlay_after_panel():
     """Восстановить состояние оверлея + фокус после закрытия drop panel через Escape."""
     if _st.get("mode") == "history_open":
-        has_content = bool(_st.get("text", "").strip() or _rich_blocks)
+        has_content = _has_context_content()
         _st["mode"] = "ready" if has_content else "idle"
         if has_content:
             _show_target_app_header()
@@ -6212,7 +6218,7 @@ def _show_hist_panel(history):
         _hist_panel_side = None
         # Сбрасываем режим браузера истории если активен
         if _st["mode"] == "history_open":
-            _st["mode"] = "idle" if not _st["text"] else "ready"
+            _st["mode"] = "ready" if _has_context_content() else "idle"
         _cfg_saved.setdefault("panels_open", {})["hist"] = False
         _save_settings()
         return
@@ -7758,6 +7764,11 @@ def _get_all_text() -> str:
     return "\n\n".join(parts)
 
 
+def _has_context_content() -> bool:
+    """True when the current full-mode context contains any usable text."""
+    return bool(_get_all_text().strip() or _st.get("text", "").strip())
+
+
 def _load_history_combined(text: str, loaded_id: str = None, keep_active: bool = False):
     """Загрузить текст (одиночный или объединённый) в основную текстовую область.
     loaded_id: UUID исходного элемента истории (None если объединено несколько).
@@ -8938,8 +8949,8 @@ def _show_buttons(visible: bool, enabled: bool = None):
         if _sc_next_btn: _sc_next_btn.setHidden_(False)
     else:
         # Обычная строка из 4 кнопок действий — показывать только когда есть контент
-        # Проверить и blocks/_tv (через _get_all_text) и _st["text"] (установлено до анимации)
-        has_content = bool(_get_all_text().strip() or _st.get("text", "").strip())
+        # Проверить и blocks/_tv, и _st["text"] (может быть установлен до анимации/перекомпоновки)
+        has_content = _has_context_content()
         if _sc_action_v:  _sc_action_v.setHidden_(True)
         _hide_scenario_grid()
         if not has_content:
