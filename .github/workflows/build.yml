@@ -43,7 +43,7 @@ jobs:
           # Make build script executable
           chmod +x build_app.sh
           
-          # Build the app
+          # Build the app (skip icon generation as it's already done)
           ./build_app.sh
           
           # Verify the app was created
@@ -53,7 +53,7 @@ jobs:
       - name: Create archive
         run: |
           # Create zip archive
-          ditto -c -k --keep-parent HUSH.app HUSH-macos.zip
+          cd HUSH.app && zip -r ../HUSH-macos.zip *
           
       # 6. Загрузка артефактов
       - name: Upload artifact
