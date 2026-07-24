@@ -3,10 +3,16 @@ name: Build HUSH App
 on:
   push:
     branches: [ main ]
+    tags: [ 'v*' ]
   pull_request:
     branches: [ main ]
-  release:
-    types: [ published ]
+  workflow_dispatch:
+    inputs:
+      test_build:
+        description: 'Test build without release'
+        required: false
+        type: boolean
+        default: false
 
 env:
   PYTHON_VERSION: '3.14'
