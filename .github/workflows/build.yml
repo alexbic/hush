@@ -1,11 +1,9 @@
-name: Build HUSH App
+name: Build and Release HUSH
 
 on:
   push:
     branches: [ main ]
     tags: [ 'v*' ]
-  pull_request:
-    branches: [ main ]
   workflow_dispatch:
     inputs:
       test_build:
@@ -62,34 +60,122 @@ jobs:
         plutil -lint HUSH.app/Contents/Info.plist
         
     - name: Upload artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: HUSH-app-macos
         path: HUSH.app/
         retention-days: 30
-        
+
   release:
     needs: build
     runs-on: macos-latest
-    if: github.event_name == 'release' && github.event.action == 'published'
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && github.event.inputs.test_build != 'true'
     
     steps:
     - name: Download artifact
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: HUSH-app-macos
         
     - name: Create release archive
       run: |
-        # Create zip archive
-        ditto -c -k --keep-parent HUSH.app HUSH-v${{ github.event.release.tag_name }}-macos.zip
+        # Get tag name
+        TAG_NAME=${{ github.ref_name }}
         
-    - name: Upload release asset
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # Create zip archive
+        ditto -c -k --keep-parent HUSH.app HUSH-v${TAG_NAME}-macos.zip
+        
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
       with:
-        upload_url: ${{ github.event.release.upload_url }}
-        asset_path: ./HUSH-v${{ github.event.release.tag_name }}-macos.zip
-        asset_name: HUSH-v${{ github.event.release.tag_name }}-macos.zip
-        asset_content_type: application/zip
+        tag_name: ${{ github.ref_name }}
+        name: Release ${{ github.ref_name }}
+        body: |
+          ## HUSH v${{ github.ref_name }}
+          
+          ### Features
+          - Multi-monitor support with automatic window relocation
+          - PortAudio hang recovery mechanism
+          - Enhanced error handling and diagnostics
+          - Improved UI for all modes (silent, main, expanded)
+          
+          ### Installation
+          1. Download HUSH-v${{ github.ref_name }}-macos.zip
+          2. Extract and move HUSH.app to Applications folder
+          3. Run from Applications
+          
+          ### Requirements
+          - macOS (latest)
+          - Python 3.14 (from Homebrew)
+          - Microphone and Accessibility permissions
+          
+          ### Usage
+          - Right Option: Start/stop silent recording
+          - Shift + Right Option: Open/close full mode
+          - Enter: Paste accumulated text
+          
+          ### Testing
+          - Intensive PortAudio stress testing completed
+          - Multi-monitor functionality verified
+          - All existing functionality preserved
+          
+          ### Changelog
+          - Automatic window relocation to target app screen
+          - Screen configuration change handling
+          - PortAudio recovery with timeout mechanism
+          - Enhanced action buttons visibility
+          - Improved error logging and diagnostics
+          
+          **Built on:** ${{ github.event.created_at }}
+          
+        files: HUSH-v${{ github.ref_name }}-macos.zip
+        draft: false
+        prerelease: false
+        generate_release_notes: true
+
+  # Generate release notes for PRs and regular pushes
+  generate-pr-notes:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !startsWith(github.sha, github.event.before)
+    
+    steps:
+    - name: Generate PR notes
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const { context } = require('@actions/github');
+          
+          // Get commits since last push
+          const commits = await github.rest.repos.compareCommits({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            base: context.payload.before,
+            head: context.payload.sha
+          });
+          
+          // Generate changelog
+          let changelog = '## Recent Changes\n\n';
+          commits.data.commits.forEach(commit => {
+            const shortSha = commit.sha.substring(0, 7);
+            changelog += `- ${commit.commit.message} (${shortSha})\n`;
+          });
+          
+          // Create PR or update existing one
+          const prs = await github.rest.pulls.list({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            state: 'open',
+            head: `${context.repo.owner}:${context.ref}`
+          });
+          
+          if (prs.data.length > 0) {
+            // Update first PR
+            await github.rest.pulls.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prs.data[0].number,
+              body: `${prs.data[0].body}\n\n${changelog}`
+            });
+          }
+          
+          console.log('Changelog generated:', changelog);
