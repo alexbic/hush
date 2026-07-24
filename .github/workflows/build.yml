@@ -18,6 +18,7 @@ env:
 jobs:
   build:
     runs-on: macos-latest
+    timeout-minutes: 10
     
     steps:
     - name: Checkout code
@@ -28,15 +29,14 @@ jobs:
       with:
         python-version: ${{ env.PYTHON_VERSION }}
         
-    - name: Install dependencies
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        cache: 'pip'
+        
+    - name: Verify Python
       run: |
-        # Install Homebrew if not present
-        which brew || /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-        
-        # Install Python from Homebrew if needed
-        brew list python || brew install python@${{ env.PYTHON_VERSION }}
-        
-        # Verify Python installation
         python3 --version
         which python3
         
@@ -46,10 +46,10 @@ jobs:
         chmod +x build_app.sh
         
         # Build the app
-        ./build_app.sh
+        ./build_app.sh || exit 1
         
         # Verify the app was created
-        ls -la HUSH.app
+        ls -la HUSH.app || exit 1
         
     - name: Test app compilation
       run: |
