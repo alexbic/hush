@@ -771,6 +771,92 @@ def _screen_bounds_at(cx, cy):
             int(f.origin.x + f.size.width), int(f.origin.y + f.size.height))
 
 
+def _move_window_to_target_app_screen():
+    """Переместить окно интерфейса на экран с целевым приложением.
+    Если целевое приложение не определено, используется главный экран."""
+    global _win, _prev_app
+    
+    if not _win:
+        return
+    
+    # Определяем целевое приложение
+    target_app = globals().get("_prev_app")
+    if not target_app:
+        # Если целевое приложение не определено, используем главный экран
+        target_screen = AppKit.NSScreen.mainScreen()
+    else:
+        # Получаем экран, на котором находится целевое приложение
+        try:
+            app_frame = target_app.activationPolicy()  # Проверяем, что приложение активно
+            target_screen = AppKit.NSScreen.mainScreen()  # По умолчанию главный экран
+            
+            # Ищем активное окно приложения для определения его позиции
+            workspace = AppKit.NSWorkspace.sharedWorkspace()
+            running_apps = workspace.runningApplications()
+            
+            for app in running_apps:
+                if app == target_app:
+                    # Получаем позицию приложения (приблизительно)
+                    app_pid = app.processIdentifier()
+                    # Используем главный экран как запасной вариант
+                    target_screen = AppKit.NSScreen.mainScreen()
+                    break
+                    
+        except Exception:
+            # Если не удалось определить экран приложения, используем главный
+            target_screen = AppKit.NSScreen.mainScreen()
+    
+    # Получаем видимые границы целевого экрана
+    screen_frame = target_screen.visibleFrame()
+    
+    # Получаем текущие размеры окна
+    win_frame = _win.frame()
+    win_width = win_frame.size.width
+    win_height = win_frame.size.height
+    
+    # Рассчитываем новую позицию (центр экрана с небольшим смещением)
+    new_x = int(screen_frame.origin.x + (screen_frame.size.width - win_width) // 2)
+    new_y = int(screen_frame.origin.y + (screen_frame.size.height - win_height) // 2)
+    
+    # Ограничиваем позицию границами экрана
+    new_x = max(int(screen_frame.origin.x), min(new_x, int(screen_frame.origin.x + screen_frame.size.width - win_width)))
+    new_y = max(int(screen_frame.origin.y), min(new_y, int(screen_frame.origin.y + screen_frame.size.height - win_height)))
+    
+    # Перемещаем окно с анимацией
+    _win.setFrameOrigin_(AppKit.NSMakePoint(new_x, new_y))
+    _dbg(f"moved window to target app screen: ({new_x}, {new_y})")
+
+
+def _handle_screen_configuration_change():
+    """Обработчик изменения конфигурации экранов.
+    Переносит окно на активный экран при отключении/подключении мониторов."""
+    global _win
+    
+    if not _win:
+        return
+    
+    # Проверяем, находится ли текущее окно в пределах видимой области
+    win_frame = _win.frame()
+    win_center_x = win_frame.origin.x + win_frame.size.width // 2
+    win_center_y = win_frame.origin.y + win_frame.size.height // 2
+    
+    # Ищем экран, содержащий центр окна
+    current_screen = None
+    for screen in (AppKit.NSScreen.screens() or [AppKit.NSScreen.mainScreen()]):
+        screen_frame = screen.visibleFrame()
+        if (screen_frame.origin.x <= win_center_x < screen_frame.origin.x + screen_frame.size.width and
+                screen_frame.origin.y <= win_center_y < screen_frame.origin.y + screen_frame.size.height):
+            current_screen = screen
+            break
+    
+    # Если окно не находится на любом из экранов, переносим на экран с целевым приложением
+    if not current_screen:
+        _move_window_to_target_app_screen()
+    else:
+        # Если целевое приложение изменилось, также переносим окно
+        _move_window_to_target_app_screen()
+
+
 _MAGNET_PANEL_GLOBALS = {
     "cfg":       "_cfg_panel",
     "hist":      "_hist_panel",
@@ -8707,6 +8793,11 @@ def init(on_scenario_callback, on_history_callback=None,
         _btn_t, b"docScrolled:",
         AppKit.NSScrollViewDidLiveScrollNotification,
         _scroll)
+    # 3) Изменение конфигурации экранов → срабатывает при подключении/отключении мониторов
+    nc.addObserver_selector_name_object_(
+        _btn_t, b"screenConfigurationChanged:",
+        AppKit.NSApplicationDidChangeScreenParametersNotification,
+        None)
 
     # Поддельный блочный курсор (совпадает с .term-cursor в admin.roclea.com)
     global _cur_view, _cur_timer

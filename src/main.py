@@ -813,11 +813,99 @@ def _activate_prev_app():
         )
 
 
+def _frontmost_bundle_id():
+    """Return the bundle id of the current frontmost app, if available."""
+    try:
+        app = AppKit.NSWorkspace.sharedWorkspace().frontmostApplication()
+        if not app:
+            return None
+        return app.bundleIdentifier()
+    except Exception:
+        return None
+
+
+def _wait_for_frontmost_app(bundle_id: str, timeout_s: float = 1.2, poll_s: float = 0.05) -> bool:
+    """Wait until the target app becomes frontmost before firing synthetic paste keys."""
+    if not bundle_id:
+        return False
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        if _frontmost_bundle_id() == bundle_id:
+            return True
+        time.sleep(poll_s)
+    return _frontmost_bundle_id() == bundle_id
+
+
+def _fire_paste_shortcut(target_name: str | None = None) -> str:
+    """Trigger Cmd+V in the target app. Returns the mechanism that succeeded."""
+    if target_name:
+        try:
+            subprocess.run(
+                [
+                    "osascript",
+                    "-e",
+                    f'tell application "System Events" to tell process "{target_name}" to keystroke "v" using {{command down}}',
+                ],
+                check=True,
+            )
+            return "system_events_process"
+        except Exception as e:
+            _dbg(f"paste: System Events process Cmd+V failed: {e}")
+
+        try:
+            subprocess.run(
+                [
+                    "osascript",
+                    "-e",
+                    f'tell application "System Events" to tell process "{target_name}" to click menu item "Paste" of menu "Edit" of menu bar 1',
+                ],
+                check=True,
+            )
+            return "system_events_menu"
+        except Exception as e:
+            _dbg(f"paste: System Events menu Paste failed: {e}")
+
+    try:
+        subprocess.run(
+            [
+                "osascript",
+                "-e",
+                'tell application "System Events" to keystroke "v" using {command down}',
+            ],
+            check=True,
+        )
+        return "system_events"
+    except Exception as e:
+        _dbg(f"paste: System Events Cmd+V failed: {e}")
+
+    try:
+        import Quartz
+
+        key_v = 9
+        src = Quartz.CGEventSourceCreate(Quartz.kCGEventSourceStateHIDSystemState)
+        down = Quartz.CGEventCreateKeyboardEvent(src, key_v, True)
+        up = Quartz.CGEventCreateKeyboardEvent(src, key_v, False)
+        Quartz.CGEventSetFlags(down, Quartz.kCGEventFlagMaskCommand)
+        Quartz.CGEventSetFlags(up, Quartz.kCGEventFlagMaskCommand)
+        Quartz.CGEventPost(Quartz.kCGAnnotatedSessionEventTap, down)
+        Quartz.CGEventPost(Quartz.kCGAnnotatedSessionEventTap, up)
+        return "quartz"
+    except Exception as e:
+        _dbg(f"paste: Quartz Cmd+V failed: {e}")
+
+    _kbd.press(kb.Key.cmd)
+    _kbd.tap('v')
+    _kbd.release(kb.Key.cmd)
+    return "pynput"
+
+
 def _commit_and_paste(text: str):
     """Скрываем оверлей, активируем предыдущее приложение, вставляем текст.
     Runs synchronously in the caller's thread (worker) so _processing_locked stays
     True until paste is fully done — prevents race where hide() kills the new session."""
     prev_app_ref = _prev_app
+    target_bundle = prev_app_ref.bundleIdentifier() if prev_app_ref else None
+    target_name = str(prev_app_ref.localizedName() or "") if prev_app_ref else ""
 
     # Сначала скрываем overlay в главном потоке
     def on_main():
@@ -827,9 +915,15 @@ def _commit_and_paste(text: str):
     AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(on_main)
 
     try:
-        time.sleep(0.35)
+        time.sleep(0.20)
         _activate_prev_app()   # запасной вариант по bundle-ID если activateWithOptions_ недостаточно
-        time.sleep(0.35)
+        focused = _wait_for_frontmost_app(target_bundle, timeout_s=0.90) if target_bundle else False
+        if target_bundle and not focused:
+            _dbg(f"paste: target app not frontmost yet, retrying activate target={target_bundle!r} frontmost={_frontmost_bundle_id()!r}")
+            _activate_prev_app()
+            focused = _wait_for_frontmost_app(target_bundle, timeout_s=0.60)
+        if not target_bundle:
+            time.sleep(0.35)
         subprocess.run(["pbcopy"], input=text.encode("utf-8"), check=False)
         time.sleep(0.15)
 
@@ -838,13 +932,12 @@ def _commit_and_paste(text: str):
             ax_ok = _AS.AXIsProcessTrustedWithOptions({"AXTrustedCheckOptionPrompt": False})
         except Exception:
             ax_ok = True
-        _dbg(f"paste: AX trusted={ax_ok}, firing Cmd+V")
+        _dbg(f"paste: target={target_bundle!r} frontmost={_frontmost_bundle_id()!r} AX trusted={ax_ok}, firing Cmd+V")
 
         if ax_ok:
-            _kbd.press(kb.Key.cmd)
-            _kbd.tap('v')
-            _kbd.release(kb.Key.cmd)
-            _dbg("paste: pynput Cmd+V done")
+            time.sleep(0.20)
+            method = _fire_paste_shortcut(target_name or None)
+            _dbg(f"paste: {method} Cmd+V done")
             time.sleep(0.35)   # было 0.05 — недостаточно для Electron-приложений (Claude Desktop):
                                  # пробел долетал раньше вставленного текста
             _kbd.tap(' ')   # trailing space so next dictation joins cleanly
@@ -1265,6 +1358,12 @@ class _AppObserver(AppKit.NSObject):
             return
         app = info.get("NSWorkspaceApplicationKey")
         if _is_excluded_app(app):
+            return
+        # Пока идёт активная сессия или вставка, нельзя переписывать цель автопасты:
+        # промежуточные активации HUSH / системных окон / других приложений иначе
+        # перехватывают _prev_app и текст улетает не туда или остаётся только в буфере.
+        if _processing_locked or _full_mode_standby or overlay.is_any_session_visible():
+            _dbg(f"appActivated_: ignored during active session/paste bid={app.bundleIdentifier()!r}")
             return
         _prev_app = app
         overlay.set_prev_app_icon(app)

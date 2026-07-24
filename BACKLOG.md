@@ -17,9 +17,15 @@
       priority: P1
 
 ## In progress
-- None.
+- [ ] @desktop: Diagnose intermittent auto-paste failures — DoD: document the
+      active paste path, identify why clipboard content sometimes does not land
+      in the target app automatically, and propose or implement the smallest
+      reliable fix path with verification notes — priority: P0
 
 ## Review
+- [ ] @desktop: Review GitHub app distribution path — DoD: confirm whether the
+      public GitHub release currently ships a ready-to-run app bundle or only
+      source/build instructions, and capture the current release mechanism.
 - [ ] @desktop: Review pre-existing `src/main.py` hotkey monitor changes — DoD:
       decide whether the recovery additions are part of the intended fix path or
       should be revised during the upcoming runtime diagnosis.

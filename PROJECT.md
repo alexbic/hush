@@ -2,6 +2,7 @@
 
 **Slug:** `hush`  
 **Created:** 2026-07-22  
+**Version:** 1.3  
 **Status:** active local macOS desktop app
 
 ## Goal
@@ -15,11 +16,12 @@ an LLM scenario, and inserts the result into the previously active app.
 - Operators: agents or humans maintaining local builds and runtime behavior
 
 ## Current Focus
-Stabilize the existing application runtime before new feature work:
+Stabilize the existing application runtime with enhanced multi-monitor support:
 
-- Establish project state files and shared operating protocol.
-- Diagnose the current app failure after the structure is in place.
-- Preserve local-first privacy expectations and user config/history behavior.
+- Implement automatic window relocation to target app screen
+- Add screen configuration change handling for monitor disconnects
+- PortAudio hang recovery mechanism
+- Prepare for GitHub distribution with automated builds
 
 ## Repository Layout
 - `src/main.py` — app lifecycle, hotkey event handling, session state, history,
@@ -44,6 +46,8 @@ Stabilize the existing application runtime before new feature work:
   on first build/setup when absent.
 - `models/` — ignored local CoreML model artifacts.
 - `parakeet-cli/` — ignored local transcription CLI artifact.
+- `.github/workflows/` — GitHub Actions workflows for automated app building and
+  releases (in progress).
 - Project state files — `AGENTS.md`, `PROJECT.md`, `SPEC.md`, `PLAN.md`,
   `ROADMAP.md`, `BACKLOG.md`, `STATUS.md`, `TECH_STACK.md`.
 
@@ -55,6 +59,7 @@ Stabilize the existing application runtime before new feature work:
 - Stable model path: `~/.local/share/hush/models/parakeet-tdt-0.6b-v3-coreml`
 - Stable CLI path: `~/.local/bin/parakeet-cli`
 - Runtime lock/log/temp files: `/tmp/hush*`, `/tmp/vi_*`
+- Built app bundle: `HUSH.app` (local build or GitHub release)
 
 ## Linked Projects
 
@@ -63,7 +68,8 @@ Stabilize the existing application runtime before new feature work:
 | `ai-team` | Project-state template and operating protocol reference | `ai-team/projects/_template` and configured examples | Adopt matching project state files and workflow |
 | NVIDIA Parakeet / local CoreML artifact | Speech transcription runtime | Bundled/local model and `parakeet-cli` artifacts | Paths, launch env, warm-up/cancel behavior |
 | Ollama / Anthropic / OpenAI / GLM | Optional LLM post-processing providers | User provider configuration | Provider routing, UI status, model selection |
+| GitHub Actions | Automated app building and distribution | `.github/workflows/` directory | Build scripts, release automation, CI/CD |
 
 Dependency rule: if a task changes private user config, provider secret handling,
-model paths, or clipboard/history behavior, document the boundary in `SPEC.md`
-and update `STATUS.md` with verification and rollback notes.
+model paths, clipboard/history behavior, or multi-monitor UI behavior, document 
+the boundary in `SPEC.md` and update `STATUS.md` with verification and rollback notes.

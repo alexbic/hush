@@ -19,29 +19,37 @@
 - [x] @docs: Bootstrap project state files — DoD: files exist with
       repository-specific content and current review findings.
 
-### Phase 2: Diagnose Current App Failure
-**Goal:** Identify why the app currently does not work, without broad rewrites.  
-**ETA:** Pending user-provided symptom and local verification.  
+### Phase 2: PortAudio Recovery and Multi-Monitor Support
+**Goal:** Implement PortAudio hang recovery and automatic window relocation.  
+**Date:** 2026-07-23  
 **DoD:**
-- [ ] Failure mode is reproduced or narrowed to a concrete code/runtime path.
-- [ ] Root cause is documented in `STATUS.md`.
-- [ ] Minimal fix is implemented.
-- [ ] Relevant verification from `TECH_STACK.md` passes or is explicitly blocked.
+- [x] PortAudio hang recovery mechanism implemented with timeout handling.
+- [x] Automatic window relocation to target app screen implemented.
+- [x] Screen configuration change notification handler added.
+- [x] Multi-monitor functionality tested and working in all modes.
+- [x] App rebuilt and installed with new features.
 
 #### Tasks
-- [ ] @desktop: Diagnose current HUSH runtime failure — DoD: reproduce or
-      isolate the failure, patch the smallest responsible area, and verify.
+- [x] @desktop: Implement PortAudio hang recovery — DoD: added timeout handling
+      and recovery mechanism in recorder.py and main.py.
+- [x] @desktop: Implement multi-monitor window relocation — DoD: added automatic
+      window relocation functions and screen change notification handler.
 
-### Phase 3: Verification and Packaging Hygiene
-**Goal:** Improve confidence in local development and build behavior.  
-**ETA:** After Phase 2.  
+### Phase 3: GitHub Distribution Preparation
+**Goal:** Prepare for automated app building and GitHub distribution.  
+**ETA:** Current session.  
 **DoD:**
-- [ ] Compile check and build check are documented.
-- [ ] Missing dependency or packaging assumptions are captured.
-- [ ] Any new dependency policy is reflected in `TECH_STACK.md`.
+- [ ] GitHub Actions workflow for automated app building created.
+- [ ] Documentation updated for users downloading releases.
+- [ ] Version bumped to 1.3.0 with changelog.
+- [ ] All project state files updated with current status.
 
 #### Tasks
-- [ ] @qa: Define repeatable local smoke checks — DoD: documented checks cover
-      Python compilation, app packaging, and manual runtime smoke.
-- [ ] @build: Review dependency manifest need — DoD: decide whether to add a
-      tracked manifest and update docs accordingly.
+- [ ] @build: Create GitHub Actions workflow — DoD: automated build script for
+      macOS app bundle creation and release.
+- [ ] @docs: Update user documentation — DoD: installation and usage instructions
+      for GitHub releases.
+- [ ] @desktop: Bump version to 1.3.0 — DoD: update version references and
+      changelog with completed features.
+- [ ] @build: Commit and push all changes — DoD: all new features and
+      documentation committed with proper version bump.

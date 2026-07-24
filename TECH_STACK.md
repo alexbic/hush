@@ -1,26 +1,31 @@
 # Tech Stack
 
 ## Runtime
-- macOS accessory app (`LSUIElement`) built as `HUSH.app`.
+- macOS accessory app (`LSUIElement`) built as `HUSH.app` v1.3.0.
 - Python runtime loaded from Homebrew Python framework by `src/launcher.c`;
   packaging script prefers `python3.14` and falls back to `python3`.
 - AppKit/PyObjC for UI, menu bar, windows, event monitors, pasteboard, and
   workspace/sleep notifications.
+- Multi-monitor support with automatic window relocation to target app screen.
+- Screen configuration change notification handling for monitor disconnects.
 - `pynput` for firing Cmd+V and trailing-space keystrokes after clipboard setup.
-- `sounddevice` and PortAudio for microphone capture.
+- `sounddevice` and PortAudio for microphone capture with hang recovery.
 - `numpy` and `wave` for audio buffering, normalization, and WAV output.
 - `parakeet-cli` with NVIDIA Parakeet TDT 0.6B CoreML artifacts for local
   transcription.
 
 ## UI and App Flow
 - `src/main.py` owns lifecycle, hotkey monitors, session state, history, paste
-  orchestration, provider monitoring, and sleep/wake recovery.
+  orchestration, provider monitoring, sleep/wake recovery, and target app tracking.
 - `src/overlay.py` owns AppKit UI, scenario editor, settings, history panels,
-  markdown rendering, provider status, and visual recording/transcription states.
+  markdown rendering, provider status, visual recording/transcription states,
+  and multi-monitor window relocation.
 - Right Option starts/stops silent recording.
 - Shift + Right Option opens/closes full mode.
 - Enter during silent countdown pastes raw accumulated text.
 - Shift+Enter in full mode can apply the full-default scenario before paste.
+- Automatic window relocation to screen containing target application.
+- Screen configuration change handling for monitor disconnect/connect.
 
 ## Transcription and Audio
 - Sample rate: 16 kHz mono.
@@ -78,11 +83,18 @@ Document variable names only. Do not commit or print real values.
 python3 -m compileall -q src
 ./build_app.sh
 open /Users/bic/dev/hush/HUSH.app
+git add . && git commit -m "v1.3.0: Multi-monitor support and PortAudio recovery"
 ```
 
 Use `./build_app.sh` only when local packaging side effects are acceptable:
 it rebuilds `HUSH.app` and may initialize `~/.config/hush/scenarios.json` if
 that file is missing.
+
+## Build and Distribution
+- Local builds: `./build_app.sh` creates `HUSH.app` bundle
+- GitHub distribution: Automated builds via GitHub Actions (in progress)
+- Release artifacts: Ready-to-run `HUSH.app` bundles for macOS
+- Version: 1.3.0 with multi-monitor support and PortAudio recovery
 
 ## Manual Runtime Smoke
 - Confirm macOS Accessibility and Microphone permissions for `HUSH.app` or the
@@ -94,6 +106,9 @@ that file is missing.
   active app.
 - Open full mode with Shift + Right Option, add a block, apply or skip a
   scenario, and paste/copy.
+- Test multi-monitor functionality: disconnect second monitor and confirm window
+  relocates to active screen.
+- Test PortAudio recovery: run intensive recording cycles to verify no hangs.
 
 ## Notes for Agents
 - Prefer `rg` for search.
@@ -101,4 +116,8 @@ that file is missing.
 - Do not delete local model artifacts or user config/history unless the
   maintainer explicitly asks.
 - Keep project state files current when behavior, plans, verification, runtime
-  status, or dependencies change.
+  status, dependencies, or multi-monitor features change.
+- Version 1.3.0 adds automatic window relocation and PortAudio recovery - test
+  these features when verifying app behavior.
+- GitHub Actions workflow for automated builds should be added to enable
+  distribution-ready app bundles.

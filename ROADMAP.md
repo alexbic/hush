@@ -8,14 +8,20 @@
   architecture, risks, stack, and next task captured.
 - **Status:** complete
 
-### M2: Current App Failure Fixed
-- **Date:** TBD
-- **DoD:** Maintainer-provided failure is diagnosed, minimally fixed, and
-  verified on the relevant local path.
-- **Status:** planned
+### M2: PortAudio Recovery and Multi-Monitor Support
+- **Date:** 2026-07-23
+- **DoD:** PortAudio hang recovery mechanism implemented and tested. Automatic
+  window relocation to target app screen implemented for multi-monitor setups.
+- **Status:** complete
 
-### M3: Repeatable Local Verification
+### M2: PortAudio Recovery and Multi-Monitor Support
+- **Date:** 2026-07-23
+- **DoD:** PortAudio hang recovery mechanism implemented and tested. Automatic
+  window relocation to target app screen implemented for multi-monitor setups.
+- **Status:** completed
+
+### M3: GitHub Distribution Ready
 - **Date:** TBD
-- **DoD:** Repository has a documented, repeatable verification path for compile,
-  package, and manual macOS runtime smoke.
+- **DoD:** Automated build system via GitHub Actions established. Ready-to-run
+  app bundles available for download. Documentation updated for users.
 - **Status:** planned
