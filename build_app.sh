@@ -124,13 +124,13 @@ else
 fi
 
 # ── Модели (CoreML) ─────────────────────────────────────────────────────────
-if [ -d "$ROOT/models" ]; then
-    rsync -a --checksum "$ROOT/models" "$APP/Contents/Resources/" 2>/dev/null \
-        || cp -rp "$ROOT/models" "$APP/Contents/Resources/"
-    echo "  ✓ models/ синхронизированы"
-else
-    echo "  ⚠  Модели не найдены в $ROOT/models"
-fi
+	# Копируем models.tar.gz в .app для резервирования
+	if [ -f "models/models.tar.gz" ]; then
+		echo "  ✓ Копируем models.tar.gz в .app"
+		cp "models/models.tar.gz" "$APP/Contents/Resources/"
+	else
+		echo "  ⚠ models.tar.gz не найден в папке models"
+	fi
 
 # ── Info.plist ──────────────────────────────────────────────────────────────
 cat > "$APP/Contents/Info.plist" << PLIST
