@@ -1,5 +1,5 @@
 # Large external dependencies (download separately)
-models/
+models/*/  # Распакованные модели
 parakeet-cli/
 
 # Generated build artifacts

@@ -17,6 +17,9 @@ from datetime import datetime, timezone
 import AppKit
 import objc
 from pynput import keyboard as kb
+import requests
+import shutil
+import tarfile
 
 # ── Защита от запуска нескольких экземпляров через lock-файл ─────────────────
 _LOCK_FILE = "/tmp/hush.lock"
@@ -1177,11 +1180,45 @@ def _first_run_setup():
     # модели → ~/.local/share/hush/models/<model>
     stable_models = os.path.expanduser("~/.local/share/hush/models")
     stable_model  = os.path.join(stable_models, "parakeet-tdt-0.6b-v3-coreml")
-    if not os.path.exists(stable_model) and os.path.isdir(_cfg._bundle_models):
+    
+    if not os.path.exists(stable_model):
         os.makedirs(stable_models, exist_ok=True)
-        _dbg("first-run: copying models (~400 MB) to ~/.local/share/hush/ …")
-        shutil.copytree(_cfg._bundle_models, stable_model)
-        _dbg("first-run: models copied")
+        _dbg("first-run: models not found, downloading...")
+        
+        # Скачиваем модель с GitHub
+        model_url = "https://github.com/alexbic/hush/releases/latest/download/models.tar.gz"
+        temp_archive = os.path.join(stable_models, "models.tar.gz")
+        
+        try:
+            _dbg(f"Downloading models from {model_url}")
+            response = requests.get(model_url, stream=True)
+            response.raise_for_status()
+            
+            # Скачиваем файл
+            with open(temp_archive, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+            
+            _dbg("Download complete, extracting...")
+            
+            # Распаковываем архив
+            with tarfile.open(temp_archive, 'r:gz') as tar:
+                tar.extractall(path=stable_models)
+            
+            # Удаляем временный файл
+            os.remove(temp_archive)
+            
+            _dbg("Models downloaded and extracted successfully")
+            
+        except Exception as e:
+            _dbg(f"Failed to download models: {e}")
+            # Если загрузка не удалась, пробуем использовать bundle модели
+            if os.path.isdir(_cfg._bundle_models):
+                _dbg("Falling back to bundled models")
+                shutil.copytree(_cfg._bundle_models, stable_model)
+            else:
+                _dbg("No models available - transcription will not work")
+                raise Exception("Failed to download models and no bundled models available")
 
 
 class _AppDelegate(AppKit.NSObject):
