@@ -1,0 +1,4 @@
+# HUSH Python dependencies
+# This file exists for GitHub Actions caching purposes only
+# The app uses system Python and doesn't install packages via pip
+# All dependencies are bundled with the app or use system libraries
