@@ -17,14 +17,49 @@ jobs:
       
     - name: Build HUSH App
       run: |
-        # Make build script executable
-        chmod +x build_app.sh
+        # Use system Python
+        python3 --version
         
-        # Build the app
-        ./build_app.sh
+        # Copy source files directly (simplified build)
+        mkdir -p HUSH.app/Contents/MacOS
+        mkdir -p HUSH.app/Contents/Resources
+        
+        # Copy launcher
+        cp src/hush HUSH.app/Contents/MacOS/
+        
+        # Copy Python sources
+        cp src/*.py HUSH.app/Contents/Resources/
+        
+        # Copy resources
+        cp assets/*.png HUSH.app/Contents/Resources/
+        cp assets/*.icns HUSH.app/Contents/Resources/
+        
+        # Copy parakeet-cli and models
+        cp -r src/parakeet-cli HUSH.app/Contents/Resources/
+        cp -r src/models HUSH.app/Contents/Resources/
+        
+        # Create Info.plist
+        cat > HUSH.app/Contents/Info.plist << 'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleExecutable</key>
+    <string>hush</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.hush.app</string>
+    <key>CFBundleName</key>
+    <string>HUSH</string>
+    <key>CFBundleVersion</key>
+    <string>1.3.1</string>
+    <key>LSUIElement</key>
+    <true/>
+</dict>
+</plist>
+EOF
         
         # Verify the app was created
-        test -d HUSH.app && test -f HUSH.app/Contents/MacOS/HUSH
+        test -d HUSH.app && test -f HUSH.app/Contents/MacOS/hush
         
     - name: Upload artifact
       uses: actions/upload-artifact@v5
