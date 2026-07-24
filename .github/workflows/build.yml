@@ -1,0 +1,89 @@
+name: Build HUSH App
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  release:
+    types: [ published ]
+
+env:
+  PYTHON_VERSION: '3.14'
+
+jobs:
+  build:
+    runs-on: macos-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: Install dependencies
+      run: |
+        # Install Homebrew if not present
+        which brew || /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+        
+        # Install Python from Homebrew if needed
+        brew list python || brew install python@${{ env.PYTHON_VERSION }}
+        
+        # Verify Python installation
+        python3 --version
+        which python3
+        
+    - name: Build HUSH App
+      run: |
+        # Make build script executable
+        chmod +x build_app.sh
+        
+        # Build the app
+        ./build_app.sh
+        
+        # Verify the app was created
+        ls -la HUSH.app
+        
+    - name: Test app compilation
+      run: |
+        # Test Python compilation
+        python3 -m compileall -q src
+        
+        # Verify Info.plist
+        plutil -lint HUSH.app/Contents/Info.plist
+        
+    - name: Upload artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: HUSH-app-macos
+        path: HUSH.app/
+        retention-days: 30
+        
+  release:
+    needs: build
+    runs-on: macos-latest
+    if: github.event_name == 'release' && github.event.action == 'published'
+    
+    steps:
+    - name: Download artifact
+      uses: actions/download-artifact@v3
+      with:
+        name: HUSH-app-macos
+        
+    - name: Create release archive
+      run: |
+        # Create zip archive
+        ditto -c -k --keep-parent HUSH.app HUSH-v${{ github.event.release.tag_name }}-macos.zip
+        
+    - name: Upload release asset
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ github.event.release.upload_url }}
+        asset_path: ./HUSH-v${{ github.event.release.tag_name }}-macos.zip
+        asset_name: HUSH-v${{ github.event.release.tag_name }}-macos.zip
+        asset_content_type: application/zip
