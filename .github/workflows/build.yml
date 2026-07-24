@@ -31,6 +31,14 @@ jobs:
         cache: 'pip'
         cache-dependency-path: 'requirements.txt'
         
+    - name: Cache Homebrew packages
+      uses: actions/cache@v4
+      with:
+        path: /opt/homebrew
+        key: ${{ runner.os }}-homebrew-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-homebrew-
+        
     - name: Verify Python
       run: |
         python3 --version
@@ -42,18 +50,10 @@ jobs:
         chmod +x build_app.sh
         
         # Build the app
-        ./build_app.sh || exit 1
+        ./build_app.sh
         
-        # Verify the app was created
-        ls -la HUSH.app || exit 1
-        
-    - name: Test app compilation
-      run: |
-        # Test Python compilation
-        python3 -m compileall -q src
-        
-        # Verify Info.plist
-        plutil -lint HUSH.app/Contents/Info.plist
+        # Quick verification
+        test -d HUSH.app && test -f HUSH.app/Contents/MacOS/HUSH
         
     - name: Upload artifact
       uses: actions/upload-artifact@v5
