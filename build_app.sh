@@ -27,22 +27,10 @@ echo ""
 
 # ── Иконка ─────────────────────────────────────────────────────────────────
 if [ ! -f "$ASSETS/hush.icns" ]; then
-    echo "Создаём hush.icns из hush_icon.svg..."
-    ICONSET=$(mktemp -d)
-    qlmanage -t -s 1024 -o "$ICONSET" "$ASSETS/hush_icon.svg" >/dev/null 2>&1
-    SRC_PNG="$ICONSET/hush_icon.svg.png"
-    mkdir -p "$ICONSET/hush.iconset"
-    for SIZE in 16 32 128 256 512; do
-        sips -z $SIZE $SIZE "$SRC_PNG" --out "$ICONSET/hush.iconset/icon_${SIZE}x${SIZE}.png" >/dev/null
-    done
-    sips -z 32   32   "$SRC_PNG" --out "$ICONSET/hush.iconset/icon_16x16@2x.png"   >/dev/null
-    sips -z 64   64   "$SRC_PNG" --out "$ICONSET/hush.iconset/icon_32x32@2x.png"   >/dev/null
-    sips -z 256  256  "$SRC_PNG" --out "$ICONSET/hush.iconset/icon_128x128@2x.png" >/dev/null
-    sips -z 512  512  "$SRC_PNG" --out "$ICONSET/hush.iconset/icon_256x256@2x.png" >/dev/null
-    sips -z 1024 1024 "$SRC_PNG" --out "$ICONSET/hush.iconset/icon_512x512@2x.png" >/dev/null
-    iconutil -c icns "$ICONSET/hush.iconset" -o "$ASSETS/hush.icns"
-    rm -rf "$ICONSET"
-    echo "  ✓ hush.icns создан"
+    echo "⚠️  hush.icns не найден, сборка невозможна"
+    exit 1
+else
+    echo "  ✓ hush.icns уже существует"
 fi
 
 # ── Снимаем хеш parakeet-cli ДО удаления старого бандла ────────────────────
