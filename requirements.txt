@@ -2,3 +2,11 @@
 # This file exists for GitHub Actions caching purposes only
 # The app uses system Python and doesn't install packages via pip
 # All dependencies are bundled with the app or use system libraries
+
+# Core dependencies needed for GitHub Actions build
+numpy==1.26.4
+sounddevice==0.4.7
+pynput==1.7.7
+markdown==3.5.1
+html2text==2020.1.16
+anthropic==0.34.2

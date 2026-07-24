@@ -46,6 +46,10 @@ jobs:
         
     - name: Build HUSH App
       run: |
+        # Use system Python and install dependencies
+        python3 --version
+        pip3 install -r requirements.txt
+        
         # Make build script executable
         chmod +x build_app.sh
         
