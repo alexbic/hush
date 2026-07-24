@@ -17,6 +17,8 @@ jobs:
     # КЛЮЧЕВОЙ МОМЕНТ: Используем macOS runner
     runs-on: macos-latest
     timeout-minutes: 10
+    permissions:
+      contents: write
     
     steps:
       # 1. Получаем исходный код репозитория
@@ -123,3 +125,5 @@ jobs:
           draft: false
           prerelease: false
           generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.HUSH_PAT }}
