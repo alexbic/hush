@@ -69,6 +69,8 @@ jobs:
     needs: build-macos
     runs-on: macos-latest
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && github.event.inputs.test_build != 'true'
+    permissions:
+      contents: write
     
     steps:
       # 1. Скачиваем артефакт
