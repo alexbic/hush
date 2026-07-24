@@ -135,6 +135,7 @@ jobs:
 
   # Generate release notes for PRs and regular pushes
   generate-pr-notes:
+    needs: build
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !startsWith(github.sha, github.event.before)
     
