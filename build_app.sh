@@ -124,13 +124,9 @@ else
 fi
 
 # ── Модели (CoreML) ─────────────────────────────────────────────────────────
-	# Копируем models.tar.gz в .app для резервирования
-	if [ -f "models/models.tar.gz" ]; then
-		echo "  ✓ Копируем models.tar.gz в .app"
-		cp "models/models.tar.gz" "$APP/Contents/Resources/"
-	else
-		echo "  ⚠ models.tar.gz не найден в папке models"
-	fi
+# Модели НЕ входят в бандл — они скачиваются с Google Drive при первом запуске
+# приложения (см. src/main.py::_first_run_setup).
+echo "  ✓ Модели не входят в бандл — скачиваются при первом запуске"
 
 # ── Info.plist ──────────────────────────────────────────────────────────────
 cat > "$APP/Contents/Info.plist" << PLIST
