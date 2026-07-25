@@ -1487,8 +1487,8 @@ def _first_run_setup():
         os.makedirs(stable_models, exist_ok=True)
         _dbg("first-run: models not found, downloading...")
         
-        # Скачиваем модель с GitHub
-        model_url = "https://github.com/alexbic/hush/releases/latest/download/models.tar.gz"
+        # Скачиваем модель с Google Drive
+        model_url = "https://drive.google.com/uc?export=download&id=1ZNiDTgtYWosx_Ga_S0kDyk6yTzplBYn_"
         temp_archive = os.path.join(stable_models, "models.tar.gz")
         
         try:
