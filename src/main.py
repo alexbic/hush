@@ -928,7 +928,7 @@ def _commit_and_paste(text: str):
         if not target_bundle:
             time.sleep(0.35)
         subprocess.run(["pbcopy"], input=text.encode("utf-8"), check=False)
-        time.sleep(0.15)
+        time.sleep(0.3)  # Increased delay for larger text to copy
 
         try:
             import ApplicationServices as _AS
@@ -1488,7 +1488,7 @@ def _first_run_setup():
         _dbg("first-run: models not found, downloading...")
         
         # Скачиваем модель с Google Drive
-        model_url = "https://drive.google.com/uc?export=download&id=1ZNiDTgtYWosx_Ga_S0kDyk6yTzplBYn_"
+        model_url = "https://drive.usercontent.google.com/download?id=1ZNiDTgtYWosx_Ga_S0kDyk6yTzplBYn_&export=download&confirm=t"
         temp_archive = os.path.join(stable_models, "models.tar.gz")
         
         try:

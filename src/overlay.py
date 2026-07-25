@@ -6139,15 +6139,20 @@ def _about_tt_create(text):
 
 def _panel_pos_near_win(pw, ph, gap=8):
     """Вернуть (x, y) для панели pw×ph рядом с _win на ближайшей свободной грани."""
-    if _win is None:
-        sf = AppKit.NSScreen.mainScreen().visibleFrame()
-        return sf.origin.x + (sf.size.width - pw) / 2, sf.origin.y + (sf.size.height - ph) / 2
-    wf = _win.frame()
-    wx, wy, ww, wh = wf.origin.x, wf.origin.y, wf.size.width, wf.size.height
     sf = AppKit.NSScreen.mainScreen().visibleFrame()
     sx, sy, sw, sh = sf.origin.x, sf.origin.y, sf.size.width, sf.size.height
+    
+    if _win is None:
+        # Если главное окно не существует, центрируем по экрану
+        return sx + (sw - pw) / 2, sy + (sh - ph) / 2
+    
+    wf = _win.frame()
+    wx, wy, ww, wh = wf.origin.x, wf.origin.y, wf.size.width, wf.size.height
+    
+    # Центрируем панель относительно главного окна
     cy = max(sy, min(wy + (wh - ph) / 2, sy + sh - ph))   # центрирование по вертикали
     cx = max(sx, min(wx + (ww - pw) / 2, sx + sw - pw))   # центрирование по горизонтали
+    
     if wx + ww + gap + pw <= sx + sw:
         return wx + ww + gap, cy       # справа
     if wx - gap - pw >= sx:
