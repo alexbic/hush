@@ -1,5 +1,8 @@
+# Models — NEVER in git, downloaded on first app launch
+models/
+*.tar.gz
+
 # Large external dependencies (download separately)
-models/*/  # Распакованные модели
 parakeet-cli/
 
 # Generated build artifacts
@@ -7,6 +10,7 @@ HUSH.app/
 assets/hush.icns
 dist/
 build/
+*.dmg
 
 # Python
 __pycache__/
