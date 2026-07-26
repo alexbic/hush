@@ -6202,7 +6202,7 @@ def _show_about_view():
     LBL_H  = 16
 
     # ── Верхний левый угол: версия ───────────────────────────────────────────
-    ver_tf = AppKit.NSTextField.labelWithString_("v1.2")
+    ver_tf = AppKit.NSTextField.labelWithString_("v2.0")
     ver_tf.setEditable_(False); ver_tf.setBezeled_(False); ver_tf.setDrawsBackground_(False)
     ver_tf.setFont_(_mono(9, False))
     ver_tf.setTextColor_(C_GREEN_DIM)

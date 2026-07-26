@@ -2,7 +2,7 @@
 
 **Slug:** `hush`  
 **Created:** 2026-07-22  
-**Version:** 1.3  
+**Version:** 2.0  
 **Status:** active local macOS desktop app
 
 ## Goal
@@ -16,12 +16,12 @@ an LLM scenario, and inserts the result into the previously active app.
 - Operators: agents or humans maintaining local builds and runtime behavior
 
 ## Current Focus
-Stabilize the existing application runtime with enhanced multi-monitor support:
+Model distribution overhaul and CI/CD pipeline optimization:
 
-- Implement automatic window relocation to target app screen
-- Add screen configuration change handling for monitor disconnects
-- PortAudio hang recovery mechanism
-- Prepare for GitHub distribution with automated builds
+- Remove CoreML models from application bundle to reduce size
+- Implement automatic model downloading from Google Drive with fallback
+- Update CI/CD pipeline for DMG creation and automated releases
+- Change distribution format from .app bundle to DMG for better user experience
 
 ## Repository Layout
 - `src/main.py` — app lifecycle, hotkey event handling, session state, history,

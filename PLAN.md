@@ -53,3 +53,29 @@
       changelog with completed features.
 - [ ] @build: Commit and push all changes — DoD: all new features and
       documentation committed with proper version bump.
+
+### Phase 4: v2.0 Release
+**Goal:** Ship a verified, working v2.0 build with confirmed auto-paste.  
+**ETA:** Current session, after Accessibility is granted.  
+**DoD:**
+- [x] End-to-end runtime verified from logs (hotkey → recorder → Parakeet →
+      GLM → clipboard).
+- [x] Source `src/main.py` and `src/overlay.py` confirmed byte-identical to
+      installed app resources.
+- [ ] Accessibility permission granted to HUSH on the maintainer's Mac.
+- [ ] Auto-paste verified on live voice input (no manual Cmd+V needed).
+- [ ] About overlay centering verified visually.
+- [ ] Version bumped to 2.0 in `overlay.py`, `Info.plist`, `PROJECT.md`.
+- [ ] `v2.0` tag pushed; GitHub Actions DMG build succeeds.
+- [ ] DMG installed; final smoke test passes.
+- [ ] v2.0 GitHub release published.
+
+#### Tasks
+- [ ] @qa: Verify auto-paste after Accessibility grant — DoD: dictate a phrase,
+      confirm it lands in the target app without pressing Cmd+V.
+- [ ] @desktop: Bump version references to 2.0 — DoD: overlay About label,
+      Info.plist CFBundleShortVersionString/CFBundleVersion, PROJECT.md version.
+- [ ] @build: Tag and push v2.0 — DoD: `git tag v2.0 && git push origin v2.0`,
+      GitHub Actions run completes and produces a downloadable DMG.
+- [ ] @qa: Final v2.0 smoke test — DoD: install DMG, grant Accessibility,
+      dictate, confirm auto-paste, confirm About overlay centered.

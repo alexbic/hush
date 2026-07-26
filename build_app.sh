@@ -138,8 +138,8 @@ cat > "$APP/Contents/Info.plist" << PLIST
     <key>CFBundleDisplayName</key>      <string>HUSH</string>
     <key>CFBundleIdentifier</key>       <string>net.alexbic.hush</string>
     <key>LSUIElement</key>              <true/>
-    <key>CFBundleVersion</key>          <string>1.0.0</string>
-    <key>CFBundleShortVersionString</key><string>1.0</string>
+    <key>CFBundleVersion</key>          <string>2.0.0</string>
+    <key>CFBundleShortVersionString</key><string>2.0</string>
     <key>CFBundleExecutable</key>       <string>HUSH</string>
     <key>CFBundlePackageType</key>      <string>APPL</string>
     <key>CFBundleIconFile</key>         <string>hush</string>

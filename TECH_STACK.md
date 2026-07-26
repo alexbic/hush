@@ -1,7 +1,7 @@
 # Tech Stack
 
 ## Runtime
-- macOS accessory app (`LSUIElement`) built as `HUSH.app` v1.3.0.
+- macOS accessory app (`LSUIElement`) built as `HUSH.app` v1.2.
 - Python runtime loaded from Homebrew Python framework by `src/launcher.c`;
   packaging script prefers `python3.14` and falls back to `python3`.
 - AppKit/PyObjC for UI, menu bar, windows, event monitors, pasteboard, and
@@ -34,6 +34,7 @@
 - Stable CLI path: `~/.local/bin/parakeet-cli`.
 - Stable model path:
   `~/.local/share/hush/models/parakeet-tdt-0.6b-v3-coreml`.
+- Models are downloaded automatically from Google Drive on first run if not present
 - Bundle fallback paths live under `HUSH.app/Contents/Resources/`.
 - Warm-up runs on launch, periodically, and after some cancellation/wake paths
   to keep CoreML/ANE startup latency down.
@@ -92,9 +93,10 @@ that file is missing.
 
 ## Build and Distribution
 - Local builds: `./build_app.sh` creates `HUSH.app` bundle
-- GitHub distribution: Automated builds via GitHub Actions (in progress)
-- Release artifacts: Ready-to-run `HUSH.app` bundles for macOS
-- Version: 1.3.0 with multi-monitor support and PortAudio recovery
+- GitHub distribution: Automated builds via GitHub Actions with DMG creation
+- Release artifacts: `HUSH-v1.2.dmg` disk images for macOS
+- Version: 1.2 with model distribution overhaul and DMG packaging
+- Application size reduced from 500MB+ to ~50MB by removing bundled models
 
 ## Manual Runtime Smoke
 - Confirm macOS Accessibility and Microphone permissions for `HUSH.app` or the

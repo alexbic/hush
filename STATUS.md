@@ -1,35 +1,59 @@
 # Status: HUSH
 
-**Updated:** 2026-07-23T21:57:00Z by AI Agent
+**Updated:** 2026-07-26T00:40:00Z by AI Agent
 
 ## Brief
-HUSH v1.3.0 released with major multi-monitor support and PortAudio recovery.
-Implemented automatic window relocation to target app screen and screen configuration
-change handling. PortAudio hang recovery mechanism prevents microphone freezing
-during intensive usage. All features tested and working in silent, main, and expanded modes.
+HUSH runtime fully verified end-to-end on 2026-07-25/26. All three reported
+issues (auto-paste, About overlay centering, Enter during countdown) were the
+**same root cause**: the app bundle was ad-hoc signed without a stable
+identifier, so macOS TCC treated every reinstall as a new app and silently
+dropped the Accessibility grant. Without Accessibility, `_commit_and_paste`
+skipped Cmd+V and the global KeyDown monitor that powers Enter-during-countdown
+(`_force_paste_raw_now`) stayed mute. Fixed by signing the bundle with
+`--identifier net.alexbic.hush` in `build_app.sh`. About overlay also fixed to
+always center on screen. Accessibility re-granted on the maintainer's Mac after
+removing the old TCC entry; `AX trusted: True` confirmed in logs and auto-paste
+confirmed firing. Ready for v2.0 tag.
 
 ## Progress
 - M1: ██████████ 100%
 - M2: ██████████ 100%
-- M3: ░░░░░░░░░░ 0%
+- M3: ██████████ 100%
+- v2.0 release: ████░░░░░░ 40% (code ready, awaiting Accessibility verify + tag)
 
 ## Completed
-- Reviewed `ai-team/projects/_template`.
-- Reviewed configured examples in `lightrag` and `lightrag-mcp-connect`.
-- Reviewed HUSH README files, build script, runtime modules, ignored artifacts,
-  and current working-tree state.
-- Created the required project state files.
-- Implemented PortAudio hang recovery mechanism with timeout handling
-- Implemented automatic window relocation to target app screen
-- Added screen configuration change notification handler
-- Tested multi-monitor functionality in all modes (silent, main, expanded)
-- Built and installed v1.3.0 application with new features
-- Updated all project documentation and version references
+- Cleaned up git tags, keeping only v1.0 and v1.1 as stable releases
+- Returned to version 1.1 as last stable version and prepared for v1.2 release
+- Removed CoreML models from application bundle to reduce size from 500MB+ to ~50MB
+- Implemented automatic model downloading from Google Drive with fallback mechanism
+- Updated CI/CD pipeline for DMG creation and automated releases
+- Changed distribution format to DMG for better user experience
+- Created v1.2 tag and tested complete build process
+- Updated model loading logic in src/main.py to use external URL
+- Fixed CI/CD pipeline with proper DMG creation workflow
+- Committed and pushed all changes to GitHub
+
+## Completed (this session)
+- Diagnosed real root cause: ad-hoc signature without stable identifier → TCC
+  drops Accessibility on every reinstall → auto-paste AND Enter-during-countdown
+  both break (they share the same Accessibility dependency).
+- Fixed About overlay centering in `src/overlay.py::_show_about_view` — now
+  always centered on `NSScreen.mainScreen().visibleFrame()`, no longer follows
+  main window position.
+- Added stable code signature step to `build_app.sh`:
+  `codesign --force --deep --sign - --identifier net.alexbic.hush`.
+- Rebuilt, reinstalled to `/Applications/HUSH.app`, verified
+  `Identifier=net.alexbic.hush` via `codesign -dv`.
+- Maintainer re-granted Accessibility (removed stale TCC entry, re-added app).
+- Verified in `/tmp/vi_debug.log`:
+  `[23:58:00] paste: AX trusted=True, firing Cmd+V` (no "ПРОПУСК" skip).
+  `[23:58:20] AX trusted: True` / `All 4 hotkey monitors created successfully`.
+- Maintainer confirmed live: "Да, сейчас работает." (auto-paste + About + Enter
+  during countdown all working).
+- Committed (`53c1983`) and pushed to `origin/main`.
 
 ## In Progress
-- Preparing GitHub Actions workflow for automated app building
-- Updating user documentation for v1.3.0 release
-- Committing and pushing all changes with version bump
+- v2.0 release: bump version refs, tag, push, let GitHub Actions build DMG.
 
 ## Review Findings
 - Repository has no tracked dependency manifest. Runtime imports imply PyObjC
@@ -132,7 +156,9 @@ during intensive usage. All features tested and working in silent, main, and exp
   14 recorder.start() failures detected during testing
 
 ## Next
-- Create GitHub Actions workflow for automated macOS app building
-- Update user documentation with installation instructions for releases
-- Commit all changes with version bump to v1.3.0
-- Test automated build process and release pipeline
+- Maintainer grants Accessibility to HUSH in System Settings → Privacy &
+  Security → Accessibility, then verifies auto-paste on live voice input.
+- After paste verification: bump version to 2.0, tag `v2.0`, push, let GitHub
+  Actions build the DMG, install, final smoke test, publish release.
+- Optional follow-ups (not blocking v2.0): sanitize raw text from
+  `/tmp/vi_*` and `/tmp/hush_processor.log`; add dependency manifest.
