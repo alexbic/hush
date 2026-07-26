@@ -159,6 +159,19 @@ printf "APPL????" > "$APP/Contents/PkgInfo"
 cp "$ASSETS/hush.icns" "$APP/Contents/Resources/hush.icns"
 cp "$ASSETS/hush.icns" "$APP/Contents/Resources/hush"
 
+# ── Подписание бандла ───────────────────────────────────────────────────────
+# Подписываем ad-hoc со стабильным identifier (net.alexbic.hush). Без этого
+# macOS TCC после каждой переустановки считает приложение "новым" и сбрасывает
+# разрешение Accessibility, из-за чего перестают работать автопаста и
+# глобальный перехват Enter во время countdown.
+echo ""
+echo "Подписываем бандл (ad-hoc, identifier=net.alexbic.hush)..."
+if codesign --force --deep --sign - --identifier net.alexbic.hush "$APP" 2>&1; then
+    echo "  ✓ Бандл подписан"
+else
+    echo "  ⚠ Ошибка подписания — TCC может не сохранить Accessibility после переустановки"
+fi
+
 echo ""
 echo "✓ Готово: $APP"
 echo ""

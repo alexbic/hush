@@ -6165,7 +6165,7 @@ def _panel_pos_near_win(pw, ph, gap=8):
 
 
 def _show_about_view():
-    """Показать карточку «О программе» как отдельный NSPanel рядом с главным окном."""
+    """Показать карточку «О программе» как отдельный NSPanel в центре экрана."""
     global _about_panel
 
     _hide_about_view()
@@ -6173,7 +6173,11 @@ def _show_about_view():
     AW, AH = 560, 480
     PAD    = 16
 
-    px, py = _panel_pos_near_win(AW, AH)
+    # About — модальная карточка, всегда строго по центру видимого экрана,
+    # независимо от позиции главного окна.
+    sf = AppKit.NSScreen.mainScreen().visibleFrame()
+    px = sf.origin.x + (sf.size.width  - AW) / 2
+    py = sf.origin.y + (sf.size.height - AH) / 2
 
     ap = _AboutPanel.alloc().initWithContentRect_styleMask_backing_defer_(
         AppKit.NSMakeRect(px, py, AW, AH),
