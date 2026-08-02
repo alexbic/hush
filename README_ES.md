@@ -209,14 +209,18 @@ Configurar: ⚙ → **[CLAVES]**.
 | **OpenAI** | Nube | Clave API (compatible con cualquier API compatible con OpenAI) |
 | **GLM** | Nube | Clave API de Zhipu GLM-4 |
 
+El panel actual **[CLAVES]** edita solo los proveedores integrados: Ollama, Anthropic, OpenAI y GLM.
+
+Si necesitas un endpoint adicional compatible con OpenAI, puedes añadirlo manualmente en `~/.config/hush/providers.json` con schema v2. HUSH podrá usar ese proveedor en los escenarios aunque la UI todavía no lo gestione directamente.
+
 ### Selección de modelo en el escenario
 
 El modelo para cada escenario se selecciona en el editor de escenarios mediante dos listas desplegables:
 
-1. **Proveedor** — seleccionar entre los configurados y disponibles (Ollama / Anthropic / OpenAI / GLM)
+1. **Proveedor** — seleccionar entre los configurados y disponibles
 2. **Modelo** — la lista se rellena automáticamente con los modelos disponibles del proveedor seleccionado
 
-Si un proveedor no está configurado o no está disponible — no aparecerá en la lista. Si no se selecciona ningún modelo, HUSH usa una estrategia automática: primero prueba Ollama, si no está disponible — Anthropic.
+En la lista se muestran labels legibles, pero internamente el escenario se guarda como `provider_id:model_name`. Si no se selecciona ningún modelo, HUSH usa una estrategia automática: primero prueba Ollama y, si no está disponible, Anthropic.
 
 ---
 

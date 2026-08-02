@@ -206,27 +206,21 @@ Configure via: ⚙ → **[KEYS]**.
 |----------|------|---------------|
 | **Ollama** | Local | [Ollama](https://ollama.ai) installed + a model pulled (`ollama pull <model>`) |
 | **Anthropic** | Cloud | API key (`sk-ant-...`) |
-| **OpenAI** | Cloud | API key (compatible with any OpenAI-compatible API) |
+| **OpenAI** | Cloud | API key |
 | **GLM** | Cloud | Zhipu GLM-4 API key |
 
-### Provider Editor (v2.2+)
+The current `[KEYS]` panel edits the built-in providers only: Ollama, Anthropic, OpenAI, and GLM.
 
-The provider editor allows you to:
-
-- **Add custom providers** — click `[+]` to add new endpoints
-- **Edit existing providers** — click `[✎]` to expand and modify settings
-- **Test connections** — click `[Проверить]` to verify API access
-- **Remove providers** — click `[✕]` (built-in providers can only have their keys cleared)
-- **Toggle provider status** — green dot indicates availability, gray means unreachable
+If you want additional OpenAI-compatible endpoints, add them manually to `~/.config/hush/providers.json` using schema v2. HUSH can read those providers in scenario routing even though the built-in UI does not yet manage them directly.
 
 ### Selecting a model in a scenario
 
 The model for each scenario is chosen in the scenario editor via two dropdowns:
 
-1. **Provider** — select from configured and available providers (Ollama / Anthropic / OpenAI / GLM)
+1. **Provider** — select from configured and available providers
 2. **Model** — the list auto-populates with models available from the selected provider
 
-If a provider isn't configured or isn't reachable it won't appear in the list. If no model is selected, HUSH uses an auto strategy: tries Ollama first, falls back to Anthropic if unavailable.
+Provider labels are shown in the dropdown, but scenarios are stored internally as `provider_id:model_name`. If no model is selected, HUSH uses an auto strategy: tries Ollama first, falls back to Anthropic if unavailable.
 
 ### Configuration File
 
@@ -307,9 +301,13 @@ This re-grant is currently needed after every reinstall because HUSH ships with 
 
 ## API Keys
 
-**Option 1 — via the UI:** ⚙ → [KEYS] → enter your keys in the fields.
+**Option 1 — via the UI:** ⚙ → [KEYS] → enter your built-in provider settings.
 
-**Option 2 — via file** `~/.hush_env`:
+**Option 2 — via file** `~/.config/hush/providers.json`:
+
+Use [`defaults/providers.example.json`](defaults/providers.example.json) as a template. Leave `api_key` empty for local providers or fill in your real keys locally only.
+
+**Legacy option — via file** `~/.hush_env`:
 
 ```bash
 export ANTHROPIC_API_KEY="sk-ant-..."
@@ -408,11 +406,11 @@ Thank you. Really.
 ## Changelog
 
 ### v2.2 — 2026-07-30
-- **Provider Editor**: Complete rewrite of the provider management UI with dynamic scrollable cards
-- **CRUD Operations**: Add, edit, test, and remove LLM providers with inline editing
+- **Provider Config v2**: Scenario routing and provider storage moved to `providers.json` schema v2
+- **Scenario Dropdowns**: Provider labels are resolved cleanly back to internal ids in scenario settings
 - **Enhanced Security**: API keys are masked in the UI and never logged
-- **Improved UX**: Provider status indicators, connection testing, and confirmation dialogs
-- **i18n Support**: Full Russian/English/Spanish localization for all provider management features
+- **Improved UX**: Provider status indicators and safer fallback behavior
+- **i18n Support**: Provider/model selection continues to work across Russian/English/Spanish labels
 
 ### v1.3 — 2026-07-11
 

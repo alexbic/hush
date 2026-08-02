@@ -105,6 +105,14 @@ def _slugify(label: str, existing_ids: set) -> str:
     return f"{base}-{i}"
 
 
+def _builtin_record(pid: str):
+    """Вернуть копию builtin-записи по id или None."""
+    for rec in _BUILTIN_SEED:
+        if rec["id"] == pid:
+            return dict(rec)
+    return None
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Загрузка / сохранение / миграция
 # ═══════════════════════════════════════════════════════════════════════════
@@ -131,6 +139,7 @@ def load():
         else:
             _data = raw
             _normalize_records()
+            _seed_missing_builtins()
 
     # Инициализировать статусы/модели для всех известных провайдеров
     _status = {p["id"]: None for p in _data.get("providers", [])}
@@ -162,6 +171,24 @@ def _normalize_records():
         cleaned.append(rec)
     _data["providers"] = cleaned
     _data["schema_version"] = SCHEMA_VERSION
+
+
+def _seed_missing_builtins():
+    """Гарантировать, что builtin-провайдеры присутствуют в schema v2.
+
+    Старый UI `[КЛЮЧИ]` ожидает записи ollama/anthropic/openai/glm. Если
+    пользователь вручную удалил их из providers.json, quietly восстановим
+    дефолтные записи вместо поломки старого экрана настроек.
+    """
+    providers = _data.setdefault("providers", [])
+    existing = {p.get("id") for p in providers if isinstance(p, dict)}
+    changed = False
+    for rec in _BUILTIN_SEED:
+        if rec["id"] not in existing:
+            providers.append(dict(rec))
+            changed = True
+    if changed:
+        _normalize_records()
 
 
 def _migrate_v1_to_v2(old_data: dict) -> dict:
@@ -326,12 +353,20 @@ def set_field(provider: str, key: str, value: str):
     protocol=openai-compat по умолчанию (для надёжности)."""
     rec = _get_provider_ref(provider)
     if rec is None:
-        existing_ids = {p["id"] for p in _data.get("providers", [])}
-        pid = _slugify(provider, existing_ids) if provider else None
-        if not pid:
+        if not provider:
             return
-        rec = {"id": pid, "label": provider, "protocol": "openai-compat",
-               "base_url": "", "api_key": "", "default_model": "", "builtin": False}
+        builtin = _builtin_record(provider)
+        existing_ids = {p["id"] for p in _data.get("providers", [])}
+        pid = provider if builtin else _slugify(provider, existing_ids)
+        rec = builtin or {
+            "id": pid,
+            "label": provider,
+            "protocol": "openai-compat",
+            "base_url": "",
+            "api_key": "",
+            "default_model": "",
+            "builtin": False,
+        }
         _data.setdefault("providers", []).append(rec)
         _status[pid] = None
         _models[pid] = []
@@ -551,7 +586,14 @@ def migrate_hush_env_if_any():
     env_path = os.path.expanduser("~/.hush_env")
     if not os.path.exists(env_path):
         return
+    # Если пользователь уже настроил providers.json, не перетираем значения из
+    # устаревшего файла. Это особенно важно после перехода на schema v2.
+    if any((get_provider(pid) or {}).get("api_key") for pid in ("anthropic", "openai", "glm")):
+        return
+    if (get_provider("ollama") or {}).get("base_url") not in ("", "http://localhost:11434"):
+        return
     try:
+        migrated = False
         with open(env_path) as f:
             for line in f:
                 line = line.strip()
@@ -564,13 +606,18 @@ def migrate_hush_env_if_any():
                     continue
                 if k in ("ANTHROPIC_API_KEY",):
                     set_field("anthropic", "api_key", v)
+                    migrated = True
                 elif k in ("OPENAI_API_KEY",):
                     set_field("openai", "api_key", v)
+                    migrated = True
                 elif k in ("GLM_API_KEY",):
                     set_field("glm", "api_key", v)
+                    migrated = True
                 elif k in ("OLLAMA_BASE_URL",):
                     set_field("ollama", "base_url", v)
-        os.rename(env_path, env_path + ".migrated")
+                    migrated = True
+        if migrated:
+            os.rename(env_path, env_path + ".migrated")
     except Exception as e:
         print(f"[providers] hush_env migration: {e}")
 
