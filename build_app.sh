@@ -138,8 +138,8 @@ cat > "$APP/Contents/Info.plist" << PLIST
     <key>CFBundleDisplayName</key>      <string>HUSH</string>
     <key>CFBundleIdentifier</key>       <string>net.alexbic.hush</string>
     <key>LSUIElement</key>              <true/>
-    <key>CFBundleVersion</key>          <string>2.1.0</string>
-    <key>CFBundleShortVersionString</key><string>2.1</string>
+    <key>CFBundleVersion</key>          <string>2.0.0</string>
+    <key>CFBundleShortVersionString</key><string>2.0</string>
     <key>CFBundleExecutable</key>       <string>HUSH</string>
     <key>CFBundlePackageType</key>      <string>APPL</string>
     <key>CFBundleIconFile</key>         <string>hush</string>
@@ -159,12 +159,18 @@ printf "APPL????" > "$APP/Contents/PkgInfo"
 cp "$ASSETS/hush.icns" "$APP/Contents/Resources/hush.icns"
 cp "$ASSETS/hush.icns" "$APP/Contents/Resources/hush"
 
-# Примечание про подпись: НЕ подписываем бандл явно. macOS автоматически
-# ставит ad-hoc/linker-signed подпись при запуске. Явный codesign --identifier
-# не помогает сохранить Accessibility между переустановками, потому что для
-# ad-hoc подписи macOS всё равно использует cdhash, который меняется при
-# каждой сборке. Корневое решение — в v3.0 (архитектура "матрёшка": wrapper
-# ставится один раз, обновляется только codebase).
+# ── Подписание бандла ───────────────────────────────────────────────────────
+# Подписываем ad-hoc со стабильным identifier (net.alexbic.hush). Без этого
+# macOS TCC после каждой переустановки считает приложение "новым" и сбрасывает
+# разрешение Accessibility, из-за чего перестают работать автопаста и
+# глобальный перехват Enter во время countdown.
+echo ""
+echo "Подписываем бандл (ad-hoc, identifier=net.alexbic.hush)..."
+if codesign --force --deep --sign - --identifier net.alexbic.hush "$APP" 2>&1; then
+    echo "  ✓ Бандл подписан"
+else
+    echo "  ⚠ Ошибка подписания — TCC может не сохранить Accessibility после переустановки"
+fi
 
 echo ""
 echo "✓ Готово: $APP"
