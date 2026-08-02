@@ -35,13 +35,10 @@ except (IOError, OSError):
 import recorder
 import transcriber
 
-_DBG_LOG = "/tmp/vi_debug.log"
+# Debug logging removed for privacy
 def _dbg(msg):
-    try:
-        with open(_DBG_LOG, "a") as f:
-            f.write(f"[{time.strftime('%H:%M:%S')}] {msg}\n")
-    except Exception:
-        pass
+    # Debug logging removed for privacy
+    pass
 import provider_config
 import processor
 import injector
@@ -112,8 +109,7 @@ def _add_to_history(text: str, parent_id: str = None) -> str:
         short += '…'
     if _history and _history[0]["full"] == text:
         _current_hist_id = _history[0]["id"]
-        with open("/tmp/vi_undo_debug.log", "a") as _f:
-            _f.write(f"[history] DUP found, returning id={_history[0]['id']}, parent_id_arg={parent_id}\n")
+        # Debug logging removed for privacy
         return _history[0]["id"]
     new_id = str(uuid.uuid4())
     _history.insert(0, {
@@ -127,8 +123,7 @@ def _add_to_history(text: str, parent_id: str = None) -> str:
         _history.pop()
     _current_hist_id = new_id
     _save_history()
-    with open("/tmp/vi_undo_debug.log", "a") as _f:
-        _f.write(f"[history] NEW id={new_id}, parent_id={parent_id}, text={text[:40]!r}\n")
+    # Debug logging removed for privacy
     return new_id
 
 _current_session_id = None   # UUID of the session currently being built in the overlay
@@ -262,6 +257,7 @@ _stopping         = 0               # количество потоков _stop_
 _in_countdown     = False           # True пока показывается обратный отсчёт grace-периода
 _processing_locked = False          # True во время LLM/вставки — Alt отключён
 _last_cancel_time  = 0.0            # дебаунс _cancel_all()
+_model_ready      = False           # False пока идёт first-run скачивание модели
 
 # Временная директория сессии: /tmp/hush_session_YYYYMMDD_HHMMSS/
 _session_dir   = None
@@ -589,6 +585,18 @@ def _on_hotkey_press(full_mode: bool = False):
     if _state["hotkey_held"]:
         return
 
+    # Пока модель скачивается при первом запуске — мягко отказываем.
+    if not _model_ready:
+        _dbg("hotkey: ignored, model still downloading")
+        AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(
+            overlay.show_status_waiting)
+        # Через 2 секунды возвращаем индикатор скачивания (если ещё качается)
+        def _restore():
+            if not _model_ready:
+                overlay.show_status_downloading(progress=None)
+        threading.Timer(2.0, _restore).start()
+        return
+
     _state["hotkey_held"] = True
 
     # Shift+⌥: переключить окно полного режима
@@ -737,12 +745,11 @@ def _on_hotkey_release():
 def _undo_last_scenario():
     """Откатывает overlay к родителю текущего элемента истории."""
     global _active_scenario_idx, _current_hist_id
+    # Debug logging removed for privacy
     def _log(msg):
-        with open("/tmp/vi_undo_debug.log", "a") as f:
-            f.write(msg + "\n")
-    _log(f"[undo] _current_hist_id={_current_hist_id} history_len={len(_history)}")
+        # Debug logging removed for privacy
+        pass
     current = next((h for h in _history if h["id"] == _current_hist_id), None)
-    _log(f"[undo] current id={current.get('id') if current else None} parent_id={current.get('parent_id') if current else None}")
     if not current or not current.get("parent_id"):
         _log(f"[undo] ABORT: no current or no parent_id")
         return
@@ -1464,12 +1471,18 @@ def _check_accessibility():
         _dbg(f"AX check error: {e}")
 
 
-def _first_run_setup():
+def _first_run_setup(progress_cb=None):
     """При первой установке: копирует parakeet-cli и модели из bundle в стабильные пути.
     Стабильные пути сохраняют CoreML кэш при пересборках/обновлениях приложения.
-    Последующие запуски пропускают это (пути уже существуют)."""
+    Последующие запуски пропускают это (пути уже существуют).
+
+    Возвращает True если что-то скачивалось/копировалось (first run), False если всё уже было.
+    progress_cb(bytes_done, total_bytes) — опциональный колбэк прогресса скачивания.
+    """
     import shutil
     import config as _cfg
+
+    did_work = False
 
     # parakeet-cli → ~/.local/bin/parakeet-cli (копируем бинарник)
     stable_bin = os.path.expanduser("~/.local/bin/parakeet-cli")
@@ -1478,40 +1491,55 @@ def _first_run_setup():
         shutil.copy2(_cfg._bundle_parakeet, stable_bin)
         os.chmod(stable_bin, 0o755)
         _dbg("first-run: copied parakeet-cli to ~/.local/bin/")
+        did_work = True
 
     # модели → ~/.local/share/hush/models/<model>
     stable_models = os.path.expanduser("~/.local/share/hush/models")
     stable_model  = os.path.join(stable_models, "parakeet-tdt-0.6b-v3-coreml")
-    
+
     if not os.path.exists(stable_model):
         os.makedirs(stable_models, exist_ok=True)
         _dbg("first-run: models not found, downloading...")
-        
+        did_work = True
+
         # Скачиваем модель с Google Drive
         model_url = "https://drive.usercontent.google.com/download?id=1ZNiDTgtYWosx_Ga_S0kDyk6yTzplBYn_&export=download&confirm=t"
         temp_archive = os.path.join(stable_models, "models.tar.gz")
-        
+
         try:
             _dbg(f"Downloading models from {model_url}")
             response = requests.get(model_url, stream=True)
             response.raise_for_status()
-            
+
+            # Узнать размер для прогресса (если сервер отдал Content-Length)
+            try:
+                total_bytes = int(response.headers.get('Content-Length', 0))
+            except (TypeError, ValueError):
+                total_bytes = 0
+            bytes_done = 0
+
             # Скачиваем файл
             with open(temp_archive, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=8192):
+                for chunk in response.iter_content(chunk_size=65536):
                     f.write(chunk)
-            
+                    bytes_done += len(chunk)
+                    if progress_cb is not None:
+                        try:
+                            progress_cb(bytes_done, total_bytes)
+                        except Exception:
+                            pass
+
             _dbg("Download complete, extracting...")
-            
+
             # Распаковываем архив
             with tarfile.open(temp_archive, 'r:gz') as tar:
                 tar.extractall(path=stable_models)
-            
+
             # Удаляем временный файл
             os.remove(temp_archive)
-            
+
             _dbg("Models downloaded and extracted successfully")
-            
+
         except Exception as e:
             _dbg(f"Failed to download models: {e}")
             # Если загрузка не удалась, пробуем использовать bundle модели
@@ -1522,6 +1550,46 @@ def _first_run_setup():
                 _dbg("No models available - transcription will not work")
                 raise Exception("Failed to download models and no bundled models available")
 
+    return did_work
+
+
+def _first_run_needed():
+    """Лёгкая проверка: нужно ли first-run скачивание (без выполнения)."""
+    stable_bin = os.path.expanduser("~/.local/bin/parakeet-cli")
+    stable_model = os.path.expanduser(
+        "~/.local/share/hush/models/parakeet-tdt-0.6b-v3-coreml")
+    return not (os.path.isfile(stable_bin) and os.path.exists(stable_model))
+
+
+def _first_run_async():
+    """Запускает _first_run_setup в фоне, обновляет индикатор menu bar.
+    По завершении (успех/провал) переводит _model_ready и сбрасывает индикатор."""
+    global _model_ready
+
+    def _progress(bytes_done, total_bytes):
+        if total_bytes <= 0:
+            return
+        now = time.time()
+        # Throttle: не чаще 4 раз в секунду, иначе блокируем UI поток
+        if now - _progress._last < 0.25:
+            return
+        _progress._last = now
+        overlay.update_status_progress(bytes_done / float(total_bytes))
+    _progress._last = 0.0
+
+    try:
+        overlay.show_status_downloading(progress=None)
+        _first_run_setup(progress_cb=_progress)
+        _model_ready = True
+        overlay.show_status_ready()
+        _dbg("first-run: model ready")
+    except Exception as e:
+        _model_ready = False
+        overlay.show_status_error()
+        _dbg(f"first-run: download FAILED: {e}")
+        import traceback
+        _dbg("first-run: TRACEBACK: " + traceback.format_exc())
+
 
 class _AppDelegate(AppKit.NSObject):
     """Минимальный NSApplicationDelegate чтобы macOS запускал applicationDidFinishLaunching:
@@ -1529,22 +1597,37 @@ class _AppDelegate(AppKit.NSObject):
     NSSceneStatusItem получает окно нулевой высоты при запуске через `open .app`."""
 
     def applicationDidFinishLaunching_(self, notification):
-        _first_run_setup()          # копируем бинарник+модели в стабильные пути (один раз)
+        global _model_ready
         _check_accessibility()
         _load_history()
-        overlay.init(
-            _on_scenario,
-            on_history_callback=_get_history,
-            on_paste_callback=_on_paste,
-            on_copy_callback=_on_copy,
-            on_history_delete_callback=_on_delete_history,
-            on_history_load_callback=_on_history_load,
-            on_history_merge_callback=_on_merge_history,
-            on_add_history_callback=_add_to_history,
-            on_update_session_callback=_upsert_session,
-            on_session_end_callback=_on_session_end,
-        )
+        try:
+            overlay.init(
+                _on_scenario,
+                on_history_callback=_get_history,
+                on_paste_callback=_on_paste,
+                on_copy_callback=_on_copy,
+                on_history_delete_callback=_on_delete_history,
+                on_history_load_callback=_on_history_load,
+                on_history_merge_callback=_on_merge_history,
+                on_add_history_callback=_add_to_history,
+                on_update_session_callback=_upsert_session,
+                on_session_end_callback=_on_session_end,
+            )
+        except Exception:
+            import traceback
+            _dbg("overlay.init FAILED: " + traceback.format_exc())
+            raise
         overlay.set_undo_scenario_callback(_undo_last_scenario)
+
+        # First-run model download в фоне, чтобы не блокировать запуск.
+        # Иконка menu bar показывает индикатор загрузки; пока скачивается —
+        # _model_ready=False и hotkey мягко отказывает с подсказкой.
+        if _first_run_needed():
+            _dbg("first-run: model not present, starting background download")
+            threading.Thread(target=_first_run_async, daemon=True,
+                             name="hush-first-run").start()
+        else:
+            _model_ready = True
         _setup_hotkey()
         _setup_keepalive()
         _setup_app_observer()

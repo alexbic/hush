@@ -151,8 +151,7 @@ def stop(stream):
         _rms = float(np.sqrt(np.mean(audio ** 2)))
         _pk  = float(np.max(np.abs(audio)))
         _dur = audio.size / SAMPLE_RATE
-        with open("/tmp/vi_recorder.log", "a") as _f:
-            _f.write(f"[{_t.strftime('%H:%M:%S')}] dur={_dur:.1f}s rms={_rms:.4f} peak={_pk:.4f} gain={gain:.2f}\n")
+        # Debug logging removed for privacy
     except Exception:
         pass
 

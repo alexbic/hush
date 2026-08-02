@@ -209,6 +209,16 @@ Configure via: ⚙ → **[KEYS]**.
 | **OpenAI** | Cloud | API key (compatible with any OpenAI-compatible API) |
 | **GLM** | Cloud | Zhipu GLM-4 API key |
 
+### Provider Editor (v2.2+)
+
+The provider editor allows you to:
+
+- **Add custom providers** — click `[+]` to add new endpoints
+- **Edit existing providers** — click `[✎]` to expand and modify settings
+- **Test connections** — click `[Проверить]` to verify API access
+- **Remove providers** — click `[✕]` (built-in providers can only have their keys cleared)
+- **Toggle provider status** — green dot indicates availability, gray means unreachable
+
 ### Selecting a model in a scenario
 
 The model for each scenario is chosen in the scenario editor via two dropdowns:
@@ -217,6 +227,12 @@ The model for each scenario is chosen in the scenario editor via two dropdowns:
 2. **Model** — the list auto-populates with models available from the selected provider
 
 If a provider isn't configured or isn't reachable it won't appear in the list. If no model is selected, HUSH uses an auto strategy: tries Ollama first, falls back to Anthropic if unavailable.
+
+### Configuration File
+
+Provider settings are stored in `~/.config/hush/providers.json` (schema v2). See [`defaults/providers.example.json`](defaults/providers.example.json) for the complete configuration format.
+
+**Important:** Never commit real API keys to version control. Use the example file as a template and replace placeholder keys with your actual keys.
 
 ---
 
@@ -272,6 +288,20 @@ On first launch HUSH automatically:
 3. Compiles the model for your chip (ANE) — happens once, cache survives app updates
 
 After that HUSH appears in the menu bar and is ready to use.
+
+### Granting Accessibility (important)
+
+HUSH must be added to **System Settings → Privacy & Security → Accessibility** so it can inject the recognized text into the target app with `Cmd+V` and intercept `Enter` during the countdown timer.
+
+If auto-paste silently stops working after you reinstall or update HUSH, the macOS TCC database has dropped the grant. Fix it:
+
+1. Open **System Settings → Privacy & Security → Accessibility**
+2. Select **HUSH** in the list and click **−** (remove the stale entry)
+3. Click **+** and pick `/Applications/HUSH.app`
+4. Toggle the switch ON
+5. Restart HUSH
+
+This re-grant is currently needed after every reinstall because HUSH ships with an ad-hoc signature and macOS identifies ad-hoc apps by `cdhash`, which changes on every build. **HUSH v3.0 will remove this limitation** via a "matryoshka" architecture (a stable wrapper installed once + auto-updated codebase that never touches the signed binary).
 
 ---
 
@@ -376,6 +406,13 @@ Thank you. Really.
 ---
 
 ## Changelog
+
+### v2.2 — 2026-07-30
+- **Provider Editor**: Complete rewrite of the provider management UI with dynamic scrollable cards
+- **CRUD Operations**: Add, edit, test, and remove LLM providers with inline editing
+- **Enhanced Security**: API keys are masked in the UI and never logged
+- **Improved UX**: Provider status indicators, connection testing, and confirmation dialogs
+- **i18n Support**: Full Russian/English/Spanish localization for all provider management features
 
 ### v1.3 — 2026-07-11
 
