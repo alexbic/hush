@@ -3813,8 +3813,54 @@ class BtnTarget(AppKit.NSObject):
         pop_model = (_sc_edit_refs or {}).get("pop_model")
         if not pop_prov or not pop_model:
             return
-        pid = pop_prov.titleOfSelectedItem() or ""
+        selected = pop_prov.titleOfSelectedItem() or ""
+        rec = _pc.find_by_label_or_id(selected) if selected != _T("sc_auto") else None
+        pid = rec.get("id", "") if rec else ""
         _populate_model_popup(pop_model, pid)
+
+    def scModelDropdown_(self, sender):
+        """Открыть выпадающий список моделей рядом с кнопкой ▾."""
+        try:
+            pop_model = (_sc_edit_refs or {}).get("pop_model")
+            model_pick_btn = (_sc_edit_refs or {}).get("model_pick_btn")
+            if not pop_model or not model_pick_btn or not getattr(pop_model, "_items", None):
+                return
+            _show_dropdown_for_view(
+                model_pick_btn,
+                pop_model._items,
+                pop_model._selected,
+                on_select=lambda idx: self._pick_model(idx),
+            )
+        except Exception:
+            pass
+
+    def _pick_model(self, idx):
+        """Выбрана модель из dropdown (по индексу) — подставить в текстовое поле."""
+        pop_model = (_sc_edit_refs or {}).get("pop_model")
+        tf_model  = (_sc_edit_refs or {}).get("tf_model")
+        if not pop_model or tf_model is None:
+            return
+        try:
+            if 0 <= idx < len(pop_model._items):
+                sel = pop_model._items[idx]
+                if sel and sel != "—":
+                    tf_model.setStringValue_(sel)
+                    pop_model._selected = idx
+        except Exception:
+            pass
+
+    def scModelPick_(self, sender):
+        """Выбрана модель из dropdown — подставить в редактируемое поле."""
+        pop_model = (_sc_edit_refs or {}).get("pop_model")
+        tf_model  = (_sc_edit_refs or {}).get("tf_model")
+        if not pop_model or tf_model is None:
+            return
+        try:
+            sel = pop_model.titleOfSelectedItem() or ""
+            if sel and sel != "—":
+                tf_model.setStringValue_(sel)
+        except Exception:
+            pass
 
     def hushResetPanels_(self, sender):
         _main(lambda: _reset_panels_layout())
@@ -6506,17 +6552,49 @@ def _show_hist_panel(history):
 
 def _sc_model_from_refs() -> str:
     """Прочитать попапы провайдера + модели → 'provider:model' или '' для авто."""
-    pop_prov  = (_sc_edit_refs or {}).get("pop_provider")
-    pop_model = (_sc_edit_refs or {}).get("pop_model")
+    pop_prov = (_sc_edit_refs or {}).get("pop_provider")
+    tf_model = (_sc_edit_refs or {}).get("tf_model")
     if not pop_prov:
         return ""
-    pid = pop_prov.titleOfSelectedItem() or ""
-    if not pid or pid == "авто":
+    selected = pop_prov.titleOfSelectedItem() or ""
+    if not selected or selected == _T("sc_auto"):
         return ""
-    mname = (pop_model.titleOfSelectedItem() or "") if pop_model else ""
+    rec = _pc.find_by_label_or_id(selected)
+    pid = rec.get("id", "") if rec else ""
+    if not pid:
+        return ""
+    mname = ""
+    if tf_model is not None:
+        try:
+            mname = str(tf_model.stringValue()).strip()
+        except Exception:
+            mname = ""
     if not mname or mname == "—":
         return ""
     return f"{pid}:{mname}"
+
+
+def _scenario_provider_records(current_pid: str = "") -> list:
+    """Список доступных провайдеров для редактора сценариев.
+
+    Текущий provider сохраняем в списке даже если он сейчас недоступен, чтобы
+    старый сценарий не терял выбор после открытия редактора.
+    """
+    ids = list(_pc.available_providers())
+    if current_pid and current_pid not in ids:
+        ids.append(current_pid)
+    records = []
+    seen = set()
+    for pid in ids:
+        rec = _pc.find_by_label_or_id(pid)
+        if not rec:
+            continue
+        rec_id = rec.get("id")
+        if not rec_id or rec_id in seen:
+            continue
+        seen.add(rec_id)
+        records.append(rec)
+    return records
 
 
 def _reset_sc_model_popups(model_str: str):
@@ -6530,8 +6608,10 @@ def _reset_sc_model_popups(model_str: str):
     else:
         pid, mname = "", ""
     items = [pop_prov.itemTitleAtIndex_(i) for i in range(pop_prov.numberOfItems())]
-    if pid in items:
-        pop_prov.selectItemWithTitle_(pid)
+    rec = _pc.find_by_label_or_id(pid) if pid else None
+    label = rec.get("label", pid) if rec else ""
+    if label and label in items:
+        pop_prov.selectItemWithTitle_(label)
     else:
         pop_prov.selectItemAtIndex_(0)
         pid = ""
@@ -6558,6 +6638,7 @@ def _close_editor_now(pending_fn=None):
     """Закрыть панель редактора сценариев."""
     global _sc_editor_panel, _sc_edit_pending, _editing_scenario
     _editing_scenario = False
+    _close_open_dropdown()
     if _sc_editor_panel:
         _sc_editor_panel.orderOut_(None)
         _sc_editor_panel.close()
@@ -7015,6 +7096,51 @@ def _close_open_dropdown():
     _open_dropdown_ref = None
 
 
+def _show_dropdown_for_view(view, items, selected_idx=0, on_select=None):
+    """Показать выпадающий список под указанным NSView."""
+    global _open_dropdown_panel, _open_dropdown_ref
+    if _open_dropdown_panel:
+        _close_open_dropdown()
+        return
+    if not items:
+        return
+    win = view.window()
+    if not win:
+        return
+    view_in_win = view.convertRect_toView_(view.bounds(), None)
+    scr = win.convertRectToScreen_(view_in_win)
+    ROW_H = 20
+    PAD = 4
+    n = len(items)
+    LIST_W = max(int(view.bounds().size.width), 160)
+    LIST_H = min(n * ROW_H + PAD * 2, 260)
+    px = scr.origin.x
+    py = scr.origin.y - LIST_H
+    screen = AppKit.NSScreen.mainScreen().frame()
+    if py < screen.origin.y + 4:
+        py = scr.origin.y + scr.size.height
+    panel = AppKit.NSPanel.alloc().initWithContentRect_styleMask_backing_defer_(
+        AppKit.NSMakeRect(px, py, LIST_W, LIST_H),
+        AppKit.NSWindowStyleMaskBorderless,
+        AppKit.NSBackingStoreBuffered, False,
+    )
+    panel.setOpaque_(False)
+    panel.setBackgroundColor_(AppKit.NSColor.clearColor())
+    panel.setLevel_(AppKit.NSFloatingWindowLevel + 5)
+    panel.setHidesOnDeactivate_(False)
+    panel.setIgnoresMouseEvents_(False)
+
+    lv = _DropdownListView.alloc().initWithFrame_(AppKit.NSMakeRect(0, 0, LIST_W, LIST_H))
+    lv._items = list(items)
+    lv._selected = max(0, min(int(selected_idx or 0), len(items) - 1))
+    lv._hovered = -1
+    lv._on_select = on_select
+    panel.setContentView_(lv)
+    panel.orderFront_(None)
+    _open_dropdown_panel = panel
+    _open_dropdown_ref = view
+
+
 def _toggle_terminal_dropdown(popup):
     global _open_dropdown_panel, _open_dropdown_ref
     if _open_dropdown_panel:
@@ -7197,23 +7323,48 @@ def _show_sc_editor_impl(sc_idx):
     y -= LABEL_H + 2
 
     # попап провайдера
-    prov_items = [_T("sc_auto")] + _pc.available_providers()
+    prov_records = _scenario_provider_records(cur_pid)
+    prov_items = [_T("sc_auto")] + [rec.get("label") or rec.get("id", "") for rec in prov_records]
     pop_prov = _TerminalPopup.alloc().initWithFrame_(
         AppKit.NSMakeRect(MARGIN, y - TF_H, HALF_W, TF_H))
     pop_prov.addItemsWithTitles_(prov_items)
-    if cur_pid in prov_items:
-        pop_prov.selectItemWithTitle_(cur_pid)
+    cur_rec = _pc.find_by_label_or_id(cur_pid) if cur_pid else None
+    cur_label = cur_rec.get("label", cur_pid) if cur_rec else ""
+    if cur_label and cur_label in prov_items:
+        pop_prov.selectItemWithTitle_(cur_label)
     else:
         pop_prov.selectItemAtIndex_(0)
     pop_prov.setTarget_(_btn_t)
     pop_prov.setAction_(BtnTarget.scProviderChanged_)
     cv.addSubview_(pop_prov)
 
-    # попап модели
+    # поле модели — редактируемое: можно выбрать из списка API или вписать
+    # вручную. Кнопка справа открывает список и подставляет модель в поле.
+    MODEL_BTN_W = 20
+    MODEL_TF_W  = HALF_W - MODEL_BTN_W - 3
+    tf_model = AppKit.NSTextField.alloc().initWithFrame_(
+        AppKit.NSMakeRect(MARGIN + HALF_W + 6, y - TF_H, MODEL_TF_W, TF_H))
+    _style_tf(tf_model, "glm-4.5-flash")
+    tf_model.setStringValue_(cur_mname or "")
+    cv.addSubview_(tf_model)
+    lay = tf_model.layer()
+    if lay:
+        lay.setBackgroundColor_(_rgba(*C_BG).CGColor())
+        lay.setBorderColor_(C_GREEN_BORD.CGColor())
+        lay.setBorderWidth_(0.5)
+        lay.setCornerRadius_(2.0)
+
+    model_pick_btn = _mkbtn("▾", color=C_GREEN_DIM, size=12)
+    model_pick_btn.setFrame_(AppKit.NSMakeRect(
+        MARGIN + HALF_W + 6 + MODEL_TF_W + 3, y - TF_H, MODEL_BTN_W, TF_H))
+    model_pick_btn.setTarget_(_btn_t)
+    model_pick_btn.setAction_(BtnTarget.scModelDropdown_)
+    cv.addSubview_(model_pick_btn)
+
+    # popup модели не добавляем в view — держим его только как источник items
     pop_model = _TerminalPopup.alloc().initWithFrame_(
         AppKit.NSMakeRect(MARGIN + HALF_W + 6, y - TF_H, HALF_W, TF_H))
     _populate_model_popup(pop_model, cur_pid, cur_mname)
-    cv.addSubview_(pop_model)
 
     y -= TF_H + GAP
 
@@ -7315,6 +7466,8 @@ def _show_sc_editor_impl(sc_idx):
         "tf_es":        tf_es,
         "pop_provider": pop_prov,
         "pop_model":    pop_model,
+        "tf_model":     tf_model,
+        "model_pick_btn": model_pick_btn,
         "sil_btn":      sil_btn,
         "silent":       is_silent,   # текущее состояние переключателя (Python bool, меняется в action)
         "fd_btn":       fd_btn,

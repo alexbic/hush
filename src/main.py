@@ -524,14 +524,20 @@ def _force_paste_raw_now():
     global _in_countdown
     if not _in_countdown:
         return
+    _dbg("enter: force raw paste requested during countdown")
     _in_countdown = False
     AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(overlay.cancel_countdown_silent)
     with _accum_lock:
         texts = list(_accum_texts)
         _accum_texts.clear()
     if not texts:
-        AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(overlay.hide_silent)
-        return
+        fallback = (overlay.get_text() or "").strip()
+        if not fallback:
+            _dbg("enter: no accumulated text and no overlay fallback text")
+            AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(overlay.hide_silent)
+            return
+        _dbg("enter: using overlay fallback text for raw paste")
+        texts = [fallback]
     full_text = "\n\n".join(texts)
     raw = _strip_markdown(full_text)
     _add_to_history(full_text)

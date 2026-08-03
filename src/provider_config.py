@@ -113,6 +113,28 @@ def _builtin_record(pid: str):
     return None
 
 
+def _legacy_backup_candidates() -> list[str]:
+    return [
+        PROVIDERS_LEGACY,
+        os.path.expanduser("~/.config/hush/providers.json.before_v22_manual_backup"),
+    ]
+
+
+def _load_legacy_backup() -> dict:
+    """Загрузить первый валидный legacy backup формата v1."""
+    for path in _legacy_backup_candidates():
+        if not os.path.exists(path):
+            continue
+        try:
+            with open(path) as f:
+                raw = json.load(f)
+            if isinstance(raw, dict) and raw and raw.get("schema_version") != SCHEMA_VERSION:
+                return raw
+        except Exception:
+            continue
+    return {}
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Загрузка / сохранение / миграция
 # ═══════════════════════════════════════════════════════════════════════════
@@ -140,6 +162,7 @@ def load():
             _data = raw
             _normalize_records()
             _seed_missing_builtins()
+            _hydrate_builtins_from_legacy_backup()
 
     # Инициализировать статусы/модели для всех известных провайдеров
     _status = {p["id"]: None for p in _data.get("providers", [])}
@@ -189,6 +212,37 @@ def _seed_missing_builtins():
             changed = True
     if changed:
         _normalize_records()
+
+
+def _hydrate_builtins_from_legacy_backup():
+    """Довосстановить builtin-провайдеры из legacy backup, если текущий v2 файл
+    потерял эти записи или их поля пусты.
+
+    Ничего не перетирает, если значение уже задано в текущем schema v2.
+    """
+    legacy = _load_legacy_backup()
+    if not legacy:
+        return
+    changed = False
+    for pid in ("ollama", "anthropic", "openai", "glm"):
+        fields = legacy.get(pid)
+        if not isinstance(fields, dict):
+            continue
+        rec = _get_provider_ref(pid)
+        if rec is None:
+            rec = _builtin_record(pid)
+            if rec is None:
+                continue
+            _data.setdefault("providers", []).append(rec)
+            changed = True
+        for key in ("base_url", "api_key", "default_model"):
+            legacy_value = fields.get(key)
+            if legacy_value and not rec.get(key):
+                rec[key] = legacy_value
+                changed = True
+    if changed:
+        _normalize_records()
+        save()
 
 
 def _migrate_v1_to_v2(old_data: dict) -> dict:
