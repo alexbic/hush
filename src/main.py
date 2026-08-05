@@ -279,6 +279,7 @@ _full_mode_standby = False   # True после того как Shift+⌥ отк�
 _last_release_time = 0.0   # хранится для таймингов обработчика отпускания
 
 _kbd = kb.Controller()
+_last_ax_prompt_time = 0.0
 
 
 def _is_session_active() -> bool:
@@ -519,10 +520,21 @@ def _force_finalize_now():
     _session_finalize()
 
 
+def _has_pending_silent_text() -> bool:
+    """True when silent-mode text is already recognized and waiting for auto-finalize."""
+    if not _state.get("silent"):
+        return False
+    if _state.get("stream") or _stopping > 0 or _state.get("cancelled"):
+        return False
+    with _accum_lock:
+        return bool(_accum_texts)
+
+
 def _force_paste_raw_now():
     """Enter во время обратного отсчёта: немедленно вставляет накопленный сырой текст, пропускает сценарий."""
     global _in_countdown
-    if not _in_countdown:
+    if not (_in_countdown or _has_pending_silent_text()):
+        _dbg("enter: ignored because no countdown/pending silent text")
         return
     _dbg("enter: force raw paste requested during countdown")
     _in_countdown = False
@@ -584,6 +596,117 @@ def _schedule_portaudio_reinit(reason: str):
         _dbg(f"{reason}: PortAudio recovery ok={ok}")
 
     threading.Thread(target=_run, daemon=True, name="hush-portaudio-recovery").start()
+
+
+def _enter_should_force_paste() -> bool:
+    return bool(_in_countdown or _has_pending_silent_text())
+
+
+def _install_enter_fallback_listener():
+    """Global Enter fallback when NSEvent keydown is not delivered by the target app."""
+    def _on_press(key):
+        if key != kb.Key.enter:
+            return
+        should_force = _enter_should_force_paste()
+        _dbg(
+            f"enter fallback: key=enter should_force={should_force} "
+            f"countdown={_in_countdown} frontmost={_frontmost_bundle_id()!r}"
+        )
+        if should_force:
+            threading.Thread(target=_force_paste_raw_now, daemon=True,
+                             name="hush-enter-raw-fallback").start()
+
+    try:
+        listener = kb.Listener(on_press=_on_press)
+        listener.daemon = True
+        listener.start()
+        _dbg("enter fallback listener started")
+        return listener
+    except Exception as e:
+        _dbg(f"enter fallback listener failed: {e}")
+        return None
+
+
+_enter_event_tap = None
+_enter_event_source = None
+
+
+def _setup_enter_event_tap():
+    """Intercept Enter during countdown so the target app cannot consume it first."""
+    global _enter_event_tap, _enter_event_source
+    try:
+        import Quartz
+    except Exception as e:
+        _dbg(f"enter event tap import failed: {e}")
+        return False
+
+    if _enter_event_tap is not None:
+        try:
+            Quartz.CGEventTapEnable(_enter_event_tap, True)
+            _dbg("enter event tap already active")
+            return True
+        except Exception:
+            _enter_event_tap = None
+            _enter_event_source = None
+
+    mask = (
+        (1 << Quartz.kCGEventKeyDown) |
+        (1 << Quartz.kCGEventKeyUp)
+    )
+    _kVK_Return = 36
+    _kVK_NumpadEnter = 76
+
+    def _callback(_proxy, type_, event, _refcon):
+        try:
+            if type_ == Quartz.kCGEventTapDisabledByTimeout:
+                Quartz.CGEventTapEnable(_enter_event_tap, True)
+                _dbg("enter event tap re-enabled after timeout")
+                return event
+            if type_ not in (Quartz.kCGEventKeyDown, Quartz.kCGEventKeyUp):
+                return event
+            keycode = Quartz.CGEventGetIntegerValueField(event, Quartz.kCGKeyboardEventKeycode)
+            if keycode not in (_kVK_Return, _kVK_NumpadEnter):
+                return event
+            should_force = _enter_should_force_paste()
+            _dbg(
+                f"enter event tap: type={type_} kc={keycode} should_force={should_force} "
+                f"countdown={_in_countdown} frontmost={_frontmost_bundle_id()!r}"
+            )
+            if not should_force:
+                return event
+            if type_ == Quartz.kCGEventKeyDown:
+                threading.Thread(target=_force_paste_raw_now, daemon=True,
+                                 name="hush-enter-raw-tap").start()
+            return None
+        except Exception as e:
+            _dbg(f"enter event tap callback failed: {e}")
+            return event
+
+    try:
+        tap = Quartz.CGEventTapCreate(
+            Quartz.kCGSessionEventTap,
+            Quartz.kCGHeadInsertEventTap,
+            Quartz.kCGEventTapOptionDefault,
+            mask,
+            _callback,
+            None,
+        )
+        if tap is None:
+            _dbg("enter event tap creation returned None")
+            return False
+        source = Quartz.CFMachPortCreateRunLoopSource(None, tap, 0)
+        loop = Quartz.CFRunLoopGetCurrent()
+        Quartz.CFRunLoopAddSource(loop, source, Quartz.kCFRunLoopCommonModes)
+        Quartz.CGEventTapEnable(tap, True)
+        _enter_event_tap = tap
+        _enter_event_source = source
+        _dbg("enter event tap started")
+        return True
+    except Exception as e:
+        _dbg(f"enter event tap setup failed: {e}")
+        _enter_event_tap = None
+        _enter_event_source = None
+        return False
 
 
 def _on_hotkey_press(full_mode: bool = False):
@@ -673,8 +796,20 @@ def _on_hotkey_press(full_mode: bool = False):
         _dbg(f"recorder.start() FAILED: {e}")
         _state["stream"] = None
         if isinstance(e, TimeoutError):
-            # PortAudio завис в этом процессе — переинициализируем сразу, а не ждём
-            # следующего сна/пробуждения, иначе запись остаётся мёртвой до перезапуска HUSH.
+            # PortAudio может зависнуть после предыдущего медленного stop/close.
+            # Пробуем один быстрый inline-reset+retry, чтобы не оставлять запись мёртвой
+            # до следующего нажатия или перезапуска приложения.
+            recovered = _reinit_portaudio(timeout=1.5)
+            _dbg(f"recorder.start() inline recovery ok={recovered}")
+            if recovered:
+                try:
+                    _state["stream"] = recorder.start(on_chunk=overlay.update_waveform)
+                    _dbg("recorder.start(): OK after inline recovery")
+                    return
+                except Exception as retry_e:
+                    _dbg(f"recorder.start() retry FAILED: {retry_e}")
+                    _state["stream"] = None
+            # Если inline recovery не помог, оставляем фоновое восстановление тоже.
             _schedule_portaudio_reinit("recorder.start() hang")
         # Показывать оверлей в режиме записи при отсутствующем стриме нельзя — прячем
         AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(lambda: overlay.hide(force=True))
@@ -833,6 +968,45 @@ def _frontmost_bundle_id():
         return None
 
 
+def _open_accessibility_settings():
+    try:
+        ws = AppKit.NSWorkspace.sharedWorkspace()
+        url = AppKit.NSURL.URLWithString_(
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+        )
+        if url:
+            ws.openURL_(url)
+            return True
+    except Exception as e:
+        _dbg(f"AX settings open failed: {e}")
+    return False
+
+
+def _ensure_accessibility(prompt: bool = False, open_settings: bool = False) -> bool:
+    try:
+        import ApplicationServices as _AS
+        trusted = _AS.AXIsProcessTrustedWithOptions(
+            {"AXTrustedCheckOptionPrompt": bool(prompt)}
+        )
+        _dbg(f"AX trusted: {trusted} prompt={prompt}")
+        if not trusted and open_settings:
+            _open_accessibility_settings()
+        return bool(trusted)
+    except Exception as e:
+        _dbg(f"AX check error: {e}")
+        return False
+
+
+def _prompt_accessibility_fix(source: str):
+    global _last_ax_prompt_time
+    now = time.time()
+    if now - _last_ax_prompt_time < 8.0:
+        return
+    _last_ax_prompt_time = now
+    _dbg(f"AX prompt requested from {source}")
+    _ensure_accessibility(prompt=True, open_settings=True)
+
+
 def _wait_for_frontmost_app(bundle_id: str, timeout_s: float = 1.2, poll_s: float = 0.05) -> bool:
     """Wait until the target app becomes frontmost before firing synthetic paste keys."""
     if not bundle_id:
@@ -845,9 +1019,50 @@ def _wait_for_frontmost_app(bundle_id: str, timeout_s: float = 1.2, poll_s: floa
     return _frontmost_bundle_id() == bundle_id
 
 
-def _fire_paste_shortcut(target_name: str | None = None) -> str:
+def _is_electron_like_target(target_bundle: str | None, target_name: str | None) -> bool:
+    bundle = (target_bundle or "").lower()
+    name = (target_name or "").lower()
+    return (
+        bundle.startswith("com.openai.codex")
+        or bundle.startswith("com.electron.")
+        or "chatgpt" in name
+        or "codex" in name
+    )
+
+
+def _fire_paste_shortcut(target_name: str | None = None, target_bundle: str | None = None) -> str:
     """Trigger Cmd+V in the target app. Returns the mechanism that succeeded."""
-    if target_name:
+    electron_like = _is_electron_like_target(target_bundle, target_name)
+    _dbg(
+        f"paste: shortcut strategy target_name={target_name!r} "
+        f"target_bundle={target_bundle!r} electron_like={electron_like}"
+    )
+
+    def _try_quartz():
+        import Quartz
+
+        key_v = 9
+        src = Quartz.CGEventSourceCreate(Quartz.kCGEventSourceStateHIDSystemState)
+        down = Quartz.CGEventCreateKeyboardEvent(src, key_v, True)
+        up = Quartz.CGEventCreateKeyboardEvent(src, key_v, False)
+        Quartz.CGEventSetFlags(down, Quartz.kCGEventFlagMaskCommand)
+        Quartz.CGEventSetFlags(up, Quartz.kCGEventFlagMaskCommand)
+        Quartz.CGEventPost(Quartz.kCGAnnotatedSessionEventTap, down)
+        Quartz.CGEventPost(Quartz.kCGAnnotatedSessionEventTap, up)
+        return "quartz"
+
+    # Electron/Codex/ChatGPT targets often report process-level success without
+    # delivering the keystroke into the focused editor. Historic logs on
+    # August 5, 2026 show Quartz was the working path for com.openai.codex,
+    # so prefer it first for those targets.
+    if electron_like:
+        try:
+            return _try_quartz()
+        except Exception as e:
+            _dbg(f"paste: Quartz preferred Cmd+V failed: {e}")
+
+    # Non-Electron targets are still best served by process-targeted paste.
+    if not electron_like and target_name:
         try:
             subprocess.run(
                 [
@@ -888,19 +1103,23 @@ def _fire_paste_shortcut(target_name: str | None = None) -> str:
         _dbg(f"paste: System Events Cmd+V failed: {e}")
 
     try:
-        import Quartz
-
-        key_v = 9
-        src = Quartz.CGEventSourceCreate(Quartz.kCGEventSourceStateHIDSystemState)
-        down = Quartz.CGEventCreateKeyboardEvent(src, key_v, True)
-        up = Quartz.CGEventCreateKeyboardEvent(src, key_v, False)
-        Quartz.CGEventSetFlags(down, Quartz.kCGEventFlagMaskCommand)
-        Quartz.CGEventSetFlags(up, Quartz.kCGEventFlagMaskCommand)
-        Quartz.CGEventPost(Quartz.kCGAnnotatedSessionEventTap, down)
-        Quartz.CGEventPost(Quartz.kCGAnnotatedSessionEventTap, up)
-        return "quartz"
+        return _try_quartz()
     except Exception as e:
         _dbg(f"paste: Quartz Cmd+V failed: {e}")
+
+    if electron_like and target_name:
+        try:
+            subprocess.run(
+                [
+                    "osascript",
+                    "-e",
+                    f'tell application "System Events" to tell process "{target_name}" to keystroke "v" using {{command down}}',
+                ],
+                check=True,
+            )
+            return "system_events_process_fallback"
+        except Exception as e:
+            _dbg(f"paste: System Events process fallback Cmd+V failed: {e}")
 
     _kbd.press(kb.Key.cmd)
     _kbd.tap('v')
@@ -936,22 +1155,19 @@ def _commit_and_paste(text: str):
         subprocess.run(["pbcopy"], input=text.encode("utf-8"), check=False)
         time.sleep(0.3)  # Increased delay for larger text to copy
 
-        try:
-            import ApplicationServices as _AS
-            ax_ok = _AS.AXIsProcessTrustedWithOptions({"AXTrustedCheckOptionPrompt": False})
-        except Exception:
-            ax_ok = True
+        ax_ok = _ensure_accessibility(prompt=False, open_settings=False)
         _dbg(f"paste: target={target_bundle!r} frontmost={_frontmost_bundle_id()!r} AX trusted={ax_ok}, firing Cmd+V")
 
         if ax_ok:
             time.sleep(0.20)
-            method = _fire_paste_shortcut(target_name or None)
+            method = _fire_paste_shortcut(target_name or None, target_bundle or None)
             _dbg(f"paste: {method} Cmd+V done")
             time.sleep(0.35)   # было 0.05 — недостаточно для Electron-приложений (Claude Desktop):
                                  # пробел долетал раньше вставленного текста
             _kbd.tap(' ')   # trailing space so next dictation joins cleanly
         else:
             _dbg("paste: ПРОПУЩЕНО — нет разрешения Accessibility. Текст в буфере обмена, используйте Cmd+V вручную.")
+            _prompt_accessibility_fix("paste")
     except Exception as e:
         _dbg(f"paste ERROR: {e}")
 
@@ -1188,6 +1404,7 @@ _hotkey_monitors = []   # NSEvent monitor refs — prevent GC
 # последовательно — так же, как раньше делал pynput-поток.
 import queue as _queue
 _hotkey_queue: "_queue.Queue[tuple]" = _queue.Queue()
+_enter_listener = _install_enter_fallback_listener()
 
 def _hotkey_worker():
     while True:
@@ -1237,7 +1454,13 @@ def _setup_hotkey():
     def _handle_key_down(event):
         if event is None:
             return
-        if event.keyCode() in (_kVK_Return, _kVK_NumpadEnter) and _in_countdown:
+        if event.keyCode() in (_kVK_Return, _kVK_NumpadEnter):
+            pending = _has_pending_silent_text()
+            _dbg(
+                f"enter keydown: kc={event.keyCode()} countdown={_in_countdown} "
+                f"pending={pending} frontmost={_frontmost_bundle_id()!r}"
+            )
+        if event.keyCode() in (_kVK_Return, _kVK_NumpadEnter) and (_in_countdown or _has_pending_silent_text()):
             threading.Thread(target=_force_paste_raw_now, daemon=True,
                              name="hush-enter-raw").start()
 
@@ -1457,17 +1680,10 @@ def _setup_app_observer():
 
 def _check_accessibility():
     """Проверяет разрешение AX и показывает запрос если оно отсутствует. pynput требует его."""
-    try:
-        import ApplicationServices
-        trusted = ApplicationServices.AXIsProcessTrustedWithOptions(
-            {"AXTrustedCheckOptionPrompt": True}
-        )
-        _dbg(f"AX trusted: {trusted}")
-        if not trusted:
-            print("⚠️  Нет разрешения Accessibility. Откройте Системные настройки → "
-                  "Конфиденциальность → Accessibility и добавьте HUSH (или python3).")
-    except Exception as e:
-        _dbg(f"AX check error: {e}")
+    trusted = _ensure_accessibility(prompt=True, open_settings=not _ensure_accessibility(prompt=False))
+    if not trusted:
+        print("⚠️  Нет разрешения Accessibility. Откройте Системные настройки → "
+              "Конфиденциальность → Accessibility и добавьте HUSH.")
 
 
 def _first_run_setup():
@@ -1537,6 +1753,7 @@ class _AppDelegate(AppKit.NSObject):
     def applicationDidFinishLaunching_(self, notification):
         _first_run_setup()          # копируем бинарник+модели в стабильные пути (один раз)
         _check_accessibility()
+        _setup_enter_event_tap()
         _load_history()
         overlay.init(
             _on_scenario,

@@ -9,6 +9,7 @@ from config import SAMPLE_RATE
 _lock = threading.Lock()
 _recording = False
 _frames = []
+_needs_backend_reset = False
 
 # Parakeet TDT обрабатывает ровно 15 секунд за раз
 _CHUNK_SAMPLES = 240000
@@ -32,13 +33,42 @@ def _close_stream_quietly(stream):
         pass
 
 
+def _reset_audio_backend(timeout: float = 1.5) -> bool:
+    """Best-effort PortAudio reset after a hung stop/start path."""
+    result = {"ok": False}
+
+    def _run():
+        try:
+            try:
+                sd.stop()
+            except Exception:
+                pass
+            try:
+                sd._terminate()
+            except Exception:
+                pass
+            sd._initialize()
+            result["ok"] = True
+        except Exception:
+            result["ok"] = False
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    t.join(timeout=timeout)
+    return bool(result["ok"]) if not t.is_alive() else False
+
+
 def start(on_chunk=None):
     """Начинает запись голоса. Возвращает stream object."""
-    global _recording, _frames
+    global _recording, _frames, _needs_backend_reset
 
     with _lock:
         _recording = True
         _frames = []
+
+    if _needs_backend_reset:
+        _reset_audio_backend(timeout=1.5)
+        _needs_backend_reset = False
 
     abandoned = threading.Event()
 
@@ -93,7 +123,7 @@ def start(on_chunk=None):
 def stop(stream):
     """Останавливает запись. Возвращает (wav_path, 0) или (None, 0) при ошибке."""
     import threading as _threading
-    global _recording
+    global _recording, _needs_backend_reset
     with _lock:
         _recording = False
 
@@ -111,6 +141,8 @@ def stop(stream):
     if t.is_alive():
         import sys
         print("[recorder] WARNING: stream.stop()/close() hung, continuing without it", file=sys.stderr)
+        _needs_backend_reset = True
+        _reset_audio_backend(timeout=1.5)
         # поток демонический — умрёт вместе с процессом; продолжаем с уже собранными фреймами
 
     with _lock:

@@ -291,6 +291,20 @@ STRINGS = {
         "cfg_theme":      "цвет",
         "cfg_scenes":     "сценарии",
         "prov_title":       "ПРОВАЙДЕРЫ / API КЛЮЧИ",
+        "prov_add":         "[ДОБАВИТЬ]",
+        "prov_check":       "[ПРОВЕРИТЬ]",
+        "prov_checking":    "ПРОВЕРКА...",
+        "prov_edit":        "[ПРАВИТЬ]",
+        "prov_name_lbl":    "имя",
+        "prov_proto_lbl":   "протокол",
+        "prov_endpoint_lbl":"endpoint",
+        "prov_key_lbl":     "api key",
+        "prov_model_lbl":   "модель",
+        "prov_delete":      "[УДАЛИТЬ]",
+        "prov_builtin_clear":"[СБРОС]",
+        "prov_added_lbl":   "Новый провайдер",
+        "prov_key_set":     "ключ задан",
+        "prov_key_none":    "ключ не задан",
         "hist_mixed":       "ВСЕ",
         "hist_sessions":    "СЕССИИ",
         "hist_blocks":      "БЛОКИ",
@@ -374,6 +388,20 @@ STRINGS = {
         "cfg_theme":      "color",
         "cfg_scenes":     "scenarios",
         "prov_title":       "PROVIDERS / API KEYS",
+        "prov_add":         "[ADD]",
+        "prov_check":       "[CHECK]",
+        "prov_checking":    "CHECKING...",
+        "prov_edit":        "[EDIT]",
+        "prov_name_lbl":    "name",
+        "prov_proto_lbl":   "protocol",
+        "prov_endpoint_lbl":"endpoint",
+        "prov_key_lbl":     "api key",
+        "prov_model_lbl":   "model",
+        "prov_delete":      "[DELETE]",
+        "prov_builtin_clear":"[CLEAR]",
+        "prov_added_lbl":   "New provider",
+        "prov_key_set":     "key set",
+        "prov_key_none":    "key not set",
         "hist_mixed":       "ALL",
         "hist_sessions":    "SESSIONS",
         "hist_blocks":      "BLOCKS",
@@ -456,6 +484,20 @@ STRINGS = {
         "cfg_theme":      "color",
         "cfg_scenes":     "escenarios",
         "prov_title":       "PROVEEDORES / CLAVES API",
+        "prov_add":         "[AÑADIR]",
+        "prov_check":       "[PROBAR]",
+        "prov_checking":    "PROBANDO...",
+        "prov_edit":        "[EDITAR]",
+        "prov_name_lbl":    "nombre",
+        "prov_proto_lbl":   "protocolo",
+        "prov_endpoint_lbl":"endpoint",
+        "prov_key_lbl":     "api key",
+        "prov_model_lbl":   "modelo",
+        "prov_delete":      "[BORRAR]",
+        "prov_builtin_clear":"[LIMPIAR]",
+        "prov_added_lbl":   "Nuevo proveedor",
+        "prov_key_set":     "clave definida",
+        "prov_key_none":    "clave no definida",
         "hist_mixed":       "TODO",
         "hist_sessions":    "SESIONES",
         "hist_blocks":      "BLOQUES",
@@ -3945,6 +3987,56 @@ class BtnTarget(AppKit.NSObject):
         _win_save_pos()
         AppKit.NSApplication.sharedApplication().terminate_(None)
 
+    def provAdd_(self, sender):
+        new_pid = _pc.add_provider(_T("prov_added_lbl"), "openai-compat")
+        _prov_expanded.add(new_pid)
+        _rebuild_prov_doc()
+
+    def provEditToggle_(self, sender):
+        card = _prov_card_by_tag(sender.tag())
+        if not card:
+            return
+        pid = card["pid"]
+        if pid in _prov_expanded:
+            _prov_expanded.discard(pid)
+        else:
+            _prov_expanded.add(pid)
+        _rebuild_prov_doc()
+
+    def provCheck_(self, sender):
+        card = _prov_card_by_tag(sender.tag())
+        if not card:
+            return
+        pid = card["pid"]
+        _pc.probe_one(pid)
+        refs = _prov_field_refs or {}
+        btn = refs.get(f"check_btn:{pid}")
+        if btn:
+            btn.setAttributedTitle_(_atitle(_T("prov_checking"), size=8, color=C_GREEN_DIM))
+
+    def provProtocol_(self, sender):
+        card = _prov_card_by_tag(sender.tag())
+        if not card:
+            return
+        for btn in card.get("proto_group") or []:
+            btn.setState_(AppKit.NSControlStateValueOn if btn is sender else AppKit.NSControlStateValueOff)
+
+    def provDelete_(self, sender):
+        card = _prov_card_by_tag(sender.tag())
+        if not card:
+            return
+        pid = card["pid"]
+        provider = _pc.get_provider(pid)
+        if not provider:
+            return
+        if provider.get("builtin"):
+            _pc.update_provider(pid, api_key="")
+        else:
+            _pc.remove_provider(pid)
+            _prov_expanded.discard(pid)
+        _rebuild_prov_doc()
+        _pc.probe_all()
+
     def provClose_(self, sender):
         _close_providers_panel()
 
@@ -3955,25 +4047,20 @@ class BtnTarget(AppKit.NSObject):
 
     def provSave_(self, sender):
         """Сохранить все поля провайдеров в providers.json и повторно проверить."""
-        refs = _prov_field_refs or {}
-        changed_ollama = False
-        if "ollama_url" in refs:
-            new_url = refs["ollama_url"].stringValue().strip()
-            if new_url != _pc.get("ollama", "base_url"):
-                _pc.set_field("ollama", "base_url", new_url)
-                changed_ollama = True
-        for pid in ("anthropic", "openai", "glm"):
-            key = f"{pid}_key"
-            if key in refs:
-                _pc.set_field(pid, "api_key", refs[key].stringValue().strip())
-        if "openai_base" in refs:
-            _pc.set_field("openai", "base_url",
-                          refs["openai_base"].stringValue().strip() or "https://api.openai.com/v1")
-        if "glm_base" in refs:
-            _pc.set_field("glm", "base_url",
-                          refs["glm_base"].stringValue().strip() or "https://api.z.ai/api/paas/v4")
+        for card in list(_prov_cards):
+            pid = card.get("pid")
+            tf_label = card.get("tf_label")
+            if not pid or tf_label is None:
+                continue
+            protocol = _selected_proto(card.get("proto_group"))
+            _pc.update_provider(
+                pid,
+                label=tf_label.stringValue().strip() or pid,
+                protocol=protocol or "openai-compat",
+                base_url=card["tf_endpoint"].stringValue().strip(),
+                api_key=card["tf_key"].stringValue().strip(),
+            )
         _close_providers_panel()
-        # Повторно проверить всех провайдеров после закрытия UI (ссылки очищены)
         _pc.probe_all()
 
     def cfgScResetOne_(self, sender):
@@ -4266,6 +4353,24 @@ def _style_tf(tf, placeholder=""):
             AppKit.NSFontAttributeName, _mono(10), rng)
         cell.setPlaceholderAttributedString_(pa)
 
+
+def _style_multiline_tf(tf, placeholder=""):
+    _style_tf(tf, placeholder)
+    cell = tf.cell()
+    if cell:
+        cell.setWraps_(True)
+        cell.setScrollable_(False)
+        cell.setUsesSingleLineMode_(False)
+        cell.setLineBreakMode_(AppKit.NSLineBreakByCharWrapping)
+        cell.setFont_(_mono(9))
+
+
+def _estimate_wrapped_field_height(text: str, width: float, line_h: int = 14, min_h: int = 20, max_h: int = 84) -> int:
+    txt = str(text or "")
+    chars_per_line = max(18, int(max(width, 120) / 7.2))
+    lines = max(1, math.ceil(len(txt) / chars_per_line))
+    return max(min_h, min(max_h, lines * line_h + 8))
+
 def _main(fn):
     def _safe():
         try:
@@ -4397,8 +4502,11 @@ _about_panel        = None   # отдельный NSPanel для карточк�
 _tt_panel           = None   # всплывающая подсказка для About-панели
 _tt_timer           = None   # таймер задержки перед показом подсказки
 _prov_panel         = None   # drop panel для настройки провайдеров/API-ключей
-_prov_field_refs    = {}     # {"ollama_url": tf, "ollama_model": combo, "anthropic_key": tf, ...}
-_prov_dot_refs      = {}     # {"ollama": NSTextField точка, ...}
+_prov_field_refs    = {}
+_prov_dot_refs      = {}
+_prov_cards         = []     # [{"pid", "dot", "key_lbl", "tf_label", "tf_endpoint", ...}, ...]
+_prov_expanded      = set()  # {provider_id, ...}
+_prov_doc_scroll    = None
 _status_bar_item    = None   # NSStatusItem для строки меню macOS
 _hist_panel       = None   # drop panel для истории
 _hist_panel_side  = None   # "below" | "right" | "left" — текущее размещение
@@ -6248,7 +6356,7 @@ def _show_about_view():
     LBL_H  = 16
 
     # ── Верхний левый угол: версия ───────────────────────────────────────────
-    ver_tf = AppKit.NSTextField.labelWithString_("v2.0")
+    ver_tf = AppKit.NSTextField.labelWithString_(_app_version_string())
     ver_tf.setEditable_(False); ver_tf.setBezeled_(False); ver_tf.setDrawsBackground_(False)
     ver_tf.setFont_(_mono(9, False))
     ver_tf.setTextColor_(C_GREEN_DIM)
@@ -9324,44 +9432,273 @@ def show_scenario_result(text: str, hist_id: str = None):
 # ── Панель провайдеров ─────────────────────────────────────────────────────────
 
 def _close_providers_panel():
-    global _prov_panel, _prov_field_refs, _prov_dot_refs
+    global _prov_panel, _prov_field_refs, _prov_dot_refs, _prov_cards, _prov_doc_scroll
     if _prov_panel:
         _prov_panel.orderOut_(None)
         _prov_panel.close()
         _prov_panel = None
     _prov_field_refs = {}
-    _prov_dot_refs   = {}
+    _prov_dot_refs = {}
+    _prov_cards = []
+    _prov_doc_scroll = None
+
+
+PROV_HEAD_H = 30
+PROV_EXP_H = 136
+_PROV_PROTOCOL_OPTIONS = ("ollama", "anthropic", "openai-compat")
+
+
+def _prov_card_by_tag(tag):
+    providers = _pc.list_providers()
+    if 0 <= int(tag) < len(providers):
+        pid = providers[int(tag)].get("id")
+        for card in _prov_cards:
+            if card.get("pid") == pid:
+                return card
+    return None
+
+
+def _build_provider_popup(frame, selected):
+    pop = _TerminalPopup.alloc().initWithFrame_(frame)
+    pop.addItemsWithTitles_(list(_PROV_PROTOCOL_OPTIONS))
+    if selected in _PROV_PROTOCOL_OPTIONS:
+        pop.selectItemWithTitle_(selected)
+    else:
+        pop.selectItemWithTitle_("openai-compat")
+    return pop
+
+
+def _provider_card_height(pid):
+    provider = _pc.get_provider(pid) or {}
+    if pid not in _prov_expanded:
+        return PROV_HEAD_H
+    key_h = _estimate_wrapped_field_height(provider.get("api_key", ""), 340)
+    return PROV_HEAD_H + 106 + key_h
+
+
+def _theme_surface(mult=1.0, alpha=1.0):
+    r = min(C_BG[0] * mult, 1.0)
+    g = min(C_BG[1] * mult, 1.0)
+    b = min(C_BG[2] * mult, 1.0)
+    return _rgba(r, g, b, alpha)
+
+
+def _app_version_string() -> str:
+    try:
+        bundle = AppKit.NSBundle.mainBundle()
+        if bundle:
+            version = bundle.objectForInfoDictionaryKey_("CFBundleShortVersionString")
+            if version:
+                return f"v{version}"
+    except Exception:
+        pass
+    return "v2.1"
+
+
+def _selected_proto(group) -> str:
+    for btn in group or []:
+        if int(btn.state()) == int(AppKit.NSControlStateValueOn):
+            return str(btn.representedObject() or "")
+    return "openai-compat"
+
+
+def _make_proto_radio(title, proto, selected, x, y, w, tag):
+    btn = AppKit.NSButton.alloc().initWithFrame_(AppKit.NSMakeRect(x, y, w, 18))
+    btn.setButtonType_(AppKit.NSButtonTypeRadio)
+    btn.setBordered_(False)
+    btn.setTitle_(title)
+    btn.setFont_(_mono(9))
+    btn.setContentTintColor_(C_TEXT)
+    btn.setState_(AppKit.NSControlStateValueOn if proto == selected else AppKit.NSControlStateValueOff)
+    btn.setRepresentedObject_(proto)
+    btn.setTag_(tag)
+    btn.setTarget_(_btn_t)
+    btn.setAction_(BtnTarget.provProtocol_)
+    return btn
+
+
+def _build_prov_docview(pw, scroll_h):
+    global _prov_cards, _prov_dot_refs
+    _prov_cards = []
+    _prov_dot_refs = {}
+    providers = _pc.list_providers()
+    doc_h = max(scroll_h, sum(_provider_card_height(p.get("id")) + 8 for p in providers) + 8)
+    docview = _FlippedView.alloc().initWithFrame_(AppKit.NSMakeRect(0, 0, pw, doc_h))
+
+    if not providers:
+        empty = _mklabel(_T("hist_empty"), size=10, color=C_IDLE)
+        empty.setFrame_(AppKit.NSMakeRect(12, 12, pw - 24, 16))
+        docview.addSubview_(empty)
+        return docview
+
+    card_x = 10
+    card_w = pw - 20
+    y = 8
+
+    for idx, provider in enumerate(providers):
+        pid = provider.get("id") or ""
+        if not pid:
+            continue
+        expanded = pid in _prov_expanded
+        card_h = _provider_card_height(pid)
+
+        card = _FlippedView.alloc().initWithFrame_(AppKit.NSMakeRect(card_x, y, card_w, card_h))
+        card.setWantsLayer_(True)
+        layer = card.layer()
+        if layer:
+            layer.setCornerRadius_(4.0)
+            layer.setBorderWidth_(0.8)
+            layer.setBorderColor_(C_GREEN_BORD.CGColor())
+            layer.setBackgroundColor_(_theme_surface(1.15, 0.94).CGColor())
+
+        head = _FlippedView.alloc().initWithFrame_(AppKit.NSMakeRect(0, 0, card_w, PROV_HEAD_H))
+        head.setWantsLayer_(True)
+        head_layer = head.layer()
+        if head_layer:
+            head_layer.setCornerRadius_(4.0)
+            head_layer.setBackgroundColor_(_theme_surface(1.45, 0.98).CGColor())
+        card.addSubview_(head)
+
+        dot = _mklabel("●", size=11, color=C_GREEN_DIM)
+        dot.setFrame_(AppKit.NSMakeRect(10, 8, 12, 14))
+        head.addSubview_(dot)
+        _prov_dot_refs[pid] = dot
+
+        title_lbl = _mklabel(provider.get("label") or pid, size=10, bold=True, color=C_GREEN_BR if expanded else C_TEXT)
+        title_lbl.setFrame_(AppKit.NSMakeRect(28, 8, max(120, card_w - 320), 14))
+        head.addSubview_(title_lbl)
+
+        if expanded:
+            key_text = ""
+        elif provider.get("api_key"):
+            key_text = _pc.mask_key(provider.get("api_key", ""))
+        else:
+            key_text = _T("prov_key_none")
+        key_color = C_GREEN_DIM if provider.get("api_key") else C_IDLE
+        key_lbl = _mklabel(key_text, size=9, color=key_color)
+        key_lbl.setFrame_(AppKit.NSMakeRect(card_w - 208, 9, 130, 12))
+        head.addSubview_(key_lbl)
+
+        toggle_btn = AppKit.NSButton.alloc().initWithFrame_(AppKit.NSMakeRect(0, 0, card_w, PROV_HEAD_H))
+        toggle_btn.setBordered_(False)
+        toggle_btn.setTitle_("")
+        toggle_btn.setTransparent_(True)
+        toggle_btn.setTag_(idx)
+        toggle_btn.setTarget_(_btn_t)
+        toggle_btn.setAction_(BtnTarget.provEditToggle_)
+        head.addSubview_(toggle_btn)
+
+        card_refs = {
+            "pid": pid,
+            "dot": dot,
+            "key_lbl": key_lbl,
+            "tf_label": None,
+            "tf_endpoint": None,
+            "tf_key": None,
+            "proto_group": [],
+        }
+
+        if expanded:
+            left_x = 12
+            label_w = 72
+            field_x = left_x + label_w + 8
+            row_h = 24
+            section_top = PROV_HEAD_H + 8
+            action_y = section_top - 2
+
+            check_btn = _mkbtn(_T("prov_check"), color=C_GREEN_DIM, size=8)
+            check_btn.setFrame_(AppKit.NSMakeRect(card_w - 152, action_y, 74, 18))
+            check_btn.setTag_(idx)
+            check_btn.setTarget_(_btn_t)
+            check_btn.setAction_(BtnTarget.provCheck_)
+            card.addSubview_(check_btn)
+
+            del_btn = _mkbtn(_T("prov_delete"), color=C_REC, size=8)
+            del_btn.setFrame_(AppKit.NSMakeRect(card_w - 74, action_y, 66, 18))
+            del_btn.setTag_(idx)
+            del_btn.setTarget_(_btn_t)
+            del_btn.setAction_(BtnTarget.provDelete_)
+            card.addSubview_(del_btn)
+
+            name_lbl = _mklabel(_T("prov_name_lbl"), size=9, color=C_TEXT)
+            name_lbl.setFrame_(AppKit.NSMakeRect(left_x, section_top + 20, label_w, 14))
+            card.addSubview_(name_lbl)
+            name_tf = AppKit.NSTextField.alloc().initWithFrame_(AppKit.NSMakeRect(field_x, section_top + 16, card_w - field_x - 12, 20))
+            _style_tf(name_tf, "")
+            name_tf.setStringValue_(provider.get("label") or pid)
+            card.addSubview_(name_tf)
+
+            proto_lbl = _mklabel(_T("prov_proto_lbl"), size=9, color=C_TEXT)
+            proto_lbl.setFrame_(AppKit.NSMakeRect(left_x, section_top + row_h + 20, label_w, 14))
+            card.addSubview_(proto_lbl)
+            proto_sel = provider.get("protocol", "openai-compat")
+            proto_group = [
+                _make_proto_radio("Ollama", "ollama", proto_sel, field_x, section_top + row_h + 16, 78, idx),
+                _make_proto_radio("Anthropic", "anthropic", proto_sel, field_x + 86, section_top + row_h + 16, 96, idx),
+                _make_proto_radio("OpenAI compat", "openai-compat", proto_sel, field_x + 188, section_top + row_h + 16, 136, idx),
+            ]
+            for btn in proto_group:
+                card.addSubview_(btn)
+
+            endpoint_lbl = _mklabel(_T("prov_endpoint_lbl"), size=9, color=C_TEXT)
+            endpoint_lbl.setFrame_(AppKit.NSMakeRect(left_x, section_top + row_h * 2 + 20, label_w, 14))
+            card.addSubview_(endpoint_lbl)
+            endpoint_tf = AppKit.NSTextField.alloc().initWithFrame_(AppKit.NSMakeRect(field_x, section_top + row_h * 2 + 16, card_w - field_x - 12, 20))
+            _style_tf(endpoint_tf, "")
+            endpoint_tf.setStringValue_(provider.get("base_url", ""))
+            card.addSubview_(endpoint_tf)
+
+            key_lbl2 = _mklabel(_T("prov_key_lbl"), size=9, color=C_TEXT)
+            key_lbl2.setFrame_(AppKit.NSMakeRect(left_x, section_top + row_h * 3 + 20, label_w, 14))
+            card.addSubview_(key_lbl2)
+            key_h = _estimate_wrapped_field_height(provider.get("api_key", ""), card_w - field_x - 12)
+            key_tf = AppKit.NSTextField.alloc().initWithFrame_(AppKit.NSMakeRect(field_x, section_top + row_h * 3 + 16, card_w - field_x - 12, key_h))
+            _style_multiline_tf(key_tf, "")
+            key_tf.setStringValue_(provider.get("api_key", ""))
+            card.addSubview_(key_tf)
+
+            card_refs.update({
+                "tf_label": name_tf,
+                "tf_endpoint": endpoint_tf,
+                "tf_key": key_tf,
+                "proto_group": proto_group,
+            })
+
+        if expanded:
+            _prov_field_refs[f"check_btn:{pid}"] = check_btn
+        _prov_cards.append(card_refs)
+        docview.addSubview_(card)
+        y += card_h + 8
+
+    return docview
+
+
+def _rebuild_prov_doc():
+    if not _prov_doc_scroll:
+        return
+    sf = _prov_doc_scroll.frame()
+    scroll_w = int(sf.size.width)
+    scroll_h = int(sf.size.height)
+    _prov_doc_scroll.setDocumentView_(_build_prov_docview(scroll_w, scroll_h))
+    _refresh_prov_dots()
 
 
 def _toggle_providers_panel():
-    global _prov_panel, _prov_field_refs, _prov_dot_refs
+    global _prov_panel, _prov_field_refs, _prov_doc_scroll
     if _prov_panel and _prov_panel.isVisible():
         _close_providers_panel()
         return
 
     _close_providers_panel()
-    # Повторный пробинг при каждом открытии — точки статуса отражают актуальный статус
     try:
-        import provider_config as _pc_mod
-        _pc_mod.probe_all()
+        _pc.probe_all()
     except Exception:
         pass
 
-    PW     = W   # panel always normal width regardless of expanded mode
-    mf     = _win.frame()   # main window frame — for grid position only
-    MARGIN = 12
-    FW     = PW - MARGIN * 2
-    LBL_H  = 13
-    TF_H   = 22
-    GAP    = 4
-    BTN_H  = 22
+    PW = W
+    mf = _win.frame()
+    PH = H_PANEL
 
-    # ── Фиксированная высота (одинакова для всех панелей) ─────────────────────
-    screen = _win.screen() or AppKit.NSScreen.mainScreen()
-    vis    = screen.visibleFrame() if screen else AppKit.NSMakeRect(0, 0, 1440, 900)
-    PH     = H_PANEL
-
-    # ── Панель ─────────────────────────────────────────────────────────────────
     panel = _EditorPanel.alloc().initWithContentRect_styleMask_backing_defer_(
         AppKit.NSMakeRect(0, 0, PW, PH),
         AppKit.NSWindowStyleMaskBorderless,
@@ -9378,91 +9715,53 @@ def _toggle_providers_panel():
     _prov_panel = panel
     _prov_panel.setAlphaValue_(_st.get("opacity", 0.88))
     _prov_panel._panel_key = "providers"
-
     cv = _bg
 
-    def _tf(y_pos, placeholder, value):
-        tf = AppKit.NSTextField.alloc().initWithFrame_(
-            AppKit.NSMakeRect(MARGIN, y_pos, FW, TF_H))
-        _style_tf(tf, placeholder)
-        tf.setStringValue_(value)
-        cv.addSubview_(tf)
-        return tf
+    hdr_h = 28
+    foot_h = 30
+    btn_y = 4
+    scroll_y = foot_h + 2
+    scroll_h = PH - hdr_h - foot_h - 2
 
-    def _dot_lbl(y_pos, pid, title):
-        dot = _mklabel("●", size=9, color=C_GREEN_DIM)
-        dot.setFrame_(AppKit.NSMakeRect(MARGIN, y_pos, 12, LBL_H))
-        cv.addSubview_(dot)
-        _prov_dot_refs[pid] = dot
-        lbl = _mklabel(title, size=9, bold=True, color=C_GREEN_BR)
-        lbl.setFrame_(AppKit.NSMakeRect(MARGIN + 15, y_pos, FW - 15, LBL_H))
-        cv.addSubview_(lbl)
-
-    y = PH - 8
-
-    # ── Заголовок ──────────────────────────────────────────────────────────────
-    _mkmagnet_btn("providers", cv, 6, y - LBL_H - 2, 22, LBL_H + 4)
+    _mkmagnet_btn("providers", cv, 6, PH - 24, 22, 20)
     hdr = _mklabel(_T("prov_title"), size=10, color=C_IDLE)
-    hdr.setFrame_(AppKit.NSMakeRect(32, y - LBL_H, FW - 32, LBL_H))
+    hdr.setFrame_(AppKit.NSMakeRect(32, PH - 22, PW - 44, 14))
     cv.addSubview_(hdr)
-    y -= LBL_H + 5
-    cv.addSubview_(_sep_line(MARGIN, y, FW, pin="top"))
-    y -= 8
+    cv.addSubview_(_sep_line(0, PH - hdr_h, PW, pin="top"))
 
-    # ── OLLAMA ────────────────────────────────────────────────────────────────
-    _dot_lbl(y - LBL_H, "ollama", "OLLAMA")
-    y -= LBL_H + GAP
-    _prov_field_refs["ollama_url"] = _tf(y - TF_H, "http://localhost:11434",
-        _pc.get("ollama", "base_url", "http://localhost:11434"))
-    y -= TF_H + 10
-    cv.addSubview_(_sep_line(MARGIN, y, FW, pin="top"))
-    y -= 8
+    scroll = AppKit.NSScrollView.alloc().initWithFrame_(
+        AppKit.NSMakeRect(0, scroll_y, PW, scroll_h))
+    scroll.setHasVerticalScroller_(True)
+    scroll.setAutohidesScrollers_(True)
+    scroll.setBorderType_(AppKit.NSNoBorder)
+    scroll.setDrawsBackground_(False)
+    scroll.setBackgroundColor_(AppKit.NSColor.clearColor())
+    scroll.setVerticalScroller_(_ThinGreenScroller.alloc().init())
+    scroll.setScrollerStyle_(getattr(AppKit, "NSScrollerStyleOverlay", 1))
+    _prov_doc_scroll = scroll
+    scroll.setDocumentView_(_build_prov_docview(PW, scroll_h))
+    cv.addSubview_(scroll)
 
-    # ── ANTHROPIC ─────────────────────────────────────────────────────────────
-    _dot_lbl(y - LBL_H, "anthropic", "ANTHROPIC")
-    y -= LBL_H + GAP
-    _prov_field_refs["anthropic_key"] = _tf(y - TF_H, "sk-ant-api...",
-        _pc.get("anthropic", "api_key"))
-    y -= TF_H + 10
-    cv.addSubview_(_sep_line(MARGIN, y, FW, pin="top"))
-    y -= 8
+    cv.addSubview_(_sep_line(0, foot_h, PW, pin="bottom"))
 
-    # ── OPENAI ────────────────────────────────────────────────────────────────
-    _dot_lbl(y - LBL_H, "openai", "OPENAI")
-    y -= LBL_H + GAP
-    _prov_field_refs["openai_key"] = _tf(y - TF_H, "sk-proj-...",
-        _pc.get("openai", "api_key"))
-    y -= TF_H + GAP
-    _prov_field_refs["openai_base"] = _tf(y - TF_H, "https://api.openai.com/v1",
-        _pc.get("openai", "base_url", "https://api.openai.com/v1"))
-    y -= TF_H + 10
-    cv.addSubview_(_sep_line(MARGIN, y, FW, pin="top"))
-    y -= 8
+    btn_add = _mkbtn(_T("prov_add"), color=C_CYAN, size=9)
+    btn_add.setFrame_(AppKit.NSMakeRect(8, btn_y, 96, 22))
+    btn_add.setTarget_(_btn_t)
+    btn_add.setAction_(BtnTarget.provAdd_)
+    cv.addSubview_(btn_add)
 
-    # ── GLM ───────────────────────────────────────────────────────────────────
-    _dot_lbl(y - LBL_H, "glm", "GLM (Z.ai)")
-    y -= LBL_H + GAP
-    _prov_field_refs["glm_key"] = _tf(y - TF_H, "API ключ GLM",
-        _pc.get("glm", "api_key"))
-    y -= TF_H + GAP
-    _prov_field_refs["glm_base"] = _tf(y - TF_H, "https://api.z.ai/api/paas/v4",
-        _pc.get("glm", "base_url", "https://api.z.ai/api/paas/v4"))
-
-    # ── Кнопки ─────────────────────────────────────────────────────────────────
-    cv.addSubview_(_sep_line(MARGIN, MARGIN + BTN_H + 6, FW, pin="top"))
-    BTN_W = 80
-    btn_cancel = _mkbtn(_T("btn_cancel"), color=C_GREEN_DIM, size=10)
-    btn_cancel.setFrame_(AppKit.NSMakeRect(MARGIN, MARGIN, BTN_W, BTN_H))
+    btn_cancel = _mkbtn(_T("btn_cancel"), color=C_GREEN_DIM, size=9)
+    btn_cancel.setFrame_(AppKit.NSMakeRect(PW // 2 - 45, btn_y, 90, 22))
     btn_cancel.setTarget_(_btn_t)
     btn_cancel.setAction_(BtnTarget.provClose_)
     cv.addSubview_(btn_cancel)
-    btn_save = _mkbtn(_T("btn_save"), color=C_GREEN_BR, size=10)
-    btn_save.setFrame_(AppKit.NSMakeRect(PW - MARGIN - BTN_W, MARGIN, BTN_W, BTN_H))
+
+    btn_save = _mkbtn(_T("btn_save"), color=C_GREEN_BR, size=9)
+    btn_save.setFrame_(AppKit.NSMakeRect(PW - 98, btn_y, 90, 22))
     btn_save.setTarget_(_btn_t)
     btn_save.setAction_(BtnTarget.provSave_)
     cv.addSubview_(btn_save)
 
-    # ── Позиционирование через ячейки сетки ────────────────────────────────────
     wx2, wy2 = int(mf.origin.x), int(mf.origin.y)
     ww2, wh2 = int(mf.size.width), int(mf.size.height)
     px, py = _calc_panel_pos("providers", wx2, wy2, ww2, wh2, PW, PH)
@@ -9495,6 +9794,9 @@ def _refresh_prov_dots():
             dot.setTextColor_(C_REC)
         else:
             dot.setTextColor_(C_GREEN_DIM)
+        btn = _prov_field_refs.get(f"check_btn:{pid}")
+        if btn:
+            btn.setAttributedTitle_(_atitle(_T("prov_check"), size=8, color=C_GREEN_DIM))
 
 
 def update_provider_status():
