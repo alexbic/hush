@@ -13,8 +13,8 @@ ROOT="$(pwd)"
 SRC="$ROOT/src"
 ASSETS="$ROOT/assets"
 DEFAULTS="$ROOT/defaults"
-APP_VERSION="2.1"
-APP_BUILD="2.1.0"
+APP_VERSION="3.0"
+APP_BUILD="3.0.0"
 
 # Ищем python3.14, потом python3
 PYTHON="$(command -v python3.14 2>/dev/null || command -v python3 2>/dev/null)"

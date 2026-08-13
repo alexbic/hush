@@ -130,20 +130,16 @@ def warm_up():
 def transcribe(wav_path: str) -> str:
     global _current_proc
     import time as _t
-    # Если warm-up ещё работает — ждём его завершения (не убиваем).
-    # Когда ANE холодный, warmup берёт 60+ сек, но убивать его и стартовать свой
-    # процесс бессмысленно: наш тоже возьмёт 60+ сек. Лучше дождаться — после
-    # завершения warmup ANE тёплый и наша транскрипция займёт ~1 сек.
+    # Реальная пользовательская транскрипция всегда важнее фонового warm-up.
+    # Даём прогреву короткий шанс закончиться самому, затем прерываем его,
+    # чтобы не подвешивать интерфейс на десятки секунд.
     with _proc_lock:
         wp = _warmup_proc
     if wp and wp.poll() is None:
         try:
-            wp.wait(timeout=90)   # ждём до 90 сек; холодный старт ANE ≈ 60 сек
+            wp.wait(timeout=2.0)
         except subprocess.TimeoutExpired:
-            try:
-                wp.terminate()
-            except Exception:
-                pass
+            _terminate(wp)
 
     # Защита: parakeet падает с ошибкой ExtAudioFileOpenURL на отсутствующих/пустых файлах
     try:

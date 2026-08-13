@@ -34,7 +34,7 @@ SUPPORTED_PROTOCOLS  = ("ollama", "anthropic", "openai-compat")
 # ─── Базовые (builtin) провайдеры — сеятели при первом запуске ────────────────
 _BUILTIN_SEED = [
     {"id": "ollama",    "label": "Ollama",     "protocol": "ollama",
-     "base_url": "http://localhost:11434", "api_key": "", "default_model": "qwen3:8b",
+     "base_url": "http://localhost:11434", "api_key": "", "default_model": "",
      "builtin": True},
     {"id": "anthropic", "label": "Anthropic",  "protocol": "anthropic",
      "base_url": "https://api.anthropic.com/v1", "api_key": "", "default_model": "",
@@ -510,10 +510,16 @@ def probe_one(pid: str):
 
 def _safe_probe(rec: dict):
     """Обёртка: вызывает _dispatch_probe и ловит любые исключения."""
+    pid = rec.get("id", "?")
+    base = (rec.get("base_url") or "").strip()
+    if not base:
+        _status[pid] = None
+        _models[pid] = []
+        _notify()
+        return
     try:
         _dispatch_probe(rec)
     except Exception as e:
-        pid = rec.get("id", "?")
         _status[pid] = False
         _models[pid] = []
         print(f"[providers] probe {pid}: unexpected error: {e}")

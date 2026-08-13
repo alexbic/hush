@@ -44,7 +44,7 @@ N8N_WEBHOOK_URL = os.environ.get("VOICE_N8N_WEBHOOK", "")
 
 AUDIO_TMP   = "/tmp/hush_audio.wav"
 SAMPLE_RATE = 16000
-HOTKEY      = "<alt_r>"  # Right Option key
+HOTKEY      = "<fn>"  # Fn key
 
 # ── Живые геттеры — читают из provider_config в момент вызова ────────────────
 # Используются в processor.py, чтобы изменения UI вступали в силу без перезапуска.
