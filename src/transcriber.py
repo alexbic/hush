@@ -4,7 +4,7 @@ import subprocess
 import threading
 import struct
 import os
-from config import PARAKEET_CLI, LANG_ID, LANG_IDS, MODEL_DIR
+from config import PARAKEET_CLI, LANG_ID, LANG_IDS, get_model_dir
 
 _current_proc  = None   # type: subprocess.Popen | None
 _warmup_proc   = None   # type: subprocess.Popen | None
@@ -88,7 +88,7 @@ def warm_up():
             env["PARAKEET_LANG_ID"] = str(LANG_IDS.get(_st.get("lang", "ru"), LANG_ID))
         except Exception:
             env["PARAKEET_LANG_ID"] = str(LANG_ID)
-        env["PARAKEET_MODEL_DIR"] = MODEL_DIR
+        env["PARAKEET_MODEL_DIR"] = get_model_dir()
     except Exception:
         return
 
@@ -130,26 +130,21 @@ def warm_up():
 def transcribe(wav_path: str) -> str:
     global _current_proc
     import time as _t
-    # Если warm-up ещё работает — ждём его завершения (не убиваем).
-    # Когда ANE холодный, warmup берёт 60+ сек, но убивать его и стартовать свой
-    # процесс бессмысленно: наш тоже возьмёт 60+ сек. Лучше дождаться — после
-    # завершения warmup ANE тёплый и наша транскрипция займёт ~1 сек.
+    # Реальная пользовательская транскрипция всегда важнее фонового warm-up.
+    # Даём прогреву короткий шанс закончиться самому, затем прерываем его,
+    # чтобы не подвешивать интерфейс на десятки секунд.
     with _proc_lock:
         wp = _warmup_proc
     if wp and wp.poll() is None:
         try:
-            wp.wait(timeout=90)   # ждём до 90 сек; холодный старт ANE ≈ 60 сек
+            wp.wait(timeout=2.0)
         except subprocess.TimeoutExpired:
-            try:
-                wp.terminate()
-            except Exception:
-                pass
+            _terminate(wp)
 
     # Защита: parakeet падает с ошибкой ExtAudioFileOpenURL на отсутствующих/пустых файлах
     try:
         if not os.path.exists(wav_path) or os.path.getsize(wav_path) < 256:
-            with open("/tmp/vi_transcribe.log", "a") as _f:
-                _f.write(f"\n[{_t.strftime('%H:%M:%S')}] SKIP: invalid file {wav_path}\n")
+            # Debug logging removed for privacy
             return ""
     except Exception:
         return ""
@@ -160,7 +155,7 @@ def transcribe(wav_path: str) -> str:
         env["PARAKEET_LANG_ID"] = str(LANG_IDS.get(_st.get("lang", "ru"), LANG_ID))
     except Exception:
         env["PARAKEET_LANG_ID"] = str(LANG_ID)
-    env["PARAKEET_MODEL_DIR"] = MODEL_DIR
+    env["PARAKEET_MODEL_DIR"] = get_model_dir()
     proc = subprocess.Popen(
         [PARAKEET_CLI, wav_path],
         stdout=subprocess.PIPE,
@@ -180,8 +175,8 @@ def transcribe(wav_path: str) -> str:
                 _current_proc = None
     if proc.returncode in (-9, -15):   # killed (SIGKILL) или terminated (SIGTERM) через cancel()/таймаут
         try:
-            with open("/tmp/vi_transcribe.log", "a") as f:
-                f.write(f"\n[{_t.strftime('%H:%M:%S')}] KILLED rc={proc.returncode} wav={wav_path}\n")
+            # Debug logging removed for privacy
+            pass
         except Exception:
             pass
         return ""
@@ -189,12 +184,8 @@ def transcribe(wav_path: str) -> str:
     result_stderr = stderr_b.decode("utf-8", errors="replace")
     cleaned = _clean(result_stdout)
     try:
-        with open("/tmp/vi_transcribe.log", "a") as f:
-            f.write(f"\n[{_t.strftime('%H:%M:%S')}]\n"
-                    f"  stdout={repr(result_stdout[:500])}\n"
-                    f"  stderr_tail={repr(result_stderr[-300:])}\n"
-                    f"  cleaned={repr(cleaned)}\n"
-                    f"  rc={proc.returncode}\n")
+        # Debug logging removed for privacy
+        pass
     except Exception:
         pass
     return cleaned

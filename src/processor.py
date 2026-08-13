@@ -1,11 +1,16 @@
 """LLM постобработка транскрибированного текста.
 
-Маршрутизация по формату строки модели: "provider:model_name"
-  ollama:qwen3:8b              → локальный Ollama
-  anthropic:claude-haiku-...   → Anthropic API
-  openai:gpt-4o-mini           → OpenAI-совместимый API
-  glm:glm-4-flash              → GLM (Zhipu) API
-  null / ""                    → авто: Ollama → Anthropic как запасной
+Маршрутизация по строке модели сценария "provider:model_name":
+    ollama:qwen3:8b              → локальный Ollama
+    anthropic:claude-haiku-...   → Anthropic API
+    openai:gpt-4o-mini           → OpenAI-совместимый API
+    glm:glm-4-flash              → GLM (Zhipu) API (openai-compat)
+    my-mistral:mistral-large     → любой пользовательский провайдер (v2.2)
+    null / "" / "auto:..."       → авто: Ollama → Anthropic как запасной
+
+В v2.2 провайдер ищется через provider_config.get_provider(provider_id);
+протокол вызова (ollama/anthropic/openai-compat) берётся из записи провайдера,
+а не из хардкод-веток. Добавить новый провайдер можно без правок здесь.
 """
 
 import re
@@ -39,41 +44,81 @@ def process_with_prompt(text: str, prompt: str, model: str = None) -> str:
     _log(f"→ {provider}:{model_name or '(default)'} | text={text[:40]!r}")
 
     try:
-        if provider == "ollama":
-            m = model_name or _pc.get("ollama", "default_model", "qwen3:8b")
-            result = _ollama(prompt, text, m)
-            _log(f"← ollama:{m} ok | result={result[:60]!r}")
-            return result
+        if provider == "auto":
+            return _auto_route(prompt, text)
 
-        if provider == "anthropic":
-            m = model_name or LLM_MODEL
-            result = _anthropic(prompt, text, m)
-            _log(f"← anthropic:{m} ok | result={result[:60]!r}")
-            return result
+        # Найти запись провайдера (по id или label — обратно-совместимо со старыми сценариями)
+        rec = _pc.find_by_label_or_id(provider)
+        if rec is None:
+            _log(f"  unknown provider {provider!r}, fallback to auto")
+            return _auto_route(prompt, text)
 
-        if provider in ("openai", "glm"):
-            result = _openai_compat(prompt, text, model_name, provider)
-            _log(f"← {provider}:{model_name} ok | result={result[:60]!r}")
-            return result
-
-        # авто: сначала Ollama, Anthropic как запасной
-        try:
-            m = _pc.get("ollama", "default_model", "qwen3:8b")
-            result = _ollama(prompt, text, m)
-            _log(f"← auto→ollama:{m} ok")
-            return result
-        except Exception as e1:
-            _log(f"  ollama failed: {e1}")
-            if _pc.get("anthropic", "api_key"):
-                result = _anthropic(prompt, text, LLM_MODEL)
-                _log(f"← auto→anthropic:{LLM_MODEL} ok")
-                return result
-            _log("  no fallback provider, returning raw text")
-            return text
+        return _dispatch_by_protocol(rec, model_name, prompt, text)
 
     except Exception as e:
         _log(f"✗ {provider} error: {e}")
         return text
+
+
+def _dispatch_by_protocol(rec: dict, model_name: str, system: str, text: str) -> str:
+    """Вызвать LLM в соответствии с протоколом провайдера.
+    rec — словарь записи провайдера (id/label/protocol/base_url/api_key/...)."""
+    protocol = rec.get("protocol", "openai-compat")
+    pid      = rec.get("id", "?")
+    if protocol == "ollama":
+        m = model_name or rec.get("default_model") or "qwen3:8b"
+        result = _ollama(rec, system, text, m)
+        _log(f"← {pid}:{m} ok | result={result[:60]!r}")
+        return result
+    if protocol == "anthropic":
+        m = model_name or rec.get("default_model") or LLM_MODEL
+        result = _anthropic(rec, system, text, m)
+        _log(f"← {pid}:{m} ok | result={result[:60]!r}")
+        return result
+    # default — openai-compat
+    m = model_name or rec.get("default_model") or ""
+    if not m:
+        raise ValueError(f"no model specified for {pid}")
+    result = _openai_compat(rec, system, text, m)
+    _log(f"← {pid}:{m} ok | result={result[:60]!r}")
+    return result
+
+
+def _auto_route(system: str, text: str) -> str:
+    """Авто-маршрутизация: первый доступный провайдер по приоритету.
+    Ollama (если отвечает) → любой с api_key (anthropic/openai-compat) → raw text."""
+    # 1) Ollama-провайдеры со статусом True
+    for rec in _pc.list_providers():
+        if rec.get("protocol") == "ollama" and _pc.get_status(rec["id"]) is True:
+            try:
+                m = rec.get("default_model") or "qwen3:8b"
+                result = _ollama(rec, system, text, m)
+                _log(f"← auto→{rec['id']}:{m} ok")
+                return result
+            except Exception as e1:
+                _log(f"  {rec['id']} failed: {e1}")
+                continue
+    # 2) Любой cloud-провайдер с заданным ключом (anthropic приоритетнее для совместимости)
+    for pid in ("anthropic", "openai", "glm"):
+        rec = _pc.get_provider(pid)
+        if rec and rec.get("api_key"):
+            try:
+                return _dispatch_by_protocol(rec, rec.get("default_model") or "", system, text)
+            except Exception as e2:
+                _log(f"  {pid} failed: {e2}")
+                continue
+    # 3) Любой другой пользовательский провайдер с ключом
+    for rec in _pc.list_providers():
+        if rec.get("id") in ("anthropic", "openai", "glm", "ollama"):
+            continue
+        if rec.get("protocol") != "ollama" and rec.get("api_key"):
+            try:
+                return _dispatch_by_protocol(rec, rec.get("default_model") or "", system, text)
+            except Exception as e3:
+                _log(f"  {rec['id']} failed: {e3}")
+                continue
+    _log("  no available provider, returning raw text")
+    return text
 
 
 def _log(msg: str):
@@ -90,8 +135,8 @@ def _log(msg: str):
 
 # ── Провайдеры ────────────────────────────────────────────────────────────────
 
-def _ollama(system: str, text: str, model: str) -> str:
-    base = _pc.get("ollama", "base_url", "http://localhost:11434").rstrip("/")
+def _ollama(rec: dict, system: str, text: str, model: str) -> str:
+    base = (rec.get("base_url") or "http://localhost:11434").rstrip("/")
     payload = json.dumps({
         "model":    model,
         "think":    False,   # отключаем chain-of-thought (qwen3, deepseek-r1)
@@ -114,15 +159,22 @@ def _ollama(system: str, text: str, model: str) -> str:
     return result
 
 
+# Anthropic SDK кэшируется по api_key, чтобы не пересоздавать клиент на каждый вызов.
 _anthropic_client     = None
-_anthropic_client_key = None   # отслеживаем, с каким ключом был создан клиент
+_anthropic_client_key = None
 
-def _anthropic(system: str, text: str, model: str) -> str:
+
+def _anthropic(rec: dict, system: str, text: str, model: str) -> str:
     global _anthropic_client, _anthropic_client_key
-    key = _pc.get("anthropic", "api_key")
+    key = rec.get("api_key") or ""
+    base = rec.get("base_url") or ""
     if _anthropic_client is None or _anthropic_client_key != key:
         import anthropic
-        _anthropic_client     = anthropic.Anthropic(api_key=key)
+        kwargs = {"api_key": key}
+        # Anthropic SDK принимает base_url опционально
+        if base:
+            kwargs["base_url"] = base
+        _anthropic_client     = anthropic.Anthropic(**kwargs)
         _anthropic_client_key = key
     msg = _anthropic_client.messages.create(
         model=model,
@@ -133,13 +185,9 @@ def _anthropic(system: str, text: str, model: str) -> str:
     return msg.content[0].text.strip()
 
 
-def _openai_compat(system: str, text: str, model: str, provider: str) -> str:
-    if provider == "glm":
-        base_url = _pc.get("glm", "base_url", "https://api.z.ai/api/paas/v4").rstrip("/")
-        api_key  = _pc.get("glm", "api_key")
-    else:
-        base_url = _pc.get("openai", "base_url", "https://api.openai.com/v1").rstrip("/")
-        api_key  = _pc.get("openai", "api_key")
+def _openai_compat(rec: dict, system: str, text: str, model: str) -> str:
+    base_url = (rec.get("base_url") or "https://api.openai.com/v1").rstrip("/")
+    api_key  = rec.get("api_key") or ""
 
     # o3/o1 серия не поддерживает max_tokens — используем max_completion_tokens
     _o_series = model.startswith(("o1", "o3", "o4"))
@@ -166,6 +214,7 @@ def _openai_compat(system: str, text: str, model: str, provider: str) -> str:
             data = json.loads(resp.read())
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="replace")
+        # НЕ печатаем api_key; body может содержать детали, но не ключ
         _log(f"  HTTP {e.code} body: {body[:300]}")
         raise
     return data["choices"][0]["message"]["content"].strip()

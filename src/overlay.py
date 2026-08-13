@@ -291,6 +291,20 @@ STRINGS = {
         "cfg_theme":      "цвет",
         "cfg_scenes":     "сценарии",
         "prov_title":       "ПРОВАЙДЕРЫ / API КЛЮЧИ",
+        "prov_add":         "[ДОБАВИТЬ]",
+        "prov_check":       "[ПРОВЕРИТЬ]",
+        "prov_checking":    "ПРОВЕРКА...",
+        "prov_edit":        "[ПРАВИТЬ]",
+        "prov_name_lbl":    "имя",
+        "prov_proto_lbl":   "протокол",
+        "prov_endpoint_lbl":"endpoint",
+        "prov_key_lbl":     "api key",
+        "prov_model_lbl":   "модель",
+        "prov_delete":      "[УДАЛИТЬ]",
+        "prov_builtin_clear":"[СБРОС]",
+        "prov_added_lbl":   "Новый провайдер",
+        "prov_key_set":     "ключ задан",
+        "prov_key_none":    "ключ не задан",
         "hist_mixed":       "ВСЕ",
         "hist_sessions":    "СЕССИИ",
         "hist_blocks":      "БЛОКИ",
@@ -311,8 +325,8 @@ STRINGS = {
         "tip_undo_sc":      "Вернуть оригинал",
         "tip_cfg":          "Настройки",
         "tip_hist":         "История (двойное нажатие хоткея)",
-        "tip_insert":       "Вставить (Shift+Enter)",
-        "tip_copy":         "⌘+Enter — скопировать в буфер",
+        "tip_insert":       "Вставить",
+        "tip_copy":         "⌘+⌥+Enter — скопировать в буфер",
         "tip_hist_expand":  "История (двойной клик — развернуть)",
         "theme_light":      "светлая",
         "theme_dark":       "тёмная",
@@ -329,6 +343,9 @@ STRINGS = {
             "Speak · Transcribe · Format · Use"
         ),
         "menu_open":    "Открыть HUSH",
+        "menu_silent":  "Тихая запись",
+        "menu_full":    "Полный режим",
+        "menu_stop":    "Стоп / закрыть",
         "menu_about":   "О приложении",
         "menu_login":   "Запускать при входе в систему",
         "menu_quit":    "Завершить HUSH",
@@ -374,6 +391,20 @@ STRINGS = {
         "cfg_theme":      "color",
         "cfg_scenes":     "scenarios",
         "prov_title":       "PROVIDERS / API KEYS",
+        "prov_add":         "[ADD]",
+        "prov_check":       "[CHECK]",
+        "prov_checking":    "CHECKING...",
+        "prov_edit":        "[EDIT]",
+        "prov_name_lbl":    "name",
+        "prov_proto_lbl":   "protocol",
+        "prov_endpoint_lbl":"endpoint",
+        "prov_key_lbl":     "api key",
+        "prov_model_lbl":   "model",
+        "prov_delete":      "[DELETE]",
+        "prov_builtin_clear":"[CLEAR]",
+        "prov_added_lbl":   "New provider",
+        "prov_key_set":     "key set",
+        "prov_key_none":    "key not set",
         "hist_mixed":       "ALL",
         "hist_sessions":    "SESSIONS",
         "hist_blocks":      "BLOCKS",
@@ -394,8 +425,8 @@ STRINGS = {
         "tip_undo_sc":      "Restore original",
         "tip_cfg":          "Settings",
         "tip_hist":         "History (double hotkey press)",
-        "tip_insert":       "Insert (Shift+Enter)",
-        "tip_copy":         "⌘+Enter — copy to clipboard",
+        "tip_insert":       "Insert",
+        "tip_copy":         "⌘+⌥+Enter — copy to clipboard",
         "tip_hist_expand":  "History (double click to expand)",
         "theme_light":      "light",
         "theme_dark":       "dark",
@@ -411,6 +442,9 @@ STRINGS = {
             "Speak · Transcribe · Format · Use"
         ),
         "menu_open":    "Open HUSH",
+        "menu_silent":  "Silent recording",
+        "menu_full":    "Full mode",
+        "menu_stop":    "Stop / close",
         "menu_about":   "About HUSH",
         "menu_login":   "Launch at Login",
         "menu_quit":    "Quit HUSH",
@@ -456,6 +490,20 @@ STRINGS = {
         "cfg_theme":      "color",
         "cfg_scenes":     "escenarios",
         "prov_title":       "PROVEEDORES / CLAVES API",
+        "prov_add":         "[AÑADIR]",
+        "prov_check":       "[PROBAR]",
+        "prov_checking":    "PROBANDO...",
+        "prov_edit":        "[EDITAR]",
+        "prov_name_lbl":    "nombre",
+        "prov_proto_lbl":   "protocolo",
+        "prov_endpoint_lbl":"endpoint",
+        "prov_key_lbl":     "api key",
+        "prov_model_lbl":   "modelo",
+        "prov_delete":      "[BORRAR]",
+        "prov_builtin_clear":"[LIMPIAR]",
+        "prov_added_lbl":   "Nuevo proveedor",
+        "prov_key_set":     "clave definida",
+        "prov_key_none":    "clave no definida",
         "hist_mixed":       "TODO",
         "hist_sessions":    "SESIONES",
         "hist_blocks":      "BLOQUES",
@@ -476,8 +524,8 @@ STRINGS = {
         "tip_undo_sc":      "Restaurar original",
         "tip_cfg":          "Ajustes",
         "tip_hist":         "Historial (doble pulsación del atajo)",
-        "tip_insert":       "Insertar (Shift+Intro)",
-        "tip_copy":         "⌘+Intro — copiar al portapapeles",
+        "tip_insert":       "Insertar",
+        "tip_copy":         "⌘+⌥+Intro — copiar al portapapeles",
         "tip_hist_expand":  "Historial (doble clic para expandir)",
         "theme_light":      "claro",
         "theme_dark":       "oscuro",
@@ -493,6 +541,9 @@ STRINGS = {
             "Speak · Transcribe · Format · Use"
         ),
         "menu_open":    "Abrir HUSH",
+        "menu_silent":  "Grabacion silenciosa",
+        "menu_full":    "Modo completo",
+        "menu_stop":    "Detener / cerrar",
         "menu_about":   "Acerca de HUSH",
         "menu_login":   "Iniciar al arrancar",
         "menu_quit":    "Salir de HUSH",
@@ -1251,6 +1302,9 @@ _on_copy_cb            = None  # () → None  (Ctrl+Enter — копироват
 _on_history_delete_cb  = None  # ([str]) → None  (удалить по UUID)
 _on_history_load_cb    = None  # (item_id_or_None) → None  (элемент загружен в редактор)
 _on_history_merge_cb   = None  # (text: str, source_ids: list) → str  (объединить и удалить источники)
+_on_manual_silent_cb   = None  # () → None  (ручной запуск тихой записи)
+_on_manual_full_cb     = None  # () → None  (ручное открытие полного режима)
+_on_manual_stop_cb     = None  # () → None  (ручная остановка / закрытие)
 
 _hist_ctrl = None  # сильная ссылка на _HistCtrl — предотвращает GC пока панель открыта
 
@@ -1333,6 +1387,9 @@ C_PINK       = _rgba(1.00, 0.25, 0.60)   # recognition EQ — same in window and
 C_CYAN       = _rgba(0.33, 1.00, 1.00)
 C_BAR_ON     = _rgba(0.33, 1.00, 0.33)
 C_BAR_OFF    = _rgba(0.00, 0.15, 0.00)
+C_PROV_OK    = _rgba(0.16, 0.78, 0.22)   # provider works — stable across themes
+C_PROV_FAIL  = _rgba(0.92, 0.24, 0.24)   # provider failed — stable across themes
+C_PROV_IDLE  = _rgba(0.58, 0.58, 0.58)   # provider unchecked/unknown — neutral across themes
 
 # ── Цветовые темы ─────────────────────────────────────────────────────────────
 # Цветовые палитры из панели администратора Roclea (набор цветов TC терминала)
@@ -1804,16 +1861,10 @@ class TerminalView(AppKit.NSView):
                 self.bounds(), opts, self, None))
 
     def mouseEntered_(self, event):
-        if _proc_hover_v and not _proc_hover_v.isHidden():
-            _proc_hover_v._hover_active = True
-            _proc_hover_v.setNeedsDisplay_(True)
-        elif _silent_hover_v:
+        if _silent_hover_v:
             _silent_hover_v.setHidden_(False)
 
     def mouseExited_(self, event):
-        if _proc_hover_v and not _proc_hover_v.isHidden():
-            _proc_hover_v._hover_active = False
-            _proc_hover_v.setNeedsDisplay_(True)
         if _silent_hover_v:
             _silent_hover_v.setHidden_(True)
 
@@ -2171,6 +2222,25 @@ class _HoverOverlayView(AppKit.NSView):
     Работает для тихой полосы (_silent_interrupt_fn) и главного окна (_proc_interrupt_fn).
     Текст рисуется напрямую в drawRect_, чтобы NSTextField не поглощал события мыши."""
     def drawRect_(self, rect):
+        if getattr(self, '_is_main', False) and not getattr(self, '_hover_active', False):
+            return
+        if getattr(self, '_is_main', False):
+            hint = getattr(self, '_hint', None)
+            if hint:
+                ps = AppKit.NSMutableParagraphStyle.alloc().init()
+                ps.setAlignment_(AppKit.NSTextAlignmentCenter)
+                sz = int(getattr(self, '_hint_size', 11) or 11)
+                astr = AppKit.NSAttributedString.alloc().initWithString_attributes_(
+                    hint, {
+                        AppKit.NSFontAttributeName: _mono(sz, bold=True),
+                        AppKit.NSForegroundColorAttributeName: C_YEL,
+                        AppKit.NSParagraphStyleAttributeName: ps,
+                    })
+                b = self.bounds()
+                text_h = sz + 4
+                cy = max(0, (b.size.height - text_h) / 2)
+                astr.drawInRect_(AppKit.NSMakeRect(0, cy, b.size.width, text_h))
+            return
         # Сначала очистить грязный прямоугольник — предотвращает артефакт двойной отрисовки при изменении alpha
         AppKit.NSColor.clearColor().set()
         AppKit.NSRectFill(rect)
@@ -2206,6 +2276,31 @@ class _HoverOverlayView(AppKit.NSView):
 
     def acceptsFirstMouse_(self, event):
         return True
+
+    def mouseEntered_(self, event):
+        if getattr(self, '_is_main', False):
+            self._hover_active = True
+            if _proc_eq_v:
+                _proc_eq_v.setHidden_(True)
+            self.setNeedsDisplay_(True)
+
+    def mouseExited_(self, event):
+        if getattr(self, '_is_main', False):
+            self._hover_active = False
+            if _proc_eq_v and _proc_sc_idx is not None:
+                _proc_eq_v.setHidden_(False)
+            self.setNeedsDisplay_(True)
+
+    def updateTrackingAreas(self):
+        objc.super(_HoverOverlayView, self).updateTrackingAreas()
+        for a in list(self.trackingAreas()):
+            self.removeTrackingArea_(a)
+        opts = (AppKit.NSTrackingMouseEnteredAndExited |
+                AppKit.NSTrackingActiveAlways |
+                AppKit.NSTrackingInVisibleRect)
+        self.addTrackingArea_(
+            AppKit.NSTrackingArea.alloc().initWithRect_options_owner_userInfo_(
+                self.bounds(), opts, self, None))
 
 
 class _SilentContentView(AppKit.NSView):
@@ -2360,6 +2455,27 @@ class _BlockHoverBtn(AppKit.NSButton):
             getattr(self, '_chk_lbl', ""),
             size=getattr(self, '_chk_sz', 9),
             color=getattr(self, '_normal_col', C_GREEN_DIM)))
+
+
+class _HeaderToggleBtn(AppKit.NSButton):
+    """Transparent full-row click target that reacts on the first mouse click."""
+
+    def acceptsFirstMouse_(self, _event):
+        return True
+
+    def cursorUpdate_(self, _event):
+        AppKit.NSCursor.pointingHandCursor().set()
+
+    def updateTrackingAreas(self):
+        objc.super(_HeaderToggleBtn, self).updateTrackingAreas()
+        for a in list(self.trackingAreas()):
+            self.removeTrackingArea_(a)
+        opts = (AppKit.NSTrackingCursorUpdate |
+                AppKit.NSTrackingActiveAlways |
+                AppKit.NSTrackingInVisibleRect)
+        area = AppKit.NSTrackingArea.alloc().initWithRect_options_owner_userInfo_(
+            self.bounds(), opts, self, None)
+        self.addTrackingArea_(area)
 
 
 class _HistCtrl(AppKit.NSObject):
@@ -2673,6 +2789,11 @@ class _AboutPanel(AppKit.NSPanel):
 
     def sendEvent_(self, event):
         _MOUSE_MOVED = 5
+        _LEFT_MOUSE_DOWN = 1
+        _RIGHT_MOUSE_DOWN = 3
+        if event.type() in (_LEFT_MOUSE_DOWN, _RIGHT_MOUSE_DOWN):
+            _main(_hide_about_view)
+            return
         if event.type() == _MOUSE_MOVED:
             cv = self.contentView()
             if cv:
@@ -2784,13 +2905,8 @@ class _EditorPanel(AppKit.NSPanel):
         return objc.super(_EditorPanel, self).performKeyEquivalent_(event)
 
 
-def _copy_mod_flags():
-    """Cmd+Enter копирует в буфер обмена (жёстко задано)."""
-    return AppKit.NSEventModifierFlagCommand
-
-
 class TerminalTextView(AppKit.NSTextView):
-    """NSTextView: Shift+Enter → немедленная вставка, терминальный блочный курсор."""
+    """NSTextView для полного режима и контекста."""
 
     def keyDown_(self, event):
         ESC   = 53
@@ -2812,22 +2928,21 @@ class TerminalTextView(AppKit.NSTextView):
                     last._inner_tv.setSelectedRange_(AppKit.NSMakeRange(ln, 0))
                     return
 
-        copy_m = _copy_mod_flags()
         if kc == ENTER and mods == (SHIFT | OPT):
             # Opt+Shift+Enter → вставить сохраняя MD-форматирование как есть
             if _on_paste_cb:
                 _on_paste_cb(mode="md")
-        elif kc == ENTER and copy_m and mods == (copy_m | OPT):
-            # copy_mod+Opt+Enter → копировать с MD-форматированием (без вставки, оверлей остаётся)
+        elif kc == ENTER and mods == (AppKit.NSEventModifierFlagCommand | SHIFT | OPT):
+            # Cmd+Shift+Opt+Enter → копировать с MD-форматированием (без вставки, оверлей остаётся)
             if _on_copy_cb:
                 _on_copy_cb(mode="md")
-        elif kc == ENTER and copy_m and mods == copy_m:
-            # copy_mod+Enter → копировать простой текст (без вставки, оверлей остаётся)
+        elif kc == ENTER and mods == (AppKit.NSEventModifierFlagCommand | OPT):
+            # Cmd+Opt+Enter → копировать простой текст (без вставки, оверлей остаётся)
             if _on_copy_cb:
                 _on_copy_cb()
         elif kc == ENTER and mods == SHIFT:
-            if _on_paste_cb:
-                _on_paste_cb()   # всегда сырой, без full_default
+            # Shift+Enter в окне контекста всегда вставляет перевод строки
+            self.insertNewline_(self)
         elif kc == ENTER and not mods:
             # Простой Enter → завершить введённый вручную текст в блок
             if _tv and str(_tv.string()).strip():
@@ -3123,18 +3238,17 @@ class _BlockTV(AppKit.NSTextView):
             return
 
         # Горячие клавиши копирования/вставки — как в TerminalTextView, работают с полным контекстом
-        copy_m = _copy_mod_flags()
         if kc == ENTER and mods == (SHIFT | OPT):
             if _on_paste_cb: _on_paste_cb(mode="md")
             return
-        elif kc == ENTER and copy_m and mods == (copy_m | OPT):
+        elif kc == ENTER and mods == (AppKit.NSEventModifierFlagCommand | SHIFT | OPT):
             if _on_copy_cb: _on_copy_cb(mode="md")
             return
-        elif kc == ENTER and copy_m and mods == copy_m:
+        elif kc == ENTER and mods == (AppKit.NSEventModifierFlagCommand | OPT):
             if _on_copy_cb: _on_copy_cb()
             return
         elif kc == ENTER and mods == SHIFT:
-            if _on_paste_cb: _on_paste_cb()   # всегда сырой
+            self.insertNewline_(self)
             return
 
         objc.super(_BlockTV, self).keyDown_(event)
@@ -3813,8 +3927,33 @@ class BtnTarget(AppKit.NSObject):
         pop_model = (_sc_edit_refs or {}).get("pop_model")
         if not pop_prov or not pop_model:
             return
-        pid = pop_prov.titleOfSelectedItem() or ""
-        _populate_model_popup(pop_model, pid)
+        selected = pop_prov.titleOfSelectedItem() or ""
+        rec = _pc.find_by_label_or_id(selected) if selected != _T("sc_auto") else None
+        pid = rec.get("id", "") if rec else ""
+        _populate_model_popup(pop_model, pid, _provider_default_model(pid))
+
+    def scModelPick_(self, sender):
+        return
+
+    def provModelDropdown_(self, sender):
+        card = _prov_card_by_tag(sender.tag())
+        if not card:
+            return
+        tf_model = card.get("tf_model")
+        if tf_model is None:
+            return
+        current = tf_model.stringValue().strip()
+        models, default_model = _provider_model_choices(card["pid"], current)
+        if not models:
+            return
+        display = [f"{_MODEL_DEFAULT_MARK}{m}" if m == default_model else m for m in models]
+        selected_idx = models.index(current) if current in models else 0
+
+        def _pick(idx):
+            if 0 <= idx < len(models):
+                tf_model.setStringValue_(models[idx])
+
+        _show_dropdown_for_view(sender, display, selected_idx, on_select=_pick)
 
     def hushResetPanels_(self, sender):
         _main(lambda: _reset_panels_layout())
@@ -3859,9 +3998,26 @@ class BtnTarget(AppKit.NSObject):
         _main(_show_about_view)
 
     def openHush_(self, sender):
-        """Меню статус-бара: открыть главное окно HUSH (то же что двойное нажатие Option)."""
-        show_recording()
-        AppKit.NSApp.activateIgnoringOtherApps_(True)
+        """Меню статус-бара: открыть HUSH без глобальных хоткеев."""
+        if _on_manual_full_cb:
+            _on_manual_full_cb()
+        else:
+            show_recording()
+            AppKit.NSApp.activateIgnoringOtherApps_(True)
+
+    def menuSilentRecord_(self, sender):
+        if _on_manual_silent_cb:
+            _on_manual_silent_cb()
+
+    def menuOpenFull_(self, sender):
+        if _on_manual_full_cb:
+            _on_manual_full_cb()
+
+    def menuStopSession_(self, sender):
+        if _on_manual_stop_cb:
+            _on_manual_stop_cb()
+        else:
+            hide(force=True)
 
     def toggleLaunchAtLogin_(self, sender):
         """Меню статус-бара: переключить автозапуск при входе через LaunchAgent plist."""
@@ -3899,6 +4055,57 @@ class BtnTarget(AppKit.NSObject):
         _win_save_pos()
         AppKit.NSApplication.sharedApplication().terminate_(None)
 
+    def provAdd_(self, sender):
+        new_pid = _pc.add_provider(_T("prov_added_lbl"), "openai-compat")
+        _prov_expanded.add(new_pid)
+        _rebuild_prov_doc()
+
+    def provEditToggle_(self, sender):
+        card = _prov_card_by_tag(sender.tag())
+        if not card:
+            return
+        pid = card["pid"]
+        if pid in _prov_expanded:
+            _save_provider_card(card)
+            _prov_expanded.discard(pid)
+        else:
+            _prov_expanded.add(pid)
+        _rebuild_prov_doc()
+
+    def provCheck_(self, sender):
+        card = _prov_card_by_tag(sender.tag())
+        if not card:
+            return
+        pid = card["pid"]
+        _pc.probe_one(pid)
+        refs = _prov_field_refs or {}
+        btn = refs.get(f"check_btn:{pid}")
+        if btn:
+            btn.setAttributedTitle_(_atitle(_T("prov_checking"), size=8, color=C_GREEN_DIM))
+
+    def provProtocol_(self, sender):
+        card = _prov_card_by_tag(sender.tag())
+        if not card:
+            return
+        for btn in card.get("proto_group") or []:
+            btn.setState_(AppKit.NSControlStateValueOn if btn is sender else AppKit.NSControlStateValueOff)
+
+    def provDelete_(self, sender):
+        card = _prov_card_by_tag(sender.tag())
+        if not card:
+            return
+        pid = card["pid"]
+        provider = _pc.get_provider(pid)
+        if not provider:
+            return
+        if provider.get("builtin"):
+            _pc.update_provider(pid, api_key="")
+        else:
+            _pc.remove_provider(pid)
+            _prov_expanded.discard(pid)
+        _rebuild_prov_doc()
+        _pc.probe_all()
+
     def provClose_(self, sender):
         _close_providers_panel()
 
@@ -3909,25 +4116,9 @@ class BtnTarget(AppKit.NSObject):
 
     def provSave_(self, sender):
         """Сохранить все поля провайдеров в providers.json и повторно проверить."""
-        refs = _prov_field_refs or {}
-        changed_ollama = False
-        if "ollama_url" in refs:
-            new_url = refs["ollama_url"].stringValue().strip()
-            if new_url != _pc.get("ollama", "base_url"):
-                _pc.set_field("ollama", "base_url", new_url)
-                changed_ollama = True
-        for pid in ("anthropic", "openai", "glm"):
-            key = f"{pid}_key"
-            if key in refs:
-                _pc.set_field(pid, "api_key", refs[key].stringValue().strip())
-        if "openai_base" in refs:
-            _pc.set_field("openai", "base_url",
-                          refs["openai_base"].stringValue().strip() or "https://api.openai.com/v1")
-        if "glm_base" in refs:
-            _pc.set_field("glm", "base_url",
-                          refs["glm_base"].stringValue().strip() or "https://api.z.ai/api/paas/v4")
+        for card in list(_prov_cards):
+            _save_provider_card(card)
         _close_providers_panel()
-        # Повторно проверить всех провайдеров после закрытия UI (ссылки очищены)
         _pc.probe_all()
 
     def cfgScResetOne_(self, sender):
@@ -4093,7 +4284,7 @@ class BtnTarget(AppKit.NSObject):
 
     def send_(self, sender):
         if _on_paste_cb:
-            _on_paste_cb(mode="shift_enter")   # [Отправить] — apply full_default if set
+            _on_paste_cb(mode="raw")   # [Отправить] — всегда прямая вставка без full_default
 
     def scPrev_(self, sender):
         global _sc_page
@@ -4219,6 +4410,24 @@ def _style_tf(tf, placeholder=""):
         pa.addAttribute_value_range_(
             AppKit.NSFontAttributeName, _mono(10), rng)
         cell.setPlaceholderAttributedString_(pa)
+
+
+def _style_multiline_tf(tf, placeholder=""):
+    _style_tf(tf, placeholder)
+    cell = tf.cell()
+    if cell:
+        cell.setWraps_(True)
+        cell.setScrollable_(False)
+        cell.setUsesSingleLineMode_(False)
+        cell.setLineBreakMode_(AppKit.NSLineBreakByCharWrapping)
+        cell.setFont_(_mono(9))
+
+
+def _estimate_wrapped_field_height(text: str, width: float, line_h: int = 14, min_h: int = 20, max_h: int = 84) -> int:
+    txt = str(text or "")
+    chars_per_line = max(18, int(max(width, 120) / 7.2))
+    lines = max(1, math.ceil(len(txt) / chars_per_line))
+    return max(min_h, min(max_h, lines * line_h + 8))
 
 def _main(fn):
     def _safe():
@@ -4351,8 +4560,11 @@ _about_panel        = None   # отдельный NSPanel для карточк�
 _tt_panel           = None   # всплывающая подсказка для About-панели
 _tt_timer           = None   # таймер задержки перед показом подсказки
 _prov_panel         = None   # drop panel для настройки провайдеров/API-ключей
-_prov_field_refs    = {}     # {"ollama_url": tf, "ollama_model": combo, "anthropic_key": tf, ...}
-_prov_dot_refs      = {}     # {"ollama": NSTextField точка, ...}
+_prov_field_refs    = {}
+_prov_dot_refs      = {}
+_prov_cards         = []     # [{"pid", "dot", "key_lbl", "tf_label", "tf_endpoint", ...}, ...]
+_prov_expanded      = set()  # {provider_id, ...}
+_prov_doc_scroll    = None
 _status_bar_item    = None   # NSStatusItem для строки меню macOS
 _hist_panel       = None   # drop panel для истории
 _hist_panel_side  = None   # "below" | "right" | "left" — текущее размещение
@@ -5249,6 +5461,7 @@ def _layout_header_wf():
         _wf.setFrame_(AppKit.NSMakeRect(eq_x, iy, eq_w, HDR_ITEM_H))
     if _proc_eq_v:
         _proc_eq_v.setFrame_(AppKit.NSMakeRect(eq_x, iy, eq_w, HDR_ITEM_H))
+    _layout_proc_hover()
 
     return name_end
 
@@ -5265,6 +5478,18 @@ def _show_target_app_header():
     if _lbl:
         _lbl.setHidden_(True)
     _layout_header_wf()
+
+
+def _layout_proc_hover():
+    """Place the full-mode processing hover over the whole header, text centered."""
+    if not _proc_hover_v or not _pill:
+        return
+    hov_x = 0
+    hov_y = HDR_Y - 1
+    hov_w = int(_pill.bounds().size.width)
+    hov_h = HDR_H + 2
+    _proc_hover_v.setFrame_(AppKit.NSMakeRect(hov_x, hov_y, hov_w, hov_h))
+    _proc_hover_v.updateTrackingAreas()
 
 
 def _hide_target_app_header():
@@ -5697,6 +5922,15 @@ def _close_all_panels():
     _close_cfg_panel()
 
 
+def has_settings_ui_open() -> bool:
+    """True when any HUSH settings/config side UI is visible."""
+    for key in ("_cfg_panel", "_prov_panel", "_sc_editor_panel", "_about_panel", "_hist_panel"):
+        panel = globals().get(key)
+        if panel and hasattr(panel, "isVisible") and panel.isVisible():
+            return True
+    return False
+
+
 def _hist_filter_items(items, mode):
     """Вернуть элементы соответствующие активному режиму фильтра."""
     if mode == "sessions":
@@ -5974,11 +6208,26 @@ def _setup_status_bar():
     open_item = AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
         _T("menu_open"), "openHush:", "")
     open_item.setTarget_(_btn_t)
-    # Показать ⇧⌥ выравненным справа на той же строке (нативное отображение горячей клавиши macOS)
-    open_item.setKeyEquivalent_("⌥")
-    open_item.setKeyEquivalentModifierMask_(AppKit.NSEventModifierFlagShift)
     menu.addItem_(open_item)
     _menu_items["menu_open"] = open_item
+
+    silent_item = AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+        _T("menu_silent"), "menuSilentRecord:", "")
+    silent_item.setTarget_(_btn_t)
+    menu.addItem_(silent_item)
+    _menu_items["menu_silent"] = silent_item
+
+    full_item = AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+        _T("menu_full"), "menuOpenFull:", "")
+    full_item.setTarget_(_btn_t)
+    menu.addItem_(full_item)
+    _menu_items["menu_full"] = full_item
+
+    stop_item = AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+        _T("menu_stop"), "menuStopSession:", "")
+    stop_item.setTarget_(_btn_t)
+    menu.addItem_(stop_item)
+    _menu_items["menu_stop"] = stop_item
 
     menu.addItem_(AppKit.NSMenuItem.separatorItem())
 
@@ -6202,7 +6451,7 @@ def _show_about_view():
     LBL_H  = 16
 
     # ── Верхний левый угол: версия ───────────────────────────────────────────
-    ver_tf = AppKit.NSTextField.labelWithString_("v2.0")
+    ver_tf = AppKit.NSTextField.labelWithString_(_app_version_string())
     ver_tf.setEditable_(False); ver_tf.setBezeled_(False); ver_tf.setDrawsBackground_(False)
     ver_tf.setFont_(_mono(9, False))
     ver_tf.setTextColor_(C_GREEN_DIM)
@@ -6506,17 +6755,96 @@ def _show_hist_panel(history):
 
 def _sc_model_from_refs() -> str:
     """Прочитать попапы провайдера + модели → 'provider:model' или '' для авто."""
-    pop_prov  = (_sc_edit_refs or {}).get("pop_provider")
+    pop_prov = (_sc_edit_refs or {}).get("pop_provider")
     pop_model = (_sc_edit_refs or {}).get("pop_model")
     if not pop_prov:
         return ""
-    pid = pop_prov.titleOfSelectedItem() or ""
-    if not pid or pid == "авто":
+    selected = pop_prov.titleOfSelectedItem() or ""
+    if not selected or selected == _T("sc_auto"):
         return ""
-    mname = (pop_model.titleOfSelectedItem() or "") if pop_model else ""
+    rec = _pc.find_by_label_or_id(selected)
+    pid = rec.get("id", "") if rec else ""
+    if not pid:
+        return ""
+    mname = _popup_raw_selected_title(pop_model).strip()
     if not mname or mname == "—":
         return ""
     return f"{pid}:{mname}"
+
+
+def _provider_default_model(provider_id: str) -> str:
+    rec = _pc.find_by_label_or_id(provider_id) if provider_id else None
+    if not rec:
+        return ""
+    return str(rec.get("default_model", "") or "").strip()
+
+
+_MODEL_DEFAULT_MARK = "★ "
+
+
+def _popup_raw_items(popup):
+    return list(getattr(popup, "_raw_items", []) or [])
+
+
+def _popup_raw_selected_title(popup) -> str:
+    if not popup:
+        return ""
+    raw_items = _popup_raw_items(popup)
+    idx = int(getattr(popup, "_selected", 0) or 0)
+    if raw_items and 0 <= idx < len(raw_items):
+        return str(raw_items[idx] or "")
+    try:
+        return str(popup.titleOfSelectedItem() or "")
+    except Exception:
+        return ""
+
+
+def _popup_select_raw_title(popup, raw_title: str) -> bool:
+    raw_items = _popup_raw_items(popup)
+    if not raw_items:
+        return False
+    if raw_title in raw_items:
+        popup.selectItemAtIndex_(raw_items.index(raw_title))
+        return True
+    return False
+
+
+def _provider_model_choices(provider_id: str, selected: str = ""):
+    if not provider_id:
+        return [], ""
+    default_model = _provider_default_model(provider_id)
+    merged = []
+    seen = set()
+    for name in [default_model, selected, *(_pc.models_for_provider(provider_id) or [])]:
+        name = str(name or "").strip()
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        merged.append(name)
+    return merged, default_model
+
+
+def _scenario_provider_records(current_pid: str = "") -> list:
+    """Список доступных провайдеров для редактора сценариев.
+
+    Текущий provider сохраняем в списке даже если он сейчас недоступен, чтобы
+    старый сценарий не терял выбор после открытия редактора.
+    """
+    ids = list(_pc.available_providers())
+    if current_pid and current_pid not in ids:
+        ids.append(current_pid)
+    records = []
+    seen = set()
+    for pid in ids:
+        rec = _pc.find_by_label_or_id(pid)
+        if not rec:
+            continue
+        rec_id = rec.get("id")
+        if not rec_id or rec_id in seen:
+            continue
+        seen.add(rec_id)
+        records.append(rec)
+    return records
 
 
 def _reset_sc_model_popups(model_str: str):
@@ -6530,8 +6858,10 @@ def _reset_sc_model_popups(model_str: str):
     else:
         pid, mname = "", ""
     items = [pop_prov.itemTitleAtIndex_(i) for i in range(pop_prov.numberOfItems())]
-    if pid in items:
-        pop_prov.selectItemWithTitle_(pid)
+    rec = _pc.find_by_label_or_id(pid) if pid else None
+    label = rec.get("label", pid) if rec else ""
+    if label and label in items:
+        pop_prov.selectItemWithTitle_(label)
     else:
         pop_prov.selectItemAtIndex_(0)
         pid = ""
@@ -6558,6 +6888,7 @@ def _close_editor_now(pending_fn=None):
     """Закрыть панель редактора сценариев."""
     global _sc_editor_panel, _sc_edit_pending, _editing_scenario
     _editing_scenario = False
+    _close_open_dropdown()
     if _sc_editor_panel:
         _sc_editor_panel.orderOut_(None)
         _sc_editor_panel.close()
@@ -7015,6 +7346,101 @@ def _close_open_dropdown():
     _open_dropdown_ref = None
 
 
+def _dropdown_screen_frame_for_window(win):
+    try:
+        screen = win.screen() if win else None
+        if screen:
+            return screen.visibleFrame()
+    except Exception:
+        pass
+    try:
+        return AppKit.NSScreen.mainScreen().visibleFrame()
+    except Exception:
+        return AppKit.NSMakeRect(0, 0, 1440, 900)
+
+
+def _dropdown_panel_origin(anchor_rect, list_w, list_h, screen):
+    pad = 4
+    min_x = screen.origin.x + pad
+    max_x = screen.origin.x + screen.size.width - list_w - pad
+    min_y = screen.origin.y + pad
+    max_y = screen.origin.y + screen.size.height - list_h - pad
+
+    px = anchor_rect.origin.x
+    py = anchor_rect.origin.y - list_h
+    if py < min_y:
+        py = anchor_rect.origin.y + anchor_rect.size.height
+    if py > max_y:
+        py = max_y
+    if py < min_y:
+        py = min_y
+
+    if px > max_x:
+        px = max_x
+    if px < min_x:
+        px = min_x
+    return px, py
+
+
+def _build_dropdown_panel(list_w, list_h, items, selected_idx, on_select):
+    panel = AppKit.NSPanel.alloc().initWithContentRect_styleMask_backing_defer_(
+        AppKit.NSMakeRect(0, 0, list_w, list_h),
+        AppKit.NSWindowStyleMaskBorderless,
+        AppKit.NSBackingStoreBuffered, False,
+    )
+    panel.setOpaque_(False)
+    panel.setBackgroundColor_(AppKit.NSColor.clearColor())
+    panel.setLevel_(AppKit.NSFloatingWindowLevel + 5)
+    panel.setHidesOnDeactivate_(False)
+    panel.setIgnoresMouseEvents_(False)
+
+    total_h = max(list_h, len(items) * _DropdownListView.ROW_H + _DropdownListView.PAD * 2)
+    lv = _DropdownListView.alloc().initWithFrame_(AppKit.NSMakeRect(0, 0, list_w, total_h))
+    lv._items = list(items)
+    lv._selected = max(0, min(int(selected_idx or 0), len(items) - 1))
+    lv._hovered = -1
+    lv._on_select = on_select
+
+    scroll = AppKit.NSScrollView.alloc().initWithFrame_(AppKit.NSMakeRect(0, 0, list_w, list_h))
+    scroll.setBorderType_(AppKit.NSNoBorder)
+    scroll.setHasVerticalScroller_(True)
+    scroll.setHasHorizontalScroller_(False)
+    scroll.setAutohidesScrollers_(True)
+    scroll.setDrawsBackground_(False)
+    scroll.setVerticalScroller_(_ThinGreenScroller.alloc().init())
+    scroll.setScrollerStyle_(getattr(AppKit, "NSScrollerStyleOverlay", 1))
+    scroll.setDocumentView_(lv)
+    panel.setContentView_(scroll)
+    return panel
+
+
+def _show_dropdown_for_view(view, items, selected_idx=0, on_select=None):
+    """Показать выпадающий список под указанным NSView."""
+    global _open_dropdown_panel, _open_dropdown_ref
+    if _open_dropdown_panel:
+        _close_open_dropdown()
+        return
+    if not items:
+        return
+    win = view.window()
+    if not win:
+        return
+    view_in_win = view.convertRect_toView_(view.bounds(), None)
+    scr = win.convertRectToScreen_(view_in_win)
+    ROW_H = 20
+    PAD = 4
+    n = len(items)
+    LIST_W = max(int(view.bounds().size.width), 160)
+    LIST_H = min(n * ROW_H + PAD * 2, 260)
+    screen = _dropdown_screen_frame_for_window(win)
+    px, py = _dropdown_panel_origin(scr, LIST_W, LIST_H, screen)
+    panel = _build_dropdown_panel(LIST_W, LIST_H, items, selected_idx, on_select)
+    panel.setFrameOrigin_(AppKit.NSMakePoint(px, py))
+    panel.orderFront_(None)
+    _open_dropdown_panel = panel
+    _open_dropdown_ref = view
+
+
 def _toggle_terminal_dropdown(popup):
     global _open_dropdown_panel, _open_dropdown_ref
     if _open_dropdown_panel:
@@ -7034,21 +7460,8 @@ def _toggle_terminal_dropdown(popup):
     n      = len(popup._items)
     LIST_W = max(int(popup.bounds().size.width), 120)
     LIST_H = min(n * ROW_H + PAD * 2, 260)
-    px = scr.origin.x
-    py = scr.origin.y - LIST_H
-    screen = AppKit.NSScreen.mainScreen().frame()
-    if py < screen.origin.y + 4:
-        py = scr.origin.y + scr.size.height
-    panel = AppKit.NSPanel.alloc().initWithContentRect_styleMask_backing_defer_(
-        AppKit.NSMakeRect(px, py, LIST_W, LIST_H),
-        AppKit.NSWindowStyleMaskBorderless,
-        AppKit.NSBackingStoreBuffered, False,
-    )
-    panel.setOpaque_(False)
-    panel.setBackgroundColor_(AppKit.NSColor.clearColor())
-    panel.setLevel_(AppKit.NSFloatingWindowLevel + 5)
-    panel.setHidesOnDeactivate_(False)
-    panel.setIgnoresMouseEvents_(False)
+    screen = _dropdown_screen_frame_for_window(win)
+    px, py = _dropdown_panel_origin(scr, LIST_W, LIST_H, screen)
 
     def on_select(idx):
         popup._selected = idx
@@ -7059,12 +7472,8 @@ def _toggle_terminal_dropdown(popup):
             except Exception as _err:
                 print(f"dropdown action: {_err}")
 
-    lv = _DropdownListView.alloc().initWithFrame_(AppKit.NSMakeRect(0, 0, LIST_W, LIST_H))
-    lv._items     = list(popup._items)
-    lv._selected  = popup._selected
-    lv._hovered   = -1
-    lv._on_select = on_select
-    panel.setContentView_(lv)
+    panel = _build_dropdown_panel(LIST_W, LIST_H, popup._items, popup._selected, on_select)
+    panel.setFrameOrigin_(AppKit.NSMakePoint(px, py))
     panel.orderFront_(None)
     _open_dropdown_panel = panel
     _open_dropdown_ref   = popup
@@ -7197,21 +7606,25 @@ def _show_sc_editor_impl(sc_idx):
     y -= LABEL_H + 2
 
     # попап провайдера
-    prov_items = [_T("sc_auto")] + _pc.available_providers()
+    prov_records = _scenario_provider_records(cur_pid)
+    prov_items = [_T("sc_auto")] + [rec.get("label") or rec.get("id", "") for rec in prov_records]
     pop_prov = _TerminalPopup.alloc().initWithFrame_(
         AppKit.NSMakeRect(MARGIN, y - TF_H, HALF_W, TF_H))
     pop_prov.addItemsWithTitles_(prov_items)
-    if cur_pid in prov_items:
-        pop_prov.selectItemWithTitle_(cur_pid)
+    cur_rec = _pc.find_by_label_or_id(cur_pid) if cur_pid else None
+    cur_label = cur_rec.get("label", cur_pid) if cur_rec else ""
+    if cur_label and cur_label in prov_items:
+        pop_prov.selectItemWithTitle_(cur_label)
     else:
         pop_prov.selectItemAtIndex_(0)
     pop_prov.setTarget_(_btn_t)
     pop_prov.setAction_(BtnTarget.scProviderChanged_)
     cv.addSubview_(pop_prov)
 
-    # попап модели
     pop_model = _TerminalPopup.alloc().initWithFrame_(
         AppKit.NSMakeRect(MARGIN + HALF_W + 6, y - TF_H, HALF_W, TF_H))
+    pop_model.setTarget_(_btn_t)
+    pop_model.setAction_(BtnTarget.scModelPick_)
     _populate_model_popup(pop_model, cur_pid, cur_mname)
     cv.addSubview_(pop_model)
 
@@ -7369,6 +7782,7 @@ def _sc_editor_save():
     model  = _sc_model_from_refs() or None
     prompt = refs["tv_prompt"].string()
     sc_idx = refs.get("sc_idx")
+    pop_prov = refs.get("pop_provider")
 
     if not lbl_en:
         return   # EN обязателен
@@ -7436,16 +7850,24 @@ def _sc_editor_save():
 def _populate_model_popup(popup, provider_id, selected=""):
     """Заполнить _TerminalPopup модели для указанного provider_id."""
     popup.removeAllItems()
-    models = _pc.models_for_provider(provider_id) if provider_id else []
+    popup._raw_items = []
+    models, default_model = _provider_model_choices(provider_id, selected)
     if models:
-        popup.addItemsWithTitles_(models)
+        popup.addItemsWithTitles_([
+            f"{_MODEL_DEFAULT_MARK}{model}" if model == default_model else model
+            for model in models
+        ])
+        popup._raw_items = models
         popup.setEnabled_(True)
-        if selected in models:
-            popup.selectItemWithTitle_(selected)
+        if selected and _popup_select_raw_title(popup, selected):
+            pass
+        elif default_model and _popup_select_raw_title(popup, default_model):
+            pass
         else:
             popup.selectItemAtIndex_(0)
     else:
         popup.addItemsWithTitles_(["—"])
+        popup._raw_items = ["—"]
         popup.setEnabled_(False)
 
 
@@ -8534,13 +8956,16 @@ def init(on_scenario_callback, on_history_callback=None,
          on_history_delete_callback=None,
          on_history_load_callback=None, on_history_merge_callback=None,
          on_add_history_callback=None,
-         on_update_session_callback=None, on_session_end_callback=None):
+         on_update_session_callback=None, on_session_end_callback=None,
+         on_manual_silent_callback=None, on_manual_full_callback=None,
+         on_manual_stop_callback=None):
     global _win, _pill, _wf, _tv, _lbl, _sc_icons, _sc_seps, _sc_sep_active
     global _hist_btn, _hist_corner_btn, _cfg_hdr_btn, _send_hdr_btn, _close_btn, _expand_btn, _scroll, _btn_t
     global _md_btn, _doc_view, _rich_blocks
     global _on_scenario_cb, _on_history_cb, _on_paste_cb, _on_copy_cb, _on_history_delete_cb
     global _on_history_load_cb, _on_history_merge_cb, _on_add_history_cb
     global _on_update_session_cb, _on_session_end_cb
+    global _on_manual_silent_cb, _on_manual_full_cb, _on_manual_stop_cb
     global _sc_prev_btn, _sc_next_btn, _sc_page
     global _proc_eq_v, _proc_app_lbl, _proc_sc_lbl, _proc_hover_v
     global _app_icon_v, _undo_sc_btn, _on_undo_sc_cb
@@ -8555,6 +8980,9 @@ def init(on_scenario_callback, on_history_callback=None,
     _on_add_history_cb     = on_add_history_callback
     _on_update_session_cb  = on_update_session_callback
     _on_session_end_cb     = on_session_end_callback
+    _on_manual_silent_cb   = on_manual_silent_callback
+    _on_manual_full_cb     = on_manual_full_callback
+    _on_manual_stop_cb     = on_manual_stop_callback
     _btn_t                 = BtnTarget.alloc().init()
 
     # Загрузить состояние магнитного окна из сохранённых настроек
@@ -8981,12 +9409,13 @@ def init(on_scenario_callback, on_history_callback=None,
     # Оверлей отмены при наведении — добавляется ПОСЛЕДНИМ чтобы быть поверх всех других subview
     # Текст рисуется в drawRect_ (не как подвид NSTextField — это проглотило бы события мыши)
     _proc_hover_v = _HoverOverlayView.alloc().initWithFrame_(
-        AppKit.NSMakeRect(0, 0, W, H))
+        AppKit.NSMakeRect(0, HDR_Y - 1, W, HDR_H + 2))
     _proc_hover_v._is_main  = True
-    _proc_hover_v._hint     = "Оставить без обработки"
+    _proc_hover_v._hint     = "[ПРЕРВАТЬ]"
     _proc_hover_v._hint_size = 11
+    _proc_hover_v._hover_active = False
     _proc_hover_v.setHidden_(True)
-    _proc_hover_v.setAutoresizingMask_(AppKit.NSViewWidthSizable | AppKit.NSViewHeightSizable)
+    _proc_hover_v.setAutoresizingMask_(AppKit.NSViewWidthSizable | AppKit.NSViewMinYMargin)
     _pill.addSubview_(_proc_hover_v)
 
     _win.orderOut_(None)
@@ -9171,44 +9600,309 @@ def show_scenario_result(text: str, hist_id: str = None):
 # ── Панель провайдеров ─────────────────────────────────────────────────────────
 
 def _close_providers_panel():
-    global _prov_panel, _prov_field_refs, _prov_dot_refs
+    global _prov_panel, _prov_field_refs, _prov_dot_refs, _prov_cards, _prov_doc_scroll
     if _prov_panel:
         _prov_panel.orderOut_(None)
         _prov_panel.close()
         _prov_panel = None
     _prov_field_refs = {}
-    _prov_dot_refs   = {}
+    _prov_dot_refs = {}
+    _prov_cards = []
+    _prov_doc_scroll = None
+
+
+PROV_HEAD_H = 30
+PROV_EXP_H = 136
+_PROV_PROTOCOL_OPTIONS = ("ollama", "anthropic", "openai-compat")
+
+
+def _prov_card_by_tag(tag):
+    providers = _pc.list_providers()
+    if 0 <= int(tag) < len(providers):
+        pid = providers[int(tag)].get("id")
+        for card in _prov_cards:
+            if card.get("pid") == pid:
+                return card
+    return None
+
+
+def _build_provider_popup(frame, selected):
+    pop = _TerminalPopup.alloc().initWithFrame_(frame)
+    pop.addItemsWithTitles_(list(_PROV_PROTOCOL_OPTIONS))
+    if selected in _PROV_PROTOCOL_OPTIONS:
+        pop.selectItemWithTitle_(selected)
+    else:
+        pop.selectItemWithTitle_("openai-compat")
+    return pop
+
+
+def _provider_card_height(pid):
+    provider = _pc.get_provider(pid) or {}
+    if pid not in _prov_expanded:
+        return PROV_HEAD_H
+    key_h = _estimate_wrapped_field_height(provider.get("api_key", ""), 340)
+    return PROV_HEAD_H + 130 + key_h
+
+
+def _save_provider_card(card):
+    pid = card.get("pid")
+    tf_label = card.get("tf_label")
+    if not pid or tf_label is None:
+        return
+    provider = _pc.get_provider(pid) or {}
+    protocol = _selected_proto(card.get("proto_group"))
+    tf_model = card.get("tf_model")
+    _pc.update_provider(
+        pid,
+        label=tf_label.stringValue().strip() or pid,
+        protocol=protocol or "openai-compat",
+        base_url=card["tf_endpoint"].stringValue().strip(),
+        api_key=card["tf_key"].stringValue().strip(),
+        default_model=(tf_model.stringValue().strip() if tf_model is not None else str(provider.get("default_model", "") or "")),
+    )
+
+
+def _theme_surface(mult=1.0, alpha=1.0):
+    r = min(C_BG[0] * mult, 1.0)
+    g = min(C_BG[1] * mult, 1.0)
+    b = min(C_BG[2] * mult, 1.0)
+    return _rgba(r, g, b, alpha)
+
+
+def _app_version_string() -> str:
+    try:
+        bundle = AppKit.NSBundle.mainBundle()
+        if bundle:
+            version = bundle.objectForInfoDictionaryKey_("CFBundleShortVersionString")
+            if version:
+                return f"v{version}"
+    except Exception:
+        pass
+    return "v3.0"
+
+
+def _selected_proto(group) -> str:
+    for btn in group or []:
+        if int(btn.state()) == int(AppKit.NSControlStateValueOn):
+            return str(btn.representedObject() or "")
+    return "openai-compat"
+
+
+def _make_proto_radio(title, proto, selected, x, y, w, tag):
+    btn = AppKit.NSButton.alloc().initWithFrame_(AppKit.NSMakeRect(x, y, w, 18))
+    btn.setButtonType_(AppKit.NSButtonTypeRadio)
+    btn.setBordered_(False)
+    btn.setTitle_(title)
+    btn.setFont_(_mono(9))
+    btn.setContentTintColor_(C_TEXT)
+    btn.setState_(AppKit.NSControlStateValueOn if proto == selected else AppKit.NSControlStateValueOff)
+    btn.setRepresentedObject_(proto)
+    btn.setTag_(tag)
+    btn.setTarget_(_btn_t)
+    btn.setAction_(BtnTarget.provProtocol_)
+    return btn
+
+
+def _build_prov_docview(pw, scroll_h):
+    global _prov_cards, _prov_dot_refs
+    _prov_cards = []
+    _prov_dot_refs = {}
+    providers = _pc.list_providers()
+    doc_h = max(scroll_h, sum(_provider_card_height(p.get("id")) + 8 for p in providers) + 8)
+    docview = _FlippedView.alloc().initWithFrame_(AppKit.NSMakeRect(0, 0, pw, doc_h))
+
+    if not providers:
+        empty = _mklabel(_T("hist_empty"), size=10, color=C_IDLE)
+        empty.setFrame_(AppKit.NSMakeRect(12, 12, pw - 24, 16))
+        docview.addSubview_(empty)
+        return docview
+
+    card_x = 10
+    card_w = pw - 20
+    y = 8
+
+    for idx, provider in enumerate(providers):
+        pid = provider.get("id") or ""
+        if not pid:
+            continue
+        expanded = pid in _prov_expanded
+        card_h = _provider_card_height(pid)
+
+        card = _FlippedView.alloc().initWithFrame_(AppKit.NSMakeRect(card_x, y, card_w, card_h))
+        card.setWantsLayer_(True)
+        layer = card.layer()
+        if layer:
+            layer.setCornerRadius_(4.0)
+            layer.setBorderWidth_(0.8)
+            layer.setBorderColor_(C_GREEN_BORD.CGColor())
+            layer.setBackgroundColor_(_theme_surface(1.15, 0.94).CGColor())
+
+        head = _FlippedView.alloc().initWithFrame_(AppKit.NSMakeRect(0, 0, card_w, PROV_HEAD_H))
+        head.setWantsLayer_(True)
+        head_layer = head.layer()
+        if head_layer:
+            head_layer.setCornerRadius_(4.0)
+            head_layer.setBackgroundColor_(_theme_surface(1.45, 0.98).CGColor())
+        card.addSubview_(head)
+
+        dot = _mklabel("●", size=11, color=C_PROV_IDLE)
+        dot.setFrame_(AppKit.NSMakeRect(10, 8, 12, 14))
+        head.addSubview_(dot)
+        _prov_dot_refs[pid] = dot
+
+        title_lbl = _mklabel(provider.get("label") or pid, size=10, bold=True, color=C_GREEN_BR if expanded else C_TEXT)
+        title_lbl.setFrame_(AppKit.NSMakeRect(28, 8, max(120, card_w - 320), 14))
+        head.addSubview_(title_lbl)
+
+        if expanded:
+            key_text = ""
+        elif provider.get("api_key"):
+            key_text = _pc.mask_key(provider.get("api_key", ""))
+        else:
+            key_text = _T("prov_key_none")
+        key_color = C_GREEN_DIM if provider.get("api_key") else C_IDLE
+        key_lbl = _mklabel(key_text, size=9, color=key_color)
+        key_lbl.setFrame_(AppKit.NSMakeRect(card_w - 208, 9, 130, 12))
+        head.addSubview_(key_lbl)
+
+        toggle_btn = _HeaderToggleBtn.alloc().initWithFrame_(AppKit.NSMakeRect(0, 0, card_w, PROV_HEAD_H))
+        toggle_btn.setBordered_(False)
+        toggle_btn.setTitle_("")
+        toggle_btn.setTransparent_(True)
+        toggle_btn.setTag_(idx)
+        toggle_btn.setTarget_(_btn_t)
+        toggle_btn.setAction_(BtnTarget.provEditToggle_)
+        head.addSubview_(toggle_btn)
+
+        card_refs = {
+            "pid": pid,
+            "dot": dot,
+            "key_lbl": key_lbl,
+            "tf_label": None,
+            "tf_endpoint": None,
+            "tf_model": None,
+            "tf_key": None,
+            "proto_group": [],
+        }
+
+        if expanded:
+            left_x = 12
+            label_w = 72
+            field_x = left_x + label_w + 8
+            row_h = 24
+            section_top = PROV_HEAD_H + 8
+            action_y = section_top - 2
+
+            check_btn = _mkbtn(_T("prov_check"), color=C_GREEN_DIM, size=8)
+            check_btn.setFrame_(AppKit.NSMakeRect(card_w - 152, action_y, 74, 18))
+            check_btn.setTag_(idx)
+            check_btn.setTarget_(_btn_t)
+            check_btn.setAction_(BtnTarget.provCheck_)
+            card.addSubview_(check_btn)
+
+            del_btn = _mkbtn(_T("prov_delete"), color=C_REC, size=8)
+            del_btn.setFrame_(AppKit.NSMakeRect(card_w - 74, action_y, 66, 18))
+            del_btn.setTag_(idx)
+            del_btn.setTarget_(_btn_t)
+            del_btn.setAction_(BtnTarget.provDelete_)
+            card.addSubview_(del_btn)
+
+            name_lbl = _mklabel(_T("prov_name_lbl"), size=9, color=C_TEXT)
+            name_lbl.setFrame_(AppKit.NSMakeRect(left_x, section_top + 20, label_w, 14))
+            card.addSubview_(name_lbl)
+            name_tf = AppKit.NSTextField.alloc().initWithFrame_(AppKit.NSMakeRect(field_x, section_top + 16, card_w - field_x - 12, 20))
+            _style_tf(name_tf, "")
+            name_tf.setStringValue_(provider.get("label") or pid)
+            card.addSubview_(name_tf)
+
+            proto_lbl = _mklabel(_T("prov_proto_lbl"), size=9, color=C_TEXT)
+            proto_lbl.setFrame_(AppKit.NSMakeRect(left_x, section_top + row_h + 20, label_w, 14))
+            card.addSubview_(proto_lbl)
+            proto_sel = provider.get("protocol", "openai-compat")
+            proto_group = [
+                _make_proto_radio("Ollama", "ollama", proto_sel, field_x, section_top + row_h + 16, 78, idx),
+                _make_proto_radio("Anthropic", "anthropic", proto_sel, field_x + 86, section_top + row_h + 16, 96, idx),
+                _make_proto_radio("OpenAI compat", "openai-compat", proto_sel, field_x + 188, section_top + row_h + 16, 136, idx),
+            ]
+            for btn in proto_group:
+                card.addSubview_(btn)
+
+            endpoint_lbl = _mklabel(_T("prov_endpoint_lbl"), size=9, color=C_TEXT)
+            endpoint_lbl.setFrame_(AppKit.NSMakeRect(left_x, section_top + row_h * 2 + 20, label_w, 14))
+            card.addSubview_(endpoint_lbl)
+            endpoint_tf = AppKit.NSTextField.alloc().initWithFrame_(AppKit.NSMakeRect(field_x, section_top + row_h * 2 + 16, card_w - field_x - 12, 20))
+            _style_tf(endpoint_tf, "")
+            endpoint_tf.setStringValue_(provider.get("base_url", ""))
+            card.addSubview_(endpoint_tf)
+
+            model_lbl = _mklabel(_T("sc_model_lbl"), size=9, color=C_TEXT)
+            model_lbl.setFrame_(AppKit.NSMakeRect(left_x, section_top + row_h * 3 + 20, label_w, 14))
+            card.addSubview_(model_lbl)
+            model_btn_w = 20
+            model_tf_w = card_w - field_x - 12 - model_btn_w - 4
+            model_tf = AppKit.NSTextField.alloc().initWithFrame_(AppKit.NSMakeRect(field_x, section_top + row_h * 3 + 16, model_tf_w, 20))
+            _style_tf(model_tf, "")
+            model_tf.setStringValue_(provider.get("default_model", "") or "")
+            card.addSubview_(model_tf)
+            model_pick_btn = _mkbtn("▾", color=C_GREEN_DIM, size=12)
+            model_pick_btn.setFrame_(AppKit.NSMakeRect(field_x + model_tf_w + 4, section_top + row_h * 3 + 16, model_btn_w, 20))
+            model_pick_btn.setTag_(idx)
+            model_pick_btn.setTarget_(_btn_t)
+            model_pick_btn.setAction_(BtnTarget.provModelDropdown_)
+            card.addSubview_(model_pick_btn)
+
+            key_lbl2 = _mklabel(_T("prov_key_lbl"), size=9, color=C_TEXT)
+            key_lbl2.setFrame_(AppKit.NSMakeRect(left_x, section_top + row_h * 4 + 20, label_w, 14))
+            card.addSubview_(key_lbl2)
+            key_h = _estimate_wrapped_field_height(provider.get("api_key", ""), card_w - field_x - 12)
+            key_tf = AppKit.NSTextField.alloc().initWithFrame_(AppKit.NSMakeRect(field_x, section_top + row_h * 4 + 16, card_w - field_x - 12, key_h))
+            _style_multiline_tf(key_tf, "")
+            key_tf.setStringValue_(provider.get("api_key", ""))
+            card.addSubview_(key_tf)
+
+            card_refs.update({
+                "tf_label": name_tf,
+                "tf_endpoint": endpoint_tf,
+                "tf_model": model_tf,
+                "tf_key": key_tf,
+                "proto_group": proto_group,
+            })
+
+        if expanded:
+            _prov_field_refs[f"check_btn:{pid}"] = check_btn
+        _prov_cards.append(card_refs)
+        docview.addSubview_(card)
+        y += card_h + 8
+
+    return docview
+
+
+def _rebuild_prov_doc():
+    if not _prov_doc_scroll:
+        return
+    sf = _prov_doc_scroll.frame()
+    scroll_w = int(sf.size.width)
+    scroll_h = int(sf.size.height)
+    _prov_doc_scroll.setDocumentView_(_build_prov_docview(scroll_w, scroll_h))
+    _refresh_prov_dots()
 
 
 def _toggle_providers_panel():
-    global _prov_panel, _prov_field_refs, _prov_dot_refs
+    global _prov_panel, _prov_field_refs, _prov_doc_scroll
     if _prov_panel and _prov_panel.isVisible():
         _close_providers_panel()
         return
 
     _close_providers_panel()
-    # Повторный пробинг при каждом открытии — точки статуса отражают актуальный статус
     try:
-        import provider_config as _pc_mod
-        _pc_mod.probe_all()
+        _pc.probe_all()
     except Exception:
         pass
 
-    PW     = W   # panel always normal width regardless of expanded mode
-    mf     = _win.frame()   # main window frame — for grid position only
-    MARGIN = 12
-    FW     = PW - MARGIN * 2
-    LBL_H  = 13
-    TF_H   = 22
-    GAP    = 4
-    BTN_H  = 22
+    PW = W
+    mf = _win.frame()
+    PH = H_PANEL
 
-    # ── Фиксированная высота (одинакова для всех панелей) ─────────────────────
-    screen = _win.screen() or AppKit.NSScreen.mainScreen()
-    vis    = screen.visibleFrame() if screen else AppKit.NSMakeRect(0, 0, 1440, 900)
-    PH     = H_PANEL
-
-    # ── Панель ─────────────────────────────────────────────────────────────────
     panel = _EditorPanel.alloc().initWithContentRect_styleMask_backing_defer_(
         AppKit.NSMakeRect(0, 0, PW, PH),
         AppKit.NSWindowStyleMaskBorderless,
@@ -9225,91 +9919,53 @@ def _toggle_providers_panel():
     _prov_panel = panel
     _prov_panel.setAlphaValue_(_st.get("opacity", 0.88))
     _prov_panel._panel_key = "providers"
-
     cv = _bg
 
-    def _tf(y_pos, placeholder, value):
-        tf = AppKit.NSTextField.alloc().initWithFrame_(
-            AppKit.NSMakeRect(MARGIN, y_pos, FW, TF_H))
-        _style_tf(tf, placeholder)
-        tf.setStringValue_(value)
-        cv.addSubview_(tf)
-        return tf
+    hdr_h = 28
+    foot_h = 30
+    btn_y = 4
+    scroll_y = foot_h + 2
+    scroll_h = PH - hdr_h - foot_h - 2
 
-    def _dot_lbl(y_pos, pid, title):
-        dot = _mklabel("●", size=9, color=C_GREEN_DIM)
-        dot.setFrame_(AppKit.NSMakeRect(MARGIN, y_pos, 12, LBL_H))
-        cv.addSubview_(dot)
-        _prov_dot_refs[pid] = dot
-        lbl = _mklabel(title, size=9, bold=True, color=C_GREEN_BR)
-        lbl.setFrame_(AppKit.NSMakeRect(MARGIN + 15, y_pos, FW - 15, LBL_H))
-        cv.addSubview_(lbl)
-
-    y = PH - 8
-
-    # ── Заголовок ──────────────────────────────────────────────────────────────
-    _mkmagnet_btn("providers", cv, 6, y - LBL_H - 2, 22, LBL_H + 4)
+    _mkmagnet_btn("providers", cv, 6, PH - 24, 22, 20)
     hdr = _mklabel(_T("prov_title"), size=10, color=C_IDLE)
-    hdr.setFrame_(AppKit.NSMakeRect(32, y - LBL_H, FW - 32, LBL_H))
+    hdr.setFrame_(AppKit.NSMakeRect(32, PH - 22, PW - 44, 14))
     cv.addSubview_(hdr)
-    y -= LBL_H + 5
-    cv.addSubview_(_sep_line(MARGIN, y, FW, pin="top"))
-    y -= 8
+    cv.addSubview_(_sep_line(0, PH - hdr_h, PW, pin="top"))
 
-    # ── OLLAMA ────────────────────────────────────────────────────────────────
-    _dot_lbl(y - LBL_H, "ollama", "OLLAMA")
-    y -= LBL_H + GAP
-    _prov_field_refs["ollama_url"] = _tf(y - TF_H, "http://localhost:11434",
-        _pc.get("ollama", "base_url", "http://localhost:11434"))
-    y -= TF_H + 10
-    cv.addSubview_(_sep_line(MARGIN, y, FW, pin="top"))
-    y -= 8
+    scroll = AppKit.NSScrollView.alloc().initWithFrame_(
+        AppKit.NSMakeRect(0, scroll_y, PW, scroll_h))
+    scroll.setHasVerticalScroller_(True)
+    scroll.setAutohidesScrollers_(True)
+    scroll.setBorderType_(AppKit.NSNoBorder)
+    scroll.setDrawsBackground_(False)
+    scroll.setBackgroundColor_(AppKit.NSColor.clearColor())
+    scroll.setVerticalScroller_(_ThinGreenScroller.alloc().init())
+    scroll.setScrollerStyle_(getattr(AppKit, "NSScrollerStyleOverlay", 1))
+    _prov_doc_scroll = scroll
+    scroll.setDocumentView_(_build_prov_docview(PW, scroll_h))
+    cv.addSubview_(scroll)
 
-    # ── ANTHROPIC ─────────────────────────────────────────────────────────────
-    _dot_lbl(y - LBL_H, "anthropic", "ANTHROPIC")
-    y -= LBL_H + GAP
-    _prov_field_refs["anthropic_key"] = _tf(y - TF_H, "sk-ant-api...",
-        _pc.get("anthropic", "api_key"))
-    y -= TF_H + 10
-    cv.addSubview_(_sep_line(MARGIN, y, FW, pin="top"))
-    y -= 8
+    cv.addSubview_(_sep_line(0, foot_h, PW, pin="bottom"))
 
-    # ── OPENAI ────────────────────────────────────────────────────────────────
-    _dot_lbl(y - LBL_H, "openai", "OPENAI")
-    y -= LBL_H + GAP
-    _prov_field_refs["openai_key"] = _tf(y - TF_H, "sk-proj-...",
-        _pc.get("openai", "api_key"))
-    y -= TF_H + GAP
-    _prov_field_refs["openai_base"] = _tf(y - TF_H, "https://api.openai.com/v1",
-        _pc.get("openai", "base_url", "https://api.openai.com/v1"))
-    y -= TF_H + 10
-    cv.addSubview_(_sep_line(MARGIN, y, FW, pin="top"))
-    y -= 8
+    btn_add = _mkbtn(_T("prov_add"), color=C_CYAN, size=9)
+    btn_add.setFrame_(AppKit.NSMakeRect(8, btn_y, 96, 22))
+    btn_add.setTarget_(_btn_t)
+    btn_add.setAction_(BtnTarget.provAdd_)
+    cv.addSubview_(btn_add)
 
-    # ── GLM ───────────────────────────────────────────────────────────────────
-    _dot_lbl(y - LBL_H, "glm", "GLM (Z.ai)")
-    y -= LBL_H + GAP
-    _prov_field_refs["glm_key"] = _tf(y - TF_H, "API ключ GLM",
-        _pc.get("glm", "api_key"))
-    y -= TF_H + GAP
-    _prov_field_refs["glm_base"] = _tf(y - TF_H, "https://api.z.ai/api/paas/v4",
-        _pc.get("glm", "base_url", "https://api.z.ai/api/paas/v4"))
-
-    # ── Кнопки ─────────────────────────────────────────────────────────────────
-    cv.addSubview_(_sep_line(MARGIN, MARGIN + BTN_H + 6, FW, pin="top"))
-    BTN_W = 80
-    btn_cancel = _mkbtn(_T("btn_cancel"), color=C_GREEN_DIM, size=10)
-    btn_cancel.setFrame_(AppKit.NSMakeRect(MARGIN, MARGIN, BTN_W, BTN_H))
+    btn_cancel = _mkbtn(_T("btn_cancel"), color=C_GREEN_DIM, size=9)
+    btn_cancel.setFrame_(AppKit.NSMakeRect(PW // 2 - 45, btn_y, 90, 22))
     btn_cancel.setTarget_(_btn_t)
     btn_cancel.setAction_(BtnTarget.provClose_)
     cv.addSubview_(btn_cancel)
-    btn_save = _mkbtn(_T("btn_save"), color=C_GREEN_BR, size=10)
-    btn_save.setFrame_(AppKit.NSMakeRect(PW - MARGIN - BTN_W, MARGIN, BTN_W, BTN_H))
+
+    btn_save = _mkbtn(_T("btn_save"), color=C_GREEN_BR, size=9)
+    btn_save.setFrame_(AppKit.NSMakeRect(PW - 98, btn_y, 90, 22))
     btn_save.setTarget_(_btn_t)
     btn_save.setAction_(BtnTarget.provSave_)
     cv.addSubview_(btn_save)
 
-    # ── Позиционирование через ячейки сетки ────────────────────────────────────
     wx2, wy2 = int(mf.origin.x), int(mf.origin.y)
     ww2, wh2 = int(mf.size.width), int(mf.size.height)
     px, py = _calc_panel_pos("providers", wx2, wy2, ww2, wh2, PW, PH)
@@ -9337,11 +9993,14 @@ def _refresh_prov_dots():
     for pid, dot in _prov_dot_refs.items():
         status = _pc.get_status(pid)
         if status is True:
-            dot.setTextColor_(C_GREEN_BR)
+            dot.setTextColor_(C_PROV_OK)
         elif status is False:
-            dot.setTextColor_(C_REC)
+            dot.setTextColor_(C_PROV_FAIL)
         else:
-            dot.setTextColor_(C_GREEN_DIM)
+            dot.setTextColor_(C_PROV_IDLE)
+        btn = _prov_field_refs.get(f"check_btn:{pid}")
+        if btn:
+            btn.setAttributedTitle_(_atitle(_T("prov_check"), size=8, color=C_GREEN_DIM))
 
 
 def update_provider_status():
@@ -9405,8 +10064,8 @@ def show_processing(name: str, sc_idx: int = None, interrupt_fn=None):
 
         # Показываем название сценария справа от EQ (в квадратных скобках)
         if _proc_sc_lbl:
-            _proc_sc_lbl.setStringValue_(f"[{name}]" if name else "")
-            _proc_sc_lbl.setHidden_(not name)
+            _proc_sc_lbl.setStringValue_("")
+            _proc_sc_lbl.setHidden_(True)
 
         _st["sc_picker"] = False   # close picker during processing
         _show_buttons(False)       # hide bottom row entirely during processing

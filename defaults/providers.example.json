@@ -1,0 +1,50 @@
+{
+  "schema_version": 2,
+  "providers": [
+    {
+      "id": "ollama",
+      "label": "Ollama",
+      "protocol": "ollama",
+      "base_url": "http://localhost:11434",
+      "api_key": "",
+      "default_model": "qwen3:8b",
+      "builtin": true
+    },
+    {
+      "id": "anthropic",
+      "label": "Anthropic",
+      "protocol": "anthropic",
+      "base_url": "https://api.anthropic.com/v1",
+      "api_key": "",
+      "default_model": "claude-haiku-4-5-20251001",
+      "builtin": true
+    },
+    {
+      "id": "openai",
+      "label": "OpenAI",
+      "protocol": "openai-compat",
+      "base_url": "https://api.openai.com/v1",
+      "api_key": "",
+      "default_model": "gpt-4o-mini",
+      "builtin": true
+    },
+    {
+      "id": "glm",
+      "label": "GLM (Z.ai)",
+      "protocol": "openai-compat",
+      "base_url": "https://api.z.ai/api/paas/v4",
+      "api_key": "",
+      "default_model": "glm-4.7-flash",
+      "builtin": true
+    },
+    {
+      "id": "local-llm",
+      "label": "Local LLM Server",
+      "protocol": "openai-compat",
+      "base_url": "http://localhost:8000",
+      "api_key": "",
+      "default_model": "custom-model",
+      "builtin": false
+    }
+  ]
+}

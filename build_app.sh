@@ -13,6 +13,8 @@ ROOT="$(pwd)"
 SRC="$ROOT/src"
 ASSETS="$ROOT/assets"
 DEFAULTS="$ROOT/defaults"
+APP_VERSION="3.0"
+APP_BUILD="3.0.0"
 
 # Ищем python3.14, потом python3
 PYTHON="$(command -v python3.14 2>/dev/null || command -v python3 2>/dev/null)"
@@ -138,8 +140,8 @@ cat > "$APP/Contents/Info.plist" << PLIST
     <key>CFBundleDisplayName</key>      <string>HUSH</string>
     <key>CFBundleIdentifier</key>       <string>net.alexbic.hush</string>
     <key>LSUIElement</key>              <true/>
-    <key>CFBundleVersion</key>          <string>2.0.0</string>
-    <key>CFBundleShortVersionString</key><string>2.0</string>
+    <key>CFBundleVersion</key>          <string>$APP_BUILD</string>
+    <key>CFBundleShortVersionString</key><string>$APP_VERSION</string>
     <key>CFBundleExecutable</key>       <string>HUSH</string>
     <key>CFBundlePackageType</key>      <string>APPL</string>
     <key>CFBundleIconFile</key>         <string>hush</string>

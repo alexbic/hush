@@ -71,11 +71,11 @@ El primer arranque compila el modelo CoreML para tu chip específico. Esto tarda
 
 ## Modos de funcionamiento
 
-### Modo silencioso — Right ⌥
+### Modo silencioso — mantener Fn
 
 La forma más rápida de dictar. No requiere ninguna acción adicional.
 
-1. **Mantener pulsado** Right ⌥ → aparece un pequeño indicador de grabación flotante en el borde de la pantalla
+1. **Mantener pulsado** `Fn` → aparece un pequeño indicador de grabación flotante en el borde de la pantalla
 2. **Hablar** — el indicador muestra que la grabación está en curso
 3. **Soltar** → el fragmento se transcribe
 
@@ -84,24 +84,25 @@ Si necesitas dictar varios fragmentos:
 - Mantener pulsado–soltar varias veces → los fragmentos se **acumulan**
 - Cuando la pausa dura **4 segundos** — comienza el procesamiento mediante LLM
 - Las barras del indicador visualizan la cuenta atrás: se vuelven verdes → luego rojas
-- **Enter** durante la cuenta atrás → insertar inmediatamente sin LLM
+- **Right Shift+Enter** durante la cuenta atrás → insertar inmediatamente sin LLM
 - **Hover** durante el procesamiento → aparece un botón para interrumpir (insertar transcripción en bruto)
 
 El indicador se puede arrastrar a cualquier lugar de la pantalla — la posición se guarda entre sesiones.
 
 ---
 
-### Modo completo — ⇧⌥
+### Modo completo — Fn+Control
 
 Para tareas complejas: dictado por partes, selección de escenario, revisión del resultado antes de insertarlo.
 
-1. **⇧⌥** → se abre una ventana grande (sin inicio inmediato de grabación)
-2. **Mantener pulsado ⌥** → grabar un fragmento → **soltar** → la transcripción aparece en la ventana como un bloque separado
+1. **Pulsar brevemente** `Fn+Control` → se abre una ventana grande (sin inicio inmediato de grabación)
+2. **Mantener pulsado** `Fn` → grabar un fragmento → **soltar** → la transcripción aparece en la ventana como un bloque separado
 3. Repetir cuantas veces sea necesario — los bloques se acumulan en la ventana
 4. Seleccionar el escenario deseado y pulsar su botón — el texto se enviará al LLM
-5. **Shift+Enter** → insertar el resultado en la aplicación activa anterior, la ventana se cierra
+5. Botón **Insert** → insertar el texto actual en la aplicación activa anterior, la ventana se cierra
+6. **Shift+Enter** → insertar y aplicar el escenario por defecto del modo completo si está asignado
 
-Si en la configuración se ha definido un escenario «por defecto para el modo completo» (★), se aplica automáticamente al pulsar Shift+Enter — no es necesario pulsar un botón aparte.
+Si en la configuración se ha definido un escenario «por defecto para el modo completo» (★), se aplica automáticamente con `Shift+Enter`. El botón **Insert** siempre hace una inserción simple sin ejecutar ese escenario.
 
 ---
 
@@ -124,13 +125,14 @@ En modo expandido, los paneles auxiliares (configuración, historial, proveedore
 
 | Gesto                                  | Acción                                                      |
 | -------------------------------------- | ----------------------------------------------------------- |
-| Mantener pulsado Right ⌥               | Iniciar grabación (modo silencioso)                         |
-| Soltar Right ⌥                         | Detener grabación, transcribir                              |
-| ⇧⌥ (Shift + Right Option)              | Abrir / cerrar modo completo                                |
-| ⌥ en modo completo                     | Grabar el siguiente bloque                                  |
-| Enter durante la cuenta atrás          | Inserción inmediata sin LLM                                 |
-| Shift+Enter en modo completo           | Insertar (aplicar escenario por defecto, si está definido)  |
-| ⌥ durante el procesamiento LLM         | Interrumpir LLM, insertar texto en bruto                    |
+| Mantener pulsado `Fn`                  | Iniciar grabación (modo silencioso)                         |
+| Soltar `Fn`                            | Detener grabación, transcribir                              |
+| Pulsar brevemente `Fn+Control`         | Abrir / cerrar modo completo                                |
+| Mantener pulsado `Fn` en modo completo | Grabar el siguiente bloque                                  |
+| Right Shift+Enter durante la cuenta atrás | Inserción inmediata sin LLM                              |
+| Botón Insert en modo completo          | Inserción simple, sin escenario                             |
+| Shift+Enter en modo completo           | Insertar y aplicar el escenario por defecto, si existe      |
+| Pasar el cursor sobre el indicador de proceso | Mostrar la acción para interrumpir e insertar en bruto |
 | Doble clic en el título                | Expandir / contraer la ventana principal                    |
 
 ---
@@ -209,14 +211,25 @@ Configurar: ⚙ → **[CLAVES]**.
 | **OpenAI** | Nube | Clave API (compatible con cualquier API compatible con OpenAI) |
 | **GLM** | Nube | Clave API de Zhipu GLM-4 |
 
+El panel **[CLAVES]** ahora usa tarjetas de proveedores. Cada proveedor permanece visible como una fila de encabezado y, al hacer clic, la tarjeta se despliega hacia abajo para configurar:
+
+- endpoint
+- clave API
+- protocolo
+- modelo por defecto
+
+Cuando la tarjeta está cerrada, HUSH muestra una vista previa enmascarada de la clave si ya existe.
+
+Los endpoints adicionales compatibles con OpenAI se pueden añadir en `~/.config/hush/providers.json` con schema v2 y luego usarlos dentro de la misma lógica de proveedores.
+
 ### Selección de modelo en el escenario
 
 El modelo para cada escenario se selecciona en el editor de escenarios mediante dos listas desplegables:
 
-1. **Proveedor** — seleccionar entre los configurados y disponibles (Ollama / Anthropic / OpenAI / GLM)
-2. **Modelo** — la lista se rellena automáticamente con los modelos disponibles del proveedor seleccionado
+1. **Proveedor** — seleccionar entre los configurados y disponibles
+2. **Modelo** — la lista se rellena automáticamente con los modelos disponibles del proveedor seleccionado y también con cualquier modelo por defecto personalizado guardado en la tarjeta del proveedor
 
-Si un proveedor no está configurado o no está disponible — no aparecerá en la lista. Si no se selecciona ningún modelo, HUSH usa una estrategia automática: primero prueba Ollama, si no está disponible — Anthropic.
+En la lista se muestran labels legibles, pero internamente el escenario se guarda como `provider_id:model_name`. El modelo por defecto de la tarjeta del proveedor aparece marcado con `★` y se selecciona primero. Si no se selecciona ningún modelo, HUSH usa una estrategia automática: primero prueba Ollama y, si no está disponible, Anthropic.
 
 ---
 
@@ -337,6 +350,11 @@ Gracias. De verdad.
 ---
 
 ## Historial de versiones
+
+### v3.0 — 05.08.2026
+- El esquema principal de captura pasó a `Fn` y `Fn+Control`
+- El botón Insert del modo completo ahora siempre hace una inserción simple sin lanzar el escenario por defecto
+- La configuración de proveedores avanzó hacia tarjetas desplegables con modelo por defecto
 
 ### v1.3 — 11.07.2026
 

@@ -24,6 +24,8 @@ __pycache__/
 # Environment / secrets
 .env
 .hush_env
+# Never ship a populated providers.json in the repo — only the empty example
+defaults/providers.json
 
 # macOS
 .DS_Store

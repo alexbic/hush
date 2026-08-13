@@ -71,11 +71,11 @@ The first launch compiles the CoreML model for your specific chip. This takes up
 
 ## Modes
 
-### Silent Mode — Right ⌥
+### Silent Mode — Fn hold
 
 The fastest way to dictate. No extra steps needed.
 
-1. **Hold** Right ⌥ → a small floating indicator appears at the screen edge
+1. **Hold** `Fn` → a small floating indicator appears at the screen edge
 2. **Speak** — the indicator shows recording is active
 3. **Release** → the chunk is transcribed
 
@@ -84,24 +84,25 @@ To dictate in multiple passes:
 - Hold and release several times → chunks **accumulate**
 - After a **4-second pause** — LLM processing begins
 - The indicator bars visualize the countdown: green → red
-- **Enter** during the countdown → paste immediately without LLM
+- **Right Shift+Enter** during the countdown → paste immediately without LLM
 - **Hover** during processing → an interrupt button appears (paste raw transcript)
 
 The indicator remembers its screen position across sessions. Drag it anywhere.
 
 ---
 
-### Full Mode — ⇧⌥
+### Full Mode — Fn+Control
 
 For complex tasks: dictate in parts, choose a scenario, review before pasting.
 
-1. **⇧⌥** → the main window opens (no recording starts immediately)
-2. **Hold ⌥** → record a chunk → **release** → transcript appears as a block in the window
+1. **Tap** `Fn+Control` → the main window opens (no recording starts immediately)
+2. **Hold** `Fn` → record a chunk → **release** → transcript appears as a block in the window
 3. Repeat as many times as needed — blocks accumulate
 4. Pick a scenario and tap its button — text goes to the LLM
-5. **Shift+Enter** → paste the result into the previously active app, window closes
+5. **Insert** button → paste the current text into the previously active app, window closes
+6. **Shift+Enter** → paste and apply the default full-mode scenario if one is assigned
 
-If a default full-mode scenario is set (★), it's applied automatically on Shift+Enter — no need to tap a scenario button manually.
+If a default full-mode scenario is set (★), it's applied automatically on `Shift+Enter`. The **Insert** button in expanded mode always performs a plain paste without running that scenario.
 
 ---
 
@@ -124,13 +125,14 @@ In expanded mode the auxiliary panels (settings, history, providers, editor) aut
 
 | Gesture | Action |
 |---------|--------|
-| Hold Right ⌥ | Start recording (silent mode) |
-| Release Right ⌥ | Stop recording, transcribe |
-| ⇧⌥ (Shift + Right Option) | Open / close full mode |
-| ⌥ in full-mode window | Record next block |
-| Enter during countdown | Force immediate paste, skip LLM |
-| Shift+Enter (full mode) | Paste (applies default scenario if set) |
-| ⌥ during LLM processing | Interrupt LLM, paste raw text |
+| Hold `Fn` | Start recording (silent mode) |
+| Release `Fn` | Stop recording, transcribe |
+| Tap `Fn+Control` | Open / close full mode |
+| Hold `Fn` in full-mode window | Record next block |
+| Right Shift+Enter during countdown | Force immediate paste, skip LLM |
+| Insert button (full mode) | Plain paste, no scenario |
+| Shift+Enter (full mode) | Paste and apply default scenario if set |
+| Hover the processing indicator | Show interrupt action for raw paste |
 | Double-click title bar | Expand / collapse main window |
 
 ---
@@ -206,17 +208,34 @@ Configure via: ⚙ → **[KEYS]**.
 |----------|------|---------------|
 | **Ollama** | Local | [Ollama](https://ollama.ai) installed + a model pulled (`ollama pull <model>`) |
 | **Anthropic** | Cloud | API key (`sk-ant-...`) |
-| **OpenAI** | Cloud | API key (compatible with any OpenAI-compatible API) |
+| **OpenAI** | Cloud | API key |
 | **GLM** | Cloud | Zhipu GLM-4 API key |
+
+The `[KEYS]` panel is now card-based. Each provider stays visible as a header row, expands on click, and can store:
+
+- endpoint
+- API key
+- protocol
+- default model
+
+When a provider is collapsed, HUSH shows a masked key preview if a key is configured.
+
+Additional OpenAI-compatible endpoints can be added in `~/.config/hush/providers.json` using schema v2 and then managed from the same provider flow.
 
 ### Selecting a model in a scenario
 
 The model for each scenario is chosen in the scenario editor via two dropdowns:
 
-1. **Provider** — select from configured and available providers (Ollama / Anthropic / OpenAI / GLM)
-2. **Model** — the list auto-populates with models available from the selected provider
+1. **Provider** — select from configured and available providers
+2. **Model** — the list auto-populates with models available from the selected provider, plus any custom default model saved in the provider card
 
-If a provider isn't configured or isn't reachable it won't appear in the list. If no model is selected, HUSH uses an auto strategy: tries Ollama first, falls back to Anthropic if unavailable.
+Provider labels are shown in the dropdown, but scenarios are stored internally as `provider_id:model_name`. A provider card can define a default model; in the scenario dropdown it is marked with `★` and selected first. If no model is selected, HUSH uses an auto strategy: tries Ollama first, falls back to Anthropic if unavailable.
+
+### Configuration File
+
+Provider settings are stored in `~/.config/hush/providers.json` (schema v2). See [`defaults/providers.example.json`](defaults/providers.example.json) for the complete configuration format.
+
+**Important:** Never commit real API keys to version control. Use the example file as a template and replace placeholder keys with your actual keys.
 
 ---
 
@@ -273,13 +292,31 @@ On first launch HUSH automatically:
 
 After that HUSH appears in the menu bar and is ready to use.
 
+### Granting Accessibility (important)
+
+HUSH must be added to **System Settings → Privacy & Security → Accessibility** so it can inject the recognized text into the target app with `Cmd+V` and intercept `Enter` during the countdown timer.
+
+If auto-paste silently stops working after you reinstall or update HUSH, the macOS TCC database has dropped the grant. Fix it:
+
+1. Open **System Settings → Privacy & Security → Accessibility**
+2. Select **HUSH** in the list and click **−** (remove the stale entry)
+3. Click **+** and pick `/Applications/HUSH.app`
+4. Toggle the switch ON
+5. Restart HUSH
+
+This re-grant is currently needed after every reinstall because HUSH ships with an ad-hoc signature and macOS identifies ad-hoc apps by `cdhash`, which changes on every build. A later packaging update is planned to remove this limitation via a "matryoshka" architecture (a stable wrapper installed once + auto-updated codebase that never touches the signed binary).
+
 ---
 
 ## API Keys
 
-**Option 1 — via the UI:** ⚙ → [KEYS] → enter your keys in the fields.
+**Option 1 — via the UI:** ⚙ → [KEYS] → enter your built-in provider settings.
 
-**Option 2 — via file** `~/.hush_env`:
+**Option 2 — via file** `~/.config/hush/providers.json`:
+
+Use [`defaults/providers.example.json`](defaults/providers.example.json) as a template. Leave `api_key` empty for local providers or fill in your real keys locally only.
+
+**Legacy option — via file** `~/.hush_env`:
 
 ```bash
 export ANTHROPIC_API_KEY="sk-ant-..."
@@ -320,8 +357,8 @@ launcher.c       Thin C launcher (ensures correct NSBundle for status bar)
 ### Silent mode session lifecycle
 
 ```
-Hold ⌥  →  recorder.start()  →  audio stream
-Release ⌥  →  recorder.stop()  →  wav file queued
+Hold Fn  →  recorder.start()  →  audio stream
+Release Fn  →  recorder.stop()  →  wav file queued
               transcriber.transcribe(wav)  [CoreML / ANE]
               text appended to pill accumulation
               4-second countdown
@@ -332,9 +369,9 @@ Release ⌥  →  recorder.stop()  →  wav file queued
 ### Full mode session lifecycle
 
 ```
-⇧⌥  →  overlay opens (standby, no recording)
-⌥ held  →  recorder.start()
-⌥ released  →  recorder.stop()  →  transcribe  →  block shown in window
+Fn+Ctrl  →  overlay opens (standby, no recording)
+Fn held  →  recorder.start()
+Fn released  →  recorder.stop()  →  transcribe  →  block shown in window
 (repeat for more blocks)
 Shift+Enter  →  [optional: default scenario LLM]  →  paste  →  window closes
 ```
@@ -376,6 +413,18 @@ Thank you. Really.
 ---
 
 ## Changelog
+
+### v3.0 — 2026-08-05
+- Switched the core capture hotkeys to `Fn` hold and `Fn+Control` full-mode toggle
+- Full-mode plain paste now goes through the Insert action instead of auto-running the default scenario
+- Reworked provider configuration toward expandable cards with default-model support
+
+### v2.2 — 2026-07-30
+- **Provider Config v2**: Scenario routing and provider storage moved to `providers.json` schema v2
+- **Scenario Dropdowns**: Provider labels are resolved cleanly back to internal ids in scenario settings
+- **Enhanced Security**: API keys are masked in the UI and never logged
+- **Improved UX**: Provider status indicators and safer fallback behavior
+- **i18n Support**: Provider/model selection continues to work across Russian/English/Spanish labels
 
 ### v1.3 — 2026-07-11
 

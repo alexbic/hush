@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Voice Input System — системный голосовой ввод с Parakeet TDT.
 Запускается как фоновый процесс без иконки в меню и Dock.
-Активация только хоткеем (Right ⌥); двойное нажатие открывает историю.
+Активация тихого режима — удержанием Fn; Fn+Control
+кратко переключает полный режим.
 """
 import queue as _qmod
 import re
@@ -111,6 +112,9 @@ def _add_to_history(text: str, parent_id: str = None) -> str:
     if len(text) > 55:
         short += '…'
     if _history and _history[0]["full"] == text:
+        if parent_id and not _history[0].get("parent_id"):
+            _history[0]["parent_id"] = parent_id
+            _save_history()
         _current_hist_id = _history[0]["id"]
         with open("/tmp/vi_undo_debug.log", "a") as _f:
             _f.write(f"[history] DUP found, returning id={_history[0]['id']}, parent_id_arg={parent_id}\n")
@@ -272,13 +276,47 @@ _chunk_lock    = threading.Lock()
 FINALIZE_GRACE_S = 4.0
 
 # Активация:
-#   Right ⌥ одиночное    → тихий режим (запись пока зажато, транскрипция при отпускании)
-#   Shift + Right ⌥      → открыть окно полного режима (ожидание); затем ⌥ одиночное записывает там
-#   Двойное нажатие ⌥    → отменить текущую сессию и закрыть все overlays
-_full_mode_standby = False   # True после того как Shift+⌥ открыл окно полного режима
+#   Fn удержание → тихий режим (запись пока зажато, транскрипция при отпускании)
+#   Fn+Control → открыть/закрыть окно полного режима (ожидание)
+_full_mode_standby = False   # True после того как Fn+Control открыл окно полного режима
 _last_release_time = 0.0   # хранится для таймингов обработчика отпускания
 
 _kbd = kb.Controller()
+_last_ax_prompt_time = 0.0
+_fn_down = False
+_control_down = False
+_right_shift_down = False   # compatibility flag for legacy Shift+Enter force-paste path
+_pending_hotkey_timer = None
+_hotkey_combo_latched = False
+_HOTKEY_CHORD_WINDOW_S = 0.18
+
+
+def _cancel_pending_hotkey_press():
+    global _pending_hotkey_timer
+    if _pending_hotkey_timer is not None:
+        try:
+            _pending_hotkey_timer.cancel()
+        except Exception:
+            pass
+        _pending_hotkey_timer = None
+
+
+def _schedule_pending_hotkey_press():
+    global _pending_hotkey_timer
+    _cancel_pending_hotkey_press()
+
+    def _fire():
+        global _pending_hotkey_timer
+        _pending_hotkey_timer = None
+        if _hotkey_combo_latched:
+            return
+        if _fn_down and not _control_down and not _state["hotkey_held"]:
+            _hotkey_queue.put(("press", False))
+
+    timer = threading.Timer(_HOTKEY_CHORD_WINDOW_S, _fire)
+    timer.daemon = True
+    _pending_hotkey_timer = timer
+    timer.start()
 
 
 def _is_session_active() -> bool:
@@ -519,26 +557,43 @@ def _force_finalize_now():
     _session_finalize()
 
 
+def _has_pending_silent_text() -> bool:
+    """True when silent-mode text is already recognized and waiting for auto-finalize."""
+    if not _state.get("silent"):
+        return False
+    if _state.get("stream") or _stopping > 0 or _state.get("cancelled"):
+        return False
+    with _accum_lock:
+        return bool(_accum_texts)
+
+
 def _force_paste_raw_now():
-    """Enter во время обратного отсчёта: немедленно вставляет накопленный сырой текст, пропускает сценарий."""
+    """Right Shift+Enter во время отсчёта: немедленно вставляет сырой текст."""
     global _in_countdown
-    if not _in_countdown:
+    if not (_in_countdown or _has_pending_silent_text()):
+        _dbg("shift+enter: ignored because no countdown/pending silent text")
         return
+    _dbg("shift+enter: force raw paste requested during countdown")
     _in_countdown = False
     AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(overlay.cancel_countdown_silent)
     with _accum_lock:
         texts = list(_accum_texts)
         _accum_texts.clear()
     if not texts:
-        AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(overlay.hide_silent)
-        return
+        fallback = (overlay.get_text() or "").strip()
+        if not fallback:
+            _dbg("shift+enter: no accumulated text and no overlay fallback text")
+            AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(overlay.hide_silent)
+            return
+        _dbg("shift+enter: using overlay fallback text for raw paste")
+        texts = [fallback]
     full_text = "\n\n".join(texts)
     raw = _strip_markdown(full_text)
     _add_to_history(full_text)
     _session_dir_cleanup()
     threading.Thread(
         target=lambda: _commit_and_paste(raw),
-        daemon=True, name="hush-enter-raw"
+        daemon=True, name="hush-shift-enter-raw"
     ).start()
 
 
@@ -580,10 +635,142 @@ def _schedule_portaudio_reinit(reason: str):
     threading.Thread(target=_run, daemon=True, name="hush-portaudio-recovery").start()
 
 
+def _has_force_paste_context() -> bool:
+    return bool(_in_countdown or _has_pending_silent_text())
+
+
+def _enter_should_force_paste(right_shift_down: bool = False) -> bool:
+    return bool(right_shift_down and _has_force_paste_context())
+
+
+def _install_enter_fallback_listener():
+    """Global Right Shift+Enter fallback when NSEvent keydown is not delivered by the target app."""
+    def _on_press(key):
+        if key != kb.Key.enter:
+            return
+        should_force = _enter_should_force_paste(right_shift_down=bool(_right_shift_down))
+        _dbg(
+            f"shift+enter fallback: key=enter should_force={should_force} "
+            f"countdown={_in_countdown} frontmost={_frontmost_bundle_id()!r}"
+        )
+        if should_force:
+            threading.Thread(target=_force_paste_raw_now, daemon=True,
+                             name="hush-shift-enter-raw-fallback").start()
+
+    try:
+        listener = kb.Listener(on_press=_on_press)
+        listener.daemon = True
+        listener.start()
+        _dbg("enter fallback listener started")
+        return listener
+    except Exception as e:
+        _dbg(f"enter fallback listener failed: {e}")
+        return None
+
+
+def _is_recoverable_audio_start_error(exc: Exception) -> bool:
+    if isinstance(exc, TimeoutError):
+        return True
+    msg = str(exc).lower()
+    return (
+        "error querying device" in msg or
+        "portaudio" in msg or
+        "device unavailable" in msg or
+        "invalid number of channels" in msg or
+        "unanticipated host error" in msg
+    )
+
+
+_enter_event_tap = None
+_enter_event_source = None
+
+
+def _setup_enter_event_tap():
+    """Intercept Right Shift+Enter during countdown so the target app cannot consume it first."""
+    global _enter_event_tap, _enter_event_source
+    try:
+        import Quartz
+    except Exception as e:
+        _dbg(f"enter event tap import failed: {e}")
+        return False
+
+    if _enter_event_tap is not None:
+        try:
+            Quartz.CGEventTapEnable(_enter_event_tap, True)
+            _dbg("enter event tap already active")
+            return True
+        except Exception:
+            _enter_event_tap = None
+            _enter_event_source = None
+
+    mask = (
+        (1 << Quartz.kCGEventKeyDown) |
+        (1 << Quartz.kCGEventKeyUp)
+    )
+    _kVK_Return = 36
+    _kVK_NumpadEnter = 76
+
+    def _callback(_proxy, type_, event, _refcon):
+        try:
+            if type_ == Quartz.kCGEventTapDisabledByTimeout:
+                Quartz.CGEventTapEnable(_enter_event_tap, True)
+                _dbg("enter event tap re-enabled after timeout")
+                return event
+            if type_ not in (Quartz.kCGEventKeyDown, Quartz.kCGEventKeyUp):
+                return event
+            keycode = Quartz.CGEventGetIntegerValueField(event, Quartz.kCGKeyboardEventKeycode)
+            if keycode not in (_kVK_Return, _kVK_NumpadEnter):
+                return event
+            flags = Quartz.CGEventGetFlags(event)
+            shift_down = bool(flags & Quartz.kCGEventFlagMaskShift)
+            should_force = _enter_should_force_paste(
+                right_shift_down=bool(_right_shift_down and shift_down)
+            )
+            _dbg(
+                f"shift+enter event tap: type={type_} kc={keycode} rshift={bool(_right_shift_down)} should_force={should_force} "
+                f"countdown={_in_countdown} frontmost={_frontmost_bundle_id()!r}"
+            )
+            if not should_force:
+                return event
+            if type_ == Quartz.kCGEventKeyDown:
+                threading.Thread(target=_force_paste_raw_now, daemon=True,
+                                 name="hush-shift-enter-raw-tap").start()
+            return None
+        except Exception as e:
+            _dbg(f"enter event tap callback failed: {e}")
+            return event
+
+    try:
+        tap = Quartz.CGEventTapCreate(
+            Quartz.kCGSessionEventTap,
+            Quartz.kCGHeadInsertEventTap,
+            Quartz.kCGEventTapOptionDefault,
+            mask,
+            _callback,
+            None,
+        )
+        if tap is None:
+            _dbg("enter event tap creation returned None")
+            return False
+        source = Quartz.CFMachPortCreateRunLoopSource(None, tap, 0)
+        loop = Quartz.CFRunLoopGetCurrent()
+        Quartz.CFRunLoopAddSource(loop, source, Quartz.kCFRunLoopCommonModes)
+        Quartz.CGEventTapEnable(tap, True)
+        _enter_event_tap = tap
+        _enter_event_source = source
+        _dbg("enter event tap started")
+        return True
+    except Exception as e:
+        _dbg(f"enter event tap setup failed: {e}")
+        _enter_event_tap = None
+        _enter_event_source = None
+        return False
+
+
 def _on_hotkey_press(full_mode: bool = False):
-    """Вызывается при нажатии Right ⌥.
-    full_mode=True  (Shift+⌥) → переключить окно полного режима открыть/закрыть.
-    full_mode=False (⌥ одиночное) → тихий режим или продолжить текущую сессию.
+    """Вызывается при активации мастер-хоткея.
+    full_mode=True  (Fn+Control) → переключить полный режим.
+    full_mode=False (Fn) → тихий режим или продолжить текущую сессию.
     """
     global _prev_app, _active_scenario_idx, _full_mode_standby
     if _state["hotkey_held"]:
@@ -591,8 +778,12 @@ def _on_hotkey_press(full_mode: bool = False):
 
     _state["hotkey_held"] = True
 
-    # Shift+⌥: переключить окно полного режима
+    # Fn+Control: переключить окно полного режима
     if full_mode:
+        if overlay.has_settings_ui_open() and not _is_session_active():
+            _dbg("Fn+Control: closing settings UI instead of toggling full mode")
+            _cancel_all()
+            return
         if _full_mode_standby or _is_session_active():
             # Полный режим открыт → закрываем
             _cancel_all()
@@ -611,7 +802,7 @@ def _on_hotkey_press(full_mode: bool = False):
         overlay.show_recording()
         return  # no recorder.start()
 
-    # Обычное ⌥ (без Shift):
+    # Обычный Fn (без Control):
     front = AppKit.NSWorkspace.sharedWorkspace().frontmostApplication()
     if not _is_excluded_app(front):
         _prev_app = front
@@ -632,7 +823,7 @@ def _on_hotkey_press(full_mode: bool = False):
         return  # запись уже идёт
 
     if _full_mode_standby:
-        # ⌥ нажато пока открыто окно полного режима → начинаем запись там
+        # Fn нажат пока открыто окно полного режима → начинаем запись там
         _full_mode_standby = False
         _session_reset()
         _state["silent"] = False
@@ -666,9 +857,21 @@ def _on_hotkey_press(full_mode: bool = False):
     except Exception as e:
         _dbg(f"recorder.start() FAILED: {e}")
         _state["stream"] = None
-        if isinstance(e, TimeoutError):
-            # PortAudio завис в этом процессе — переинициализируем сразу, а не ждём
-            # следующего сна/пробуждения, иначе запись остаётся мёртвой до перезапуска HUSH.
+        if _is_recoverable_audio_start_error(e):
+            # PortAudio может зависнуть после предыдущего медленного stop/close.
+            # Пробуем один быстрый inline-reset+retry, чтобы не оставлять запись мёртвой
+            # до следующего нажатия или перезапуска приложения.
+            recovered = _reinit_portaudio(timeout=1.5)
+            _dbg(f"recorder.start() inline recovery ok={recovered}")
+            if recovered:
+                try:
+                    _state["stream"] = recorder.start(on_chunk=overlay.update_waveform)
+                    _dbg("recorder.start(): OK after inline recovery")
+                    return
+                except Exception as retry_e:
+                    _dbg(f"recorder.start() retry FAILED: {retry_e}")
+                    _state["stream"] = None
+            # Если inline recovery не помог, оставляем фоновое восстановление тоже.
             _schedule_portaudio_reinit("recorder.start() hang")
         # Показывать оверлей в режиме записи при отсутствующем стриме нельзя — прячем
         AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(lambda: overlay.hide(force=True))
@@ -731,6 +934,32 @@ def _on_hotkey_release():
             _stopping -= 1  # всегда декрементируем, даже при ошибке
 
     threading.Thread(target=_stop_and_queue, daemon=True, name="hush-stopper").start()
+
+
+def _manual_start_silent_recording():
+    global _full_mode_standby
+    _full_mode_standby = False
+    _state["silent"] = True
+    _state["hotkey_held"] = False
+    _on_hotkey_press(full_mode=False)
+
+
+def _manual_open_full_mode():
+    _state["hotkey_held"] = False
+    _on_hotkey_press(full_mode=True)
+    if _state.get("stream") is None:
+        _state["hotkey_held"] = False
+
+
+def _manual_stop_or_close():
+    if _state.get("stream"):
+        _on_hotkey_release()
+        return
+    if _is_session_active() or _full_mode_standby or overlay.is_any_session_visible():
+        _cancel_all()
+        return
+    AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(
+        lambda: overlay.hide(force=True))
 
 # ── Сценарии ──────────────────────────────────────────────────────────────────
 
@@ -827,6 +1056,45 @@ def _frontmost_bundle_id():
         return None
 
 
+def _open_accessibility_settings():
+    try:
+        ws = AppKit.NSWorkspace.sharedWorkspace()
+        url = AppKit.NSURL.URLWithString_(
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+        )
+        if url:
+            ws.openURL_(url)
+            return True
+    except Exception as e:
+        _dbg(f"AX settings open failed: {e}")
+    return False
+
+
+def _ensure_accessibility(prompt: bool = False, open_settings: bool = False) -> bool:
+    try:
+        import ApplicationServices as _AS
+        trusted = _AS.AXIsProcessTrustedWithOptions(
+            {"AXTrustedCheckOptionPrompt": bool(prompt)}
+        )
+        _dbg(f"AX trusted: {trusted} prompt={prompt}")
+        if not trusted and open_settings:
+            _open_accessibility_settings()
+        return bool(trusted)
+    except Exception as e:
+        _dbg(f"AX check error: {e}")
+        return False
+
+
+def _prompt_accessibility_fix(source: str):
+    global _last_ax_prompt_time
+    now = time.time()
+    if now - _last_ax_prompt_time < 8.0:
+        return
+    _last_ax_prompt_time = now
+    _dbg(f"AX prompt requested from {source}")
+    _ensure_accessibility(prompt=True, open_settings=True)
+
+
 def _wait_for_frontmost_app(bundle_id: str, timeout_s: float = 1.2, poll_s: float = 0.05) -> bool:
     """Wait until the target app becomes frontmost before firing synthetic paste keys."""
     if not bundle_id:
@@ -839,9 +1107,50 @@ def _wait_for_frontmost_app(bundle_id: str, timeout_s: float = 1.2, poll_s: floa
     return _frontmost_bundle_id() == bundle_id
 
 
-def _fire_paste_shortcut(target_name: str | None = None) -> str:
+def _is_electron_like_target(target_bundle: str | None, target_name: str | None) -> bool:
+    bundle = (target_bundle or "").lower()
+    name = (target_name or "").lower()
+    return (
+        bundle.startswith("com.openai.codex")
+        or bundle.startswith("com.electron.")
+        or "chatgpt" in name
+        or "codex" in name
+    )
+
+
+def _fire_paste_shortcut(target_name: str | None = None, target_bundle: str | None = None) -> str:
     """Trigger Cmd+V in the target app. Returns the mechanism that succeeded."""
-    if target_name:
+    electron_like = _is_electron_like_target(target_bundle, target_name)
+    _dbg(
+        f"paste: shortcut strategy target_name={target_name!r} "
+        f"target_bundle={target_bundle!r} electron_like={electron_like}"
+    )
+
+    def _try_quartz():
+        import Quartz
+
+        key_v = 9
+        src = Quartz.CGEventSourceCreate(Quartz.kCGEventSourceStateHIDSystemState)
+        down = Quartz.CGEventCreateKeyboardEvent(src, key_v, True)
+        up = Quartz.CGEventCreateKeyboardEvent(src, key_v, False)
+        Quartz.CGEventSetFlags(down, Quartz.kCGEventFlagMaskCommand)
+        Quartz.CGEventSetFlags(up, Quartz.kCGEventFlagMaskCommand)
+        Quartz.CGEventPost(Quartz.kCGAnnotatedSessionEventTap, down)
+        Quartz.CGEventPost(Quartz.kCGAnnotatedSessionEventTap, up)
+        return "quartz"
+
+    # Electron/Codex/ChatGPT targets often report process-level success without
+    # delivering the keystroke into the focused editor. Historic logs on
+    # August 5, 2026 show Quartz was the working path for com.openai.codex,
+    # so prefer it first for those targets.
+    if electron_like:
+        try:
+            return _try_quartz()
+        except Exception as e:
+            _dbg(f"paste: Quartz preferred Cmd+V failed: {e}")
+
+    # Non-Electron targets are still best served by process-targeted paste.
+    if not electron_like and target_name:
         try:
             subprocess.run(
                 [
@@ -882,19 +1191,23 @@ def _fire_paste_shortcut(target_name: str | None = None) -> str:
         _dbg(f"paste: System Events Cmd+V failed: {e}")
 
     try:
-        import Quartz
-
-        key_v = 9
-        src = Quartz.CGEventSourceCreate(Quartz.kCGEventSourceStateHIDSystemState)
-        down = Quartz.CGEventCreateKeyboardEvent(src, key_v, True)
-        up = Quartz.CGEventCreateKeyboardEvent(src, key_v, False)
-        Quartz.CGEventSetFlags(down, Quartz.kCGEventFlagMaskCommand)
-        Quartz.CGEventSetFlags(up, Quartz.kCGEventFlagMaskCommand)
-        Quartz.CGEventPost(Quartz.kCGAnnotatedSessionEventTap, down)
-        Quartz.CGEventPost(Quartz.kCGAnnotatedSessionEventTap, up)
-        return "quartz"
+        return _try_quartz()
     except Exception as e:
         _dbg(f"paste: Quartz Cmd+V failed: {e}")
+
+    if electron_like and target_name:
+        try:
+            subprocess.run(
+                [
+                    "osascript",
+                    "-e",
+                    f'tell application "System Events" to tell process "{target_name}" to keystroke "v" using {{command down}}',
+                ],
+                check=True,
+            )
+            return "system_events_process_fallback"
+        except Exception as e:
+            _dbg(f"paste: System Events process fallback Cmd+V failed: {e}")
 
     _kbd.press(kb.Key.cmd)
     _kbd.tap('v')
@@ -930,22 +1243,19 @@ def _commit_and_paste(text: str):
         subprocess.run(["pbcopy"], input=text.encode("utf-8"), check=False)
         time.sleep(0.3)  # Increased delay for larger text to copy
 
-        try:
-            import ApplicationServices as _AS
-            ax_ok = _AS.AXIsProcessTrustedWithOptions({"AXTrustedCheckOptionPrompt": False})
-        except Exception:
-            ax_ok = True
+        ax_ok = _ensure_accessibility(prompt=False, open_settings=False)
         _dbg(f"paste: target={target_bundle!r} frontmost={_frontmost_bundle_id()!r} AX trusted={ax_ok}, firing Cmd+V")
 
         if ax_ok:
             time.sleep(0.20)
-            method = _fire_paste_shortcut(target_name or None)
+            method = _fire_paste_shortcut(target_name or None, target_bundle or None)
             _dbg(f"paste: {method} Cmd+V done")
             time.sleep(0.35)   # было 0.05 — недостаточно для Electron-приложений (Claude Desktop):
                                  # пробел долетал раньше вставленного текста
             _kbd.tap(' ')   # trailing space so next dictation joins cleanly
         else:
             _dbg("paste: ПРОПУЩЕНО — нет разрешения Accessibility. Текст в буфере обмена, используйте Cmd+V вручную.")
+            _prompt_accessibility_fix("paste")
     except Exception as e:
         _dbg(f"paste ERROR: {e}")
 
@@ -1106,7 +1416,7 @@ def _on_copy(mode: str = "raw"):
 
 
 def _on_paste(mode: str = "raw"):
-    """Shift+Enter → raw paste (no scenario); [Отправить] → apply full_default if set; Alt+Shift+Enter → paste MD."""
+    """Paste current context. `action_send`/`md` may apply full_default; button insert stays raw."""
     global _full_mode_standby
     text = overlay.get_text()
     if not text:
@@ -1120,12 +1430,13 @@ def _on_paste(mode: str = "raw"):
         if not (current and current["full"] == text):
             _add_to_history(text, parent_id=_current_hist_id)
 
-    # В полном режиме: применяем сценарий по умолчанию только на Shift+Enter (не на кнопку [↵])
+    # В полном режиме: применяем сценарий по умолчанию только на явные сценарийные пути.
+    # Кнопка [ОТПРАВИТЬ]/[ВСТАВИТЬ] всегда делает обычную вставку без сценария.
     full_sc = overlay.get_full_default_scenario()
     if (not _state.get("silent") and full_sc and full_sc.get("prompt")
             and overlay.get_active_sc() is None
             and not _state.get("fd_skip")
-            and mode in ("shift_enter", "md")):
+            and mode in ("action_send", "md")):
         def _apply_and_paste(sc=full_sc, raw=text, m=mode):
             cancel_ev = threading.Event()
             def _interrupt():
@@ -1174,7 +1485,9 @@ def _on_paste(mode: str = "raw"):
 
 # ── Хоткей ────────────────────────────────────────────────────────────────────
 
-_hotkey_monitors = []   # NSEvent monitor refs — prevent GC
+_hotkey_monitors = []   # compatibility list for health checks / legacy callers
+_hotkey_event_tap = None
+_hotkey_event_source = None
 
 # Очередь событий хоткея — сериализует press/release на одном воркере.
 # NSEvent-хендлеры работают на главном RunLoop, поэтому нельзя блокироваться
@@ -1182,6 +1495,7 @@ _hotkey_monitors = []   # NSEvent monitor refs — prevent GC
 # последовательно — так же, как раньше делал pynput-поток.
 import queue as _queue
 _hotkey_queue: "_queue.Queue[tuple]" = _queue.Queue()
+_enter_listener = None
 
 def _hotkey_worker():
     while True:
@@ -1200,90 +1514,118 @@ threading.Thread(target=_hotkey_worker, daemon=True, name="hush-hotkey").start()
 
 
 def _setup_hotkey():
-    global _hotkey_monitors
+    global _hotkey_monitors, _hotkey_event_tap, _hotkey_event_source
+    global _fn_down, _control_down, _hotkey_combo_latched
 
-    for m in _hotkey_monitors:
-        try:
-            AppKit.NSEvent.removeMonitor_(m)
-        except Exception:
-            pass
+    _cancel_pending_hotkey_press()
+    _fn_down = False
+    _control_down = False
+    _hotkey_combo_latched = False
     _hotkey_monitors.clear()
 
-    # macOS key constants (fixed, no pynput needed for detection)
-    _NSAlternateKeyMask = 0x080000
-    _NSShiftKeyMask     = 0x020000
-    _kVK_RightOption    = 61
-    _kVK_Return         = 36
-    _kVK_NumpadEnter    = 76
+    try:
+        import Quartz
+    except Exception as e:
+        _dbg(f"hotkey event tap import failed: {e}")
+        return False
 
-    def _handle_flags(event):
-        if event is None:
-            return
-        kc = event.keyCode()
-        flags = int(event.modifierFlags())
-        if kc == _kVK_RightOption:
-            _dbg(f"flags: kc={kc} flags=0x{flags:x} alt={bool(flags & _NSAlternateKeyMask)} shift={bool(flags & _NSShiftKeyMask)}")
-            if flags & _NSAlternateKeyMask:
-                _hotkey_queue.put(("press", bool(flags & _NSShiftKeyMask)))
-            else:
+    if _hotkey_event_tap is not None:
+        try:
+            Quartz.CGEventTapEnable(_hotkey_event_tap, True)
+            _hotkey_monitors.append(_hotkey_event_tap)
+            _dbg("Fn/Control hotkey event tap already active")
+            return True
+        except Exception:
+            _hotkey_event_tap = None
+            _hotkey_event_source = None
+
+    mask = (1 << Quartz.kCGEventFlagsChanged)
+    _kVK_Function = 63
+    _kVK_LeftControl = 59
+    _kVK_RightControl = 62
+    _FN_MASK = int(getattr(Quartz, "kCGEventFlagMaskSecondaryFn", 0x800000))
+    _CTRL_MASK = int(getattr(Quartz, "kCGEventFlagMaskControl", 0x40000))
+
+    def _callback(_proxy, type_, event, _refcon):
+        global _fn_down, _control_down, _hotkey_combo_latched
+        try:
+            if type_ == Quartz.kCGEventTapDisabledByTimeout:
+                Quartz.CGEventTapEnable(_hotkey_event_tap, True)
+                _dbg("hotkey event tap re-enabled after timeout")
+                return event
+            if type_ != Quartz.kCGEventFlagsChanged:
+                return event
+
+            kc = Quartz.CGEventGetIntegerValueField(event, Quartz.kCGKeyboardEventKeycode)
+            if kc not in (_kVK_Function, _kVK_LeftControl, _kVK_RightControl):
+                return event
+
+            flags = Quartz.CGEventGetFlags(event)
+            _fn_down = bool(flags & _FN_MASK)
+            _control_down = bool(flags & _CTRL_MASK)
+            _dbg(
+                f"flags: kc={kc} flags=0x{int(flags):x} fn={_fn_down} ctrl={_control_down}"
+            )
+
+            combo_down = (_fn_down and _control_down)
+
+            if combo_down and not _hotkey_combo_latched and not _state["hotkey_held"]:
+                _cancel_pending_hotkey_press()
+                _hotkey_combo_latched = True
+                _hotkey_queue.put(("press", True))
+                return event
+
+            if not _fn_down and _state["hotkey_held"]:
+                _cancel_pending_hotkey_press()
+                _hotkey_combo_latched = False
                 _hotkey_queue.put(("release", None))
+                return event
 
-    def _handle_key_down(event):
-        if event is None:
-            return
-        if event.keyCode() in (_kVK_Return, _kVK_NumpadEnter) and _in_countdown:
-            threading.Thread(target=_force_paste_raw_now, daemon=True,
-                             name="hush-enter-raw").start()
+            if not combo_down and _hotkey_combo_latched:
+                _cancel_pending_hotkey_press()
+                _hotkey_combo_latched = False
+                if not _state["hotkey_held"]:
+                    return event
 
-    # Локальные мониторы: срабатывают когда HUSH сам на переднем плане
-    # (глобальные в этом случае не срабатывают — ограничение NSEvent)
-    def _local_flags(event):
-        _handle_flags(event)
-        return event
+            if _fn_down and not _control_down and not _hotkey_combo_latched and not _state["hotkey_held"]:
+                _schedule_pending_hotkey_press()
+            return event
+        except Exception as e:
+            _dbg(f"hotkey event tap callback failed: {e}")
+            return event
 
-    def _local_key_down(event):
-        _handle_key_down(event)
-        return event
-
-    # Глобальные — когда HUSH в фоне; локальные — когда окно HUSH активно
-    m1 = AppKit.NSEvent.addGlobalMonitorForEventsMatchingMask_handler_(
-        AppKit.NSEventMaskFlagsChanged, _handle_flags
-    )
-    m2 = AppKit.NSEvent.addGlobalMonitorForEventsMatchingMask_handler_(
-        AppKit.NSEventMaskKeyDown, _handle_key_down
-    )
-    m3 = AppKit.NSEvent.addLocalMonitorForEventsMatchingMask_handler_(
-        AppKit.NSEventMaskFlagsChanged, _local_flags
-    )
-    m4 = AppKit.NSEvent.addLocalMonitorForEventsMatchingMask_handler_(
-        AppKit.NSEventMaskKeyDown, _local_key_down
-    )
-
-    # Валидация: проверяем что все 4 монитора создались успешно
-    monitors = {"global_flags": m1, "global_keydown": m2, "local_flags": m3, "local_keydown": m4}
-    failed = [name for name, mon in monitors.items() if mon is None]
-
-    if failed:
-        _dbg(f"ERROR: Failed to create monitors: {failed}. Hotkey may not work!")
-        # Всё равно добавляем что создалось
-        _hotkey_monitors.extend([m for m in (m1, m2, m3, m4) if m is not None])
-        return False  # Индикатор неудачи
-
-    _hotkey_monitors.extend([m1, m2, m3, m4])
-    _dbg("All 4 hotkey monitors created successfully")
-    return True  # Индикатор успеха
+    try:
+        tap = Quartz.CGEventTapCreate(
+            Quartz.kCGSessionEventTap,
+            Quartz.kCGHeadInsertEventTap,
+            Quartz.kCGEventTapOptionListenOnly,
+            mask,
+            _callback,
+            None,
+        )
+        if tap is None:
+            _dbg("hotkey event tap creation returned None")
+            return False
+        source = Quartz.CFMachPortCreateRunLoopSource(None, tap, 0)
+        loop = Quartz.CFRunLoopGetCurrent()
+        Quartz.CFRunLoopAddSource(loop, source, Quartz.kCFRunLoopCommonModes)
+        Quartz.CGEventTapEnable(tap, True)
+        _hotkey_event_tap = tap
+        _hotkey_event_source = source
+        _hotkey_monitors.append(tap)
+        _dbg("Fn/Control hotkey event tap started")
+        return True
+    except Exception as e:
+        _dbg(f"hotkey event tap setup failed: {e}")
+        _hotkey_event_tap = None
+        _hotkey_event_source = None
+        return False
 
 def _check_hotkey_health():
     """Периодически проверяет что hotkey мониторы живы. Возвращает False если проблема."""
-    if not _hotkey_monitors:
+    if _hotkey_event_tap is None:
         _dbg("WARNING: No hotkey monitors registered!")
         return False
-
-    # Проверяем что хотя бы 2 монитора существуют (минимум для работы)
-    if len(_hotkey_monitors) < 2:
-        _dbg(f"WARNING: Only {len(_hotkey_monitors)}/4 monitors alive, hotkey may not work properly")
-        return False
-
     return True
 
 
@@ -1301,16 +1643,9 @@ def _ensure_hotkey_monitors():
 # ── Keep-alive таймер (фикс Ctrl+C) ──────────────────────────────────────────
 
 class _KATgt(AppKit.NSObject):
-    """Target таймера — держит Python signal handler живым внутри NSApp.run()
-    и периодически проверяет здоровье hotkey мониторов."""
+    """Target таймера — держит Python signal handler живым внутри NSApp.run()."""
     def ping_(self, t):
-        # Каждую минуту (240 * 0.25с) проверяем hotkey здоровье
-        if not hasattr(self, '_check_counter'):
-            self._check_counter = 0
-        self._check_counter += 1
-        if self._check_counter >= 240:
-            self._check_counter = 0
-            _ensure_hotkey_monitors()
+        return
 
 def _setup_keepalive():
     tgt = _KATgt.alloc().init()
@@ -1330,7 +1665,17 @@ def _start_periodic_warmup():
     def _loop():
         while True:
             time.sleep(_WARMUP_INTERVAL)
-            if not _processing_locked:   # пропускаем только во время LLM/вставки
+            busy = (
+                _processing_locked or
+                _state.get("stream") or
+                _stopping > 0 or
+                _worker_alive or
+                not _audio_queue.empty() or
+                _in_countdown or
+                _full_mode_standby or
+                overlay.is_any_session_visible()
+            )
+            if not busy:
                 transcriber.warm_up()
 
     threading.Thread(target=_loop, daemon=True, name="parakeet-periodic-warmup").start()
@@ -1404,17 +1749,10 @@ class _SleepObserver(AppKit.NSObject):
         _dbg("systemWillSleep_: transcriber cancelled")
 
     def systemDidWake_(self, notification):
-        """При пробуждении: переинициализируем PortAudio и перезапускаем hotkey мониторы.
-        transcriber.cancel() здесь — подстраховка на случай, если systemWillSleep_ не успел
-        сработать (например, резкое закрытие крышки) и parakeet-cli завис с разорванным ANE."""
+        """При пробуждении: переинициализируем PortAudio без восстановления глобальных хоткеев."""
         transcriber.cancel()
         portaudio_ok = _reinit_portaudio()
         _dbg(f"systemDidWake_: PortAudio recovery ok={portaudio_ok}")
-        hotkey_ok = _setup_hotkey()
-        if hotkey_ok:
-            _dbg("systemDidWake_: hotkey monitors recreated successfully")
-        else:
-            _dbg("ERROR: systemDidWake_: hotkey monitor recreation had issues!")
         transcriber.warm_up()
         _dbg("systemDidWake_: transcriber cancelled + warm-up started")
 
@@ -1423,15 +1761,8 @@ _sleep_observer = None
 
 
 def _setup_app_observer():
-    global _app_observer, _sleep_observer
-    _app_observer = _AppObserver.alloc().init()
+    global _sleep_observer
     ws = AppKit.NSWorkspace.sharedWorkspace()
-    ws.notificationCenter().addObserver_selector_name_object_(
-        _app_observer,
-        objc.selector(_app_observer.appActivated_, selector=b"appActivated:"),
-        AppKit.NSWorkspaceDidActivateApplicationNotification,
-        None,
-    )
     _sleep_observer = _SleepObserver.alloc().init()
     ws.notificationCenter().addObserver_selector_name_object_(
         _sleep_observer,
@@ -1451,17 +1782,80 @@ def _setup_app_observer():
 
 def _check_accessibility():
     """Проверяет разрешение AX и показывает запрос если оно отсутствует. pynput требует его."""
-    try:
-        import ApplicationServices
-        trusted = ApplicationServices.AXIsProcessTrustedWithOptions(
-            {"AXTrustedCheckOptionPrompt": True}
-        )
-        _dbg(f"AX trusted: {trusted}")
-        if not trusted:
-            print("⚠️  Нет разрешения Accessibility. Откройте Системные настройки → "
-                  "Конфиденциальность → Accessibility и добавьте HUSH (или python3).")
-    except Exception as e:
-        _dbg(f"AX check error: {e}")
+    trusted = _ensure_accessibility(prompt=True, open_settings=not _ensure_accessibility(prompt=False))
+    if not trusted:
+        print("⚠️  Нет разрешения Accessibility. Откройте Системные настройки → "
+              "Конфиденциальность → Accessibility и добавьте HUSH.")
+
+
+_app_launch_bootstrapped = False
+_app_launch_waiting_ax = False
+
+
+def _finish_application_launch():
+    global _app_launch_bootstrapped
+    if _app_launch_bootstrapped:
+        return
+    _app_launch_bootstrapped = True
+    _dbg("startup: accessibility confirmed, completing app launch")
+    _load_history()
+    overlay.init(
+        _on_scenario,
+        on_history_callback=_get_history,
+        on_paste_callback=_on_paste,
+        on_copy_callback=_on_copy,
+        on_history_delete_callback=_on_delete_history,
+        on_history_load_callback=_on_history_load,
+        on_history_merge_callback=_on_merge_history,
+        on_add_history_callback=_add_to_history,
+        on_update_session_callback=_upsert_session,
+        on_session_end_callback=_on_session_end,
+        on_manual_silent_callback=_manual_start_silent_recording,
+        on_manual_full_callback=_manual_open_full_mode,
+        on_manual_stop_callback=_manual_stop_or_close,
+    )
+    overlay.set_undo_scenario_callback(_undo_last_scenario)
+    _setup_hotkey()
+    _setup_enter_event_tap()
+    _setup_keepalive()
+    _setup_app_observer()
+    provider_config.add_status_callback(
+        lambda: AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(
+            overlay.update_provider_status))
+    provider_config.add_status_callback(
+        lambda: AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(
+            overlay._start_sc_avail_check))
+    provider_config.probe_all()
+    _start_provider_monitor()
+    transcriber.warm_up()
+    _start_periodic_warmup()
+    print("Voice Input запущен. Горячие клавиши HUSH активны; Right Shift+Enter перехват для быстрой вставки включен.")
+
+
+def _start_after_accessibility_ready():
+    global _app_launch_waiting_ax
+    if _app_launch_bootstrapped:
+        return
+    if _ensure_accessibility(prompt=False, open_settings=False):
+        _finish_application_launch()
+        return
+    if _app_launch_waiting_ax:
+        return
+    _app_launch_waiting_ax = True
+    _dbg("startup: accessibility missing, delaying full app launch")
+    _check_accessibility()
+
+    def _wait_for_ax():
+        global _app_launch_waiting_ax
+        while not _app_launch_bootstrapped:
+            if _ensure_accessibility(prompt=False, open_settings=False):
+                _app_launch_waiting_ax = False
+                AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(
+                    _finish_application_launch)
+                return
+            time.sleep(0.75)
+
+    threading.Thread(target=_wait_for_ax, daemon=True, name="hush-ax-startup").start()
 
 
 def _first_run_setup():
@@ -1530,36 +1924,7 @@ class _AppDelegate(AppKit.NSObject):
 
     def applicationDidFinishLaunching_(self, notification):
         _first_run_setup()          # копируем бинарник+модели в стабильные пути (один раз)
-        _check_accessibility()
-        _load_history()
-        overlay.init(
-            _on_scenario,
-            on_history_callback=_get_history,
-            on_paste_callback=_on_paste,
-            on_copy_callback=_on_copy,
-            on_history_delete_callback=_on_delete_history,
-            on_history_load_callback=_on_history_load,
-            on_history_merge_callback=_on_merge_history,
-            on_add_history_callback=_add_to_history,
-            on_update_session_callback=_upsert_session,
-            on_session_end_callback=_on_session_end,
-        )
-        overlay.set_undo_scenario_callback(_undo_last_scenario)
-        _setup_hotkey()
-        _setup_keepalive()
-        _setup_app_observer()
-        # Асинхронно проверяем всех LLM провайдеров; обновляем точки статуса в overlay когда готово
-        provider_config.add_status_callback(
-            lambda: AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(
-                overlay.update_provider_status))
-        provider_config.add_status_callback(
-            lambda: AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(
-                overlay._start_sc_avail_check))
-        provider_config.probe_all()
-        _start_provider_monitor()
-        transcriber.warm_up()
-        _start_periodic_warmup()
-        print("Voice Input запущен. Right ⌥ — запись, Right ⌥ × 2 — история. Ctrl+C — выход.")
+        _start_after_accessibility_ready()
 
     def applicationShouldTerminateAfterLastWindowClosed_(self, sender):
         return False
